@@ -60,7 +60,7 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 		return nil, err
 	}
 	var missing []string
-	for _, name := range []string{"web-components.min.js", "styles.min.css"} {
+	for _, name := range []string{"web-components.min.js", "styles.min.css", "LICENSE"} {
 		if _, err := fs.Stat(dir, name); err != nil {
 			missing = append(missing, name)
 		}

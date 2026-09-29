@@ -8,14 +8,23 @@ import (
 )
 
 func TestAssetsInNamesMissingFiles(t *testing.T) {
-	_, err := assetsIn(fstest.MapFS{"elements/.gitkeep": {}, "elements/styles.min.css": {Data: []byte("/**/")}})
+	_, err := assetsIn(fstest.MapFS{"elements/.gitkeep": {}, "elements/styles.min.css": {Data: []byte("/**/")}, "elements/LICENSE": {Data: []byte("Apache-2.0")}})
 	if err == nil || !strings.Contains(err.Error(), "web-components.min.js") || strings.Contains(err.Error(), "styles.min.css") || !strings.Contains(err.Error(), "make setup") {
 		t.Errorf("err = %v, want it to name web-components.min.js alone and make setup", err)
+	}
+
+	_, err = assetsIn(fstest.MapFS{
+		"elements/web-components.min.js": {Data: []byte("//")},
+		"elements/styles.min.css":        {Data: []byte("/**/")},
+	})
+	if err == nil || !strings.Contains(err.Error(), "LICENSE") {
+		t.Errorf("err = %v, want it to name LICENSE", err)
 	}
 
 	dir, err := assetsIn(fstest.MapFS{
 		"elements/web-components.min.js": {Data: []byte("//")},
 		"elements/styles.min.css":        {Data: []byte("/**/")},
+		"elements/LICENSE":               {Data: []byte("Apache-2.0")},
 	})
 	if err != nil {
 		t.Fatal(err)
