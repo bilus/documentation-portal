@@ -246,7 +246,6 @@ func TestStartupShowsTryIt(t *testing.T) {
 }
 
 func TestStartupHidesTryIt(t *testing.T) {
-	t.Skip("HOLE(1): carry -hide-try-it to the viewer page")
 	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-hide-try-it"}, noEnv)
 	if err != nil {
 		t.Fatal(err)

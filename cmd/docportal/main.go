@@ -128,6 +128,6 @@ func openDocs(pcfg portal.Config, dir string) (portal.Config, error) {
 
 // setTryIt adds the Try It setting to the portal configuration.
 func setTryIt(pcfg portal.Config, hide bool) portal.Config {
-	// HOLE(1): set pcfg.HideTryIt to hide
+	pcfg.HideTryIt = hide
 	return pcfg
 }

@@ -13,3 +13,9 @@
 - 2026-09-29 design review, round 1 (sub-agent), 5 findings, no rule of design.md broken. Applied: 1 (Q5 names box 4 and states the cost of box 5), 3 (portal.Config's doc comment names the Try It setting), 4 (requirement 1 cites the reversal of #2's decision D4), 5 (startup's doc comment rewrapped). Carried, for the handoff: the Try It setting past boxes 2 and 4, the address past boxes 2, 4, 5 and 3, the content directory name past box 2, and the handles and the spec path through box 5.
 - 2026-09-29 decision (user): the design review and the vocabulary review run once, on the complete change after the last stage, before the pull request opens; not at the plan gate or at stage boundaries. This gate's design review had already run.
 - 2026-09-29 plan approved by the user, with the change to TestViewerPage (Q6). Signatures, top diagram and vocabulary frozen; score card cached.
+- 2026-09-29 stage 1 started from c6523a1.
+- 2026-09-29 filled 1 main.setTryIt: it sets pcfg.HideTryIt. Unskipped TestStartupHidesTryIt, which fails against the mock body. README.md describes -hide-try-it, DOCPORTAL_HIDE_TRY_IT and the CORS requirement of the Try It console.
+- 2026-09-29 stage 1 complete: gate green (make build lint test test-e2e, and go test -count=1 with and without the e2e tag), TestStartupHidesTryIt passes unskipped, the census is empty, score unchanged, about 10 net lines, review page rebuilt against c6523a1; no diagram changed. Halted for review.
+- 2026-09-29 stage 1 approved by the user; score card cached. Next: the design and vocabulary reviews on the complete change, then one pull request.
+- 2026-09-29 decision (user): no design or vocabulary review for this issue; both final reviews were stopped before they reported.
+- 2026-09-29 pre-squash tip: 90be8f0. Reshaping the branch on 851ea2a into the plan's commit (tree of c6523a1) and the switch (tree of this commit), then one pull request.
