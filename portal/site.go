@@ -30,9 +30,9 @@ func (s *site) viewerPage(w http.ResponseWriter, r *http.Request) {
 	var invalid invalidSpecError
 	switch {
 	case errors.Is(err, errNoSpec):
-		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec at " + path + "."})
+		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec at " + path + ".", Nav: s.nav()})
 	case errors.As(err, &invalid):
-		render(w, http.StatusUnprocessableEntity, "error.html", page{Title: "Cannot show " + path, Message: invalid.reason})
+		render(w, http.StatusUnprocessableEntity, "error.html", page{Title: "Cannot show " + path, Message: invalid.reason, Nav: s.nav()})
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
@@ -59,8 +59,11 @@ type navLink struct {
 // nav returns the links of the navigation bar: the viewer page, and the
 // document list when a content directory is configured.
 func (s *site) nav() []navLink {
-	// HOLE(3): link the viewer page, and the document list when s.docs is set
-	return nil
+	links := []navLink{{Label: "API", URL: (&url.URL{Path: "/specs/" + s.specPath}).String()}}
+	if s.docs != nil {
+		links = append(links, navLink{Label: "Documents", URL: "/docs/"})
+	}
+	return links
 }
 
 //go:embed templates/*.html

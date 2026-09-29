@@ -151,7 +151,36 @@ func rawImageURL(dir string, dest []byte) []byte {
 // of its extension and headers that stop the browser from running it, or a
 // 404 for any other file or without a content directory.
 func (s *site) rawFile(w http.ResponseWriter, r *http.Request) {
-	// HOLE(3): serve the image with nosniff and a sandbox CSP; else, or without s.docs, 404
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox")
+	p := r.PathValue("path")
+	ctype, ok := imageTypes[path.Ext(p)]
+	if s.docs == nil || !ok || !fs.ValidPath(p) || strings.HasPrefix(p, ".") || strings.Contains(p, "/.") {
+		http.NotFound(w, r)
+		return
+	}
+	// Stat follows a symlink, and one out of the content directory fails.
+	if info, err := fs.Stat(s.docs, p); err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	data, err := fs.ReadFile(s.docs, p)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", ctype)
+	w.Write(data)
+}
+
+// imageTypes maps the extension of an image to its Content-Type.
+var imageTypes = map[string]string{
+	".png":  "image/png",
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".svg":  "image/svg+xml",
 }
 
 // sidebarGroup is one group of the document sidebar: the markdown files of

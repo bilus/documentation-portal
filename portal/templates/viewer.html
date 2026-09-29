@@ -6,9 +6,10 @@
 <title>{{.Title}}</title>
 <script src="/assets/elements/web-components.min.js"></script>
 <link rel="stylesheet" href="/assets/elements/styles.min.css">
-<style>html, body { height: 100%; margin: 0; }</style>
+<style>html, body { height: 100%; margin: 0; } body { display: flex; flex-direction: column; } elements-api { display: block; flex: 1; min-height: 0; }</style>
 </head>
 <body>
+{{template "nav" .}}
 <elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash" hideTryIt="true" layout="sidebar"></elements-api>
 </body>
 </html>

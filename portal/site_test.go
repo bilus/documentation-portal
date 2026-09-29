@@ -105,3 +105,13 @@ func TestRawImageURL(t *testing.T) {
 		}
 	}
 }
+
+func TestRawFileWithoutDocs(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/raw/a.png", nil)
+	req.SetPathValue("path", "a.png")
+	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).rawFile(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404", rec.Code)
+	}
+}

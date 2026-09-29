@@ -15,7 +15,6 @@ import (
 )
 
 func TestRawSVGRunsNoScript(t *testing.T) {
-	t.Skip("HOLE(3): serve SVG files with a sandbox CSP")
 	h, err := portal.New(portal.Config{Specs: os.DirFS("../testdata/specs"), SpecPath: "petstore-3.1.yaml", Docs: os.DirFS("../testdata/docs")})
 	if err != nil {
 		t.Fatal(err)

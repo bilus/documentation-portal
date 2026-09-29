@@ -127,7 +127,6 @@ func TestDocsNotFound(t *testing.T) {
 }
 
 func TestRawFile(t *testing.T) {
-	t.Skip("HOLE(3): serve the images of the content directory")
 	h := newDocsPortal(t, sampleDocs)
 	for path, ctype := range map[string]string{"guide/diagram.png": "image/png", "evil.svg": "image/svg+xml"} {
 		rec := get(h, "/raw/"+path)
@@ -151,7 +150,6 @@ func TestRawFile(t *testing.T) {
 }
 
 func TestPagesShareNavigation(t *testing.T) {
-	t.Skip("HOLE(3): show the navigation bar on every page")
 	h := newDocsPortal(t, fstest.MapFS{"a.md": {Data: []byte("# A\n")}})
 	for _, path := range []string{"/specs/apis/pets.yaml", "/docs/", "/docs/a.md", "/docs/missing.md"} {
 		body := get(h, path).Body.String()
