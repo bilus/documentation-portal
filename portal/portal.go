@@ -3,9 +3,12 @@
 package portal
 
 import (
+	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strings"
 )
 
 // Config says where the portal reads its content from.
@@ -30,14 +33,42 @@ func New(cfg Config) (http.Handler, error) {
 // checkConfig checks the portal configuration, so that the spec path stays
 // inside the specs directory.
 func checkConfig(cfg Config) error {
-	// HOLE(3): refuse a nil Specs, and a SpecPath that is "." or that fs.ValidPath refuses, with an error naming the spec path
+	if cfg.Specs == nil {
+		return errors.New("no specs directory")
+	}
+	if cfg.SpecPath == "." || !fs.ValidPath(cfg.SpecPath) {
+		return fmt.Errorf("spec path %q is not a file inside the specs directory", cfg.SpecPath)
+	}
 	return nil
 }
 
 // loadAssets loads the Elements assets, or refuses to start without them.
 func loadAssets() (fs.FS, error) {
-	// HOLE(3): return the embedded elements/ directory, or an error naming each missing file of web-components.min.js and styles.min.css and telling the operator to run `make setup`
-	return nil, nil
+	return assetsIn(elements)
+}
+
+// all: also embeds elements/.gitkeep, so this compiles before `make setup`.
+//
+//go:embed all:elements
+var elements embed.FS
+
+// assetsIn returns the elements directory of fsys, or an error naming each
+// Elements asset missing from it.
+func assetsIn(fsys fs.FS) (fs.FS, error) {
+	dir, err := fs.Sub(fsys, "elements")
+	if err != nil {
+		return nil, err
+	}
+	var missing []string
+	for _, name := range []string{"web-components.min.js", "styles.min.css"} {
+		if _, err := fs.Stat(dir, name); err != nil {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("Elements assets missing (%s): run `make setup` before building", strings.Join(missing, ", "))
+	}
+	return dir, nil
 }
 
 // newRouter builds the router that sends each request to the viewer page, the

@@ -75,7 +75,7 @@ Each stage ends with `devbox run make build lint test test-e2e`, the hole census
 - Goal: the portal refuses a spec path outside the specs directory and missing Elements assets, and `make setup` fetches the pinned assets and checks them.
 - Requirement: 9, 1.
 - Dependencies: 2.
-- Holes: `3 portal.checkConfig`, `3 portal.loadAssets` (with the Makefile's `setup` target and the embedded `elements/` directory as its helpers).
+- Holes: `3 portal.checkConfig`, `3 portal.loadAssets`, and `3 portal.assetsIn`, the helper its fill declared, with the Makefile's `setup` target.
 - Acceptance: `TestStartupRejectsSpecPathOutsideDir`, and the asset check's own test, written with the fill.
 - Size: 90 lines.
 

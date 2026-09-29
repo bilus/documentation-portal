@@ -42,3 +42,9 @@
 - 2026-09-29 the design review at the stage 2 boundary was stopped by the user before it reported; no findings recorded. Gate green, TestNewServesSpec passes, census 3 holes (3 portal.checkConfig, 3 portal.loadAssets, 4 portal.newRouter) and 7 skipped tests, score unchanged, review page rebuilt against 48d6610.
 - 2026-09-29 decision (user): skip design reviews from here on; stage boundaries keep the gate, the census, the score card and the review page. Stage 2 complete, halted for review.
 - 2026-09-29 stage 2 approved by the user. Decision (user): the metaphor is dropped; its plan section and its five vocabulary entries are removed. Score card cached.
+- 2026-09-29 stage 3 started from 352bcc8.
+- 2026-09-29 filled 3 portal.checkConfig: refuses a nil Specs and a spec path that is "." or not a valid fs path, naming it. Unskipped TestStartupRejectsSpecPathOutsideDir; added TestCheckConfig.
+- 2026-09-29 refined 3 portal.loadAssets into a call to assetsIn over the embedded elements/ directory; added hole 3 portal.assetsIn (a helper inside box 3.2) and portal/elements/.gitkeep, git-ignored apart from .gitkeep.
+- 2026-09-29 filled 3 portal.assetsIn: fs.Sub of elements/, naming each missing asset and make setup; added TestAssetsInNamesMissingFiles. Makefile: setup downloads @stoplight/elements 9.0.25, checks the SHA-256 and extracts web-components.min.js, styles.min.css and LICENSE into portal/elements (git-ignored); build, test and test-e2e depend on it; a second run does nothing. Checked by hand: with web-components.min.js removed, docportal exits 1 naming it and make setup.
+- 2026-09-29 stage 3 complete: gate green (make build lint test test-e2e), TestStartupRejectsSpecPathOutsideDir passes unskipped, census 1 hole (4 portal.newRouter) and 6 skipped tests, score unchanged, review page rebuilt against 352bcc8; no design review, per the user's decision. Halted for review.
+- 2026-09-29 stage 3 approved by the user. Score card cached.

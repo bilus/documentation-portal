@@ -1,1 +1,5 @@
 /bin/
+
+# Downloaded by `make setup`.
+/portal/elements/*
+!/portal/elements/.gitkeep

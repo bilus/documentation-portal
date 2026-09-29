@@ -123,8 +123,6 @@ func TestOpenSpecsKeepsReadsInside(t *testing.T) {
 }
 
 func TestStartupRejectsSpecPathOutsideDir(t *testing.T) {
-	t.Skip("HOLE(3): startup names a spec path that leaves the specs directory")
-
 	_, _, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "../specs/petstore-3.0.yaml"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "../specs/petstore-3.0.yaml") {
 		t.Errorf("err = %v, want it to name the spec path", err)
