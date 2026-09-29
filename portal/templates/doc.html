@@ -4,12 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
-<style>body { font-family: system-ui, sans-serif; margin: 0; } main { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }</style>
+<link rel="stylesheet" href="/assets/elements/styles.min.css">
+<style>html, body { height: 100%; margin: 0; } body { display: flex; flex-direction: column; } .portal-docs { flex: 1; min-height: 0; }</style>
 </head>
 <body>
 {{template "nav" .}}
-<main>
+<div class="portal-docs">
+<div class="sl-elements sl-antialiased sl-h-full sl-text-base sl-font-ui sl-text-body">
+<div class="sl-elements-api sl-flex sl-inset-0 sl-h-full">
+{{template "sidebar" .}}
+<div class="sl-overflow-y-auto sl-flex-1 sl-w-full sl-px-24 sl-bg-canvas">
+<div class="sl-py-16">
+<div class="sl-prose sl-markdown-viewer">
 {{.Body}}
-</main>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
 </body>
 </html>

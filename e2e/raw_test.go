@@ -59,7 +59,6 @@ const sidebarStyle = `(() => {
 })()`
 
 func TestDocSidebarMatchesElements(t *testing.T) {
-	t.Skip("HOLE(4): draw the document sidebar with the markup of the Elements sidebar")
 	h, err := portal.New(portal.Config{Specs: os.DirFS("../testdata/specs"), SpecPath: "petstore-3.1.yaml", Docs: os.DirFS("../testdata/docs")})
 	if err != nil {
 		t.Fatal(err)

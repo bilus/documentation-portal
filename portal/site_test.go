@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -113,5 +114,22 @@ func TestRawFileWithoutDocs(t *testing.T) {
 	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).rawFile(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("got %d, want 404", rec.Code)
+	}
+}
+
+func TestSidebarGroups(t *testing.T) {
+	docs := fstest.MapFS{"b.md": {}, "a/x.md": {}, "a/sub/y.md": {}, "a/z.md": {}, "c/w.md": {}, ".h/v.md": {}}
+	got := (&site{docs: docs}).sidebar("a/z.md")
+	want := []sidebarGroup{
+		{Links: []sidebarLink{{Title: "b.md", URL: "/docs/b.md"}}},
+		{Title: "a", Links: []sidebarLink{{Title: "x.md", URL: "/docs/a/x.md"}, {Title: "z.md", URL: "/docs/a/z.md", Current: true}}},
+		{Title: "a/sub", Links: []sidebarLink{{Title: "y.md", URL: "/docs/a/sub/y.md"}}},
+		{Title: "c", Links: []sidebarLink{{Title: "w.md", URL: "/docs/c/w.md"}}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+	if got := (&site{}).sidebar(""); got != nil {
+		t.Errorf("without a content directory: %+v", got)
 	}
 }

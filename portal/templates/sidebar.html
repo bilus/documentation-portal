@@ -1,0 +1,9 @@
+{{define "sidebar"}}<div class="sl-flex">
+<div class="sl-flex sl-overflow-y-auto sl-flex-col sl-sticky sl-inset-y-0 sl-pt-8 sl-bg-canvas-100 sl-border-r" style="padding-left: calc(50% - 900px); width: 300px; min-width: 300px;">
+<div class="sl-flex sl-items-center sl-mb-5 sl-ml-4"><h4 class="sl-text-paragraph sl-leading-snug sl-font-prose sl-font-semibold sl-text-heading">Documents</h4></div>
+<div class="sl-flex sl-overflow-y-auto sl-flex-col sl-flex-grow sl-flex-shrink"><div class="sl-overflow-y-auto sl-w-full sl-bg-canvas-100"><div class="sl-my-3"><div>
+{{range .Sidebar}}{{if .Title}}<div class="sl-text-sm sl-leading-relaxed sl-tracking-wide sl-font-bold sl-uppercase sl-mt-6 sl-mb-2 sl-pl-4">{{.Title}}</div>
+{{end}}{{range .Links}}<a class="ElementsTableOfContentsItem sl-block sl-no-underline" href="{{.URL}}"><div title="{{.Title}}" class="sl-flex sl-items-center sl-h-md sl-pr-4 sl-pl-4 {{if .Current}}sl-bg-primary-tint{{else}}sl-bg-canvas-100 hover:sl-bg-canvas-200{{end}} sl-cursor-pointer sl-select-none"><div class="sl-flex-1 sl-items-center sl-text-base sl-truncate">{{.Title}}</div></div></a>
+{{end}}{{end}}</div></div></div></div>
+</div>
+</div>{{end}}

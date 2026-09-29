@@ -200,6 +200,30 @@ type sidebarLink struct {
 // sidebar returns the document sidebar: the markdown files that are not
 // hidden, grouped by directory, with the file at current marked.
 func (s *site) sidebar(current string) []sidebarGroup {
-	// HOLE(4): group the markdown files by directory, marking current; nil without s.docs
-	return nil
+	if s.docs == nil {
+		return nil
+	}
+	paths, err := markdownFiles(s.docs)
+	if err != nil {
+		return nil
+	}
+	byDir := map[string][]sidebarLink{}
+	for _, p := range paths {
+		dir := path.Dir(p)
+		byDir[dir] = append(byDir[dir], sidebarLink{Title: path.Base(p), URL: (&url.URL{Path: "/docs/" + p}).String(), Current: p == current})
+	}
+	var groups []sidebarGroup
+	if links, ok := byDir["."]; ok {
+		groups = append(groups, sidebarGroup{Links: links})
+		delete(byDir, ".")
+	}
+	dirs := make([]string, 0, len(byDir))
+	for dir := range byDir {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+	for _, dir := range dirs {
+		groups = append(groups, sidebarGroup{Title: dir, Links: byDir[dir]})
+	}
+	return groups
 }

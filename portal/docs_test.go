@@ -38,9 +38,10 @@ func TestDocList(t *testing.T) {
 		t.Fatalf("got %d %s", rec.Code, rec.Header().Get("Content-Type"))
 	}
 	body := rec.Body.String()
+	list := body[max(strings.Index(body, "<ul>"), 0):]
 	var at []int
 	for _, doc := range []string{"README.md", "guide/intro.md", "unsafe.md"} {
-		i := strings.Index(body, `href="/docs/`+doc+`"`)
+		i := strings.Index(list, `href="/docs/`+doc+`"`)
 		if i < 0 {
 			t.Errorf("the list does not link %s", doc)
 		}
@@ -167,7 +168,6 @@ func TestPagesShareNavigation(t *testing.T) {
 }
 
 func TestDocSidebar(t *testing.T) {
-	t.Skip("HOLE(4): show the document sidebar on the document list and the document pages")
 	h := newDocsPortal(t, sampleDocs)
 
 	page := get(h, "/docs/guide/intro.md").Body.String()
