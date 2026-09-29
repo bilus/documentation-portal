@@ -97,8 +97,13 @@ func (s *site) rawSpec(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
+		body, err := publishedSpec(sp.Raw)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/yaml")
-		w.Write(sp.Raw)
+		w.Write(body)
 	}
 }
 

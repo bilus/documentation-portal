@@ -44,7 +44,9 @@ Terms of docportal, one per line.
 - document sidebar: the column at the left of the document list and the document pages that links the document page of every markdown file that is not hidden, grouped by directory, with the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
 - active content: markup that runs in the reader's browser, such as a <script> element or a javascript: link.
 - navigation bar: the links at the top of every HTML page of the portal: to the viewer page, and to the document list when a content directory is configured.
-- raw spec: the response at /api/specs/{spec path}: the configured spec's content, unchanged, as application/yaml.
+- raw spec: the response at /api/specs/{spec path}: the configured spec's content without its unpublished parts and marker keys, as application/yaml. A configured spec without markers is served unchanged.
+- unpublished part: a part of the configured spec that x-doNotPublish marks for the target main: a mapping or a list element whose x-doNotPublish list names main, or the sibling <name> of a key x-doNotPublish-<name> whose list names main.
+- marker key: an x-doNotPublish key or a key x-doNotPublish-<name>.
 - raw file: the response at /raw/{path}: an image that is not hidden, unchanged, with the image type of its extension, X-Content-Type-Options: nosniff, so that the browser reads it as that type only, and Content-Security-Policy: sandbox, so that no script in it runs.
 - Stoplight Elements: the web component that renders an API spec as documentation in the reader's browser.
 - Elements assets: the Stoplight Elements script, stylesheet and license, downloaded by `make setup` and embedded in docportal.

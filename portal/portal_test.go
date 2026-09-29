@@ -106,6 +106,21 @@ func TestRawSpec(t *testing.T) {
 	}
 }
 
+func TestRawSpecLeavesOutUnpublishedParts(t *testing.T) {
+	t.Skip("HOLE(1): serve the raw spec without its unpublished parts")
+	spec := "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n    delete:\n      operationId: deleteAllPets\n      x-doNotPublish:\n        - main\ncomponents:\n  schemas:\n    Pet:\n      properties:\n        name:\n          type: string\n        internalNote:\n          type: string\n          x-doNotPublish:\n            - main\n"
+	rec := get(newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(spec)}}, "apis/pets.yaml"), "/api/specs/apis/pets.yaml")
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, "listPets") || !strings.Contains(body, "name") {
+		t.Fatalf("got %d %q", rec.Code, body)
+	}
+	for _, s := range []string{"deleteAllPets", "internalNote", "x-doNotPublish"} {
+		if strings.Contains(body, s) {
+			t.Errorf("the raw spec keeps %s", s)
+		}
+	}
+}
+
 func TestSpecErrorPages(t *testing.T) {
 	files := fstest.MapFS{
 		"broken.yaml":   {Data: []byte("openapi: [3.0\n")},
