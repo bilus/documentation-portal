@@ -1,0 +1,30 @@
+# docportal starts up: main.startup runs these steps in order, and main hands
+# the address and the portal to the HTTP server.
+# By hand: dfd --box 300x150 --per-row 5 --number docs/flow.dfd -o flow.svg
+
+{Operator}
+> arguments, environment
+[1. Read the configuration
+ from the flags and the environment
+ (main.parseConfig)]
+> directory name, spec path
+[2. Open the specs directory and pair it with the spec path
+ so that the portal cannot read outside the directory
+ (main.openSpecs)]
+    > directory name
+    < directory handle
+    <Specs directory>
+> portal configuration
+[3. Build the portal
+ or refuse a spec path outside the specs directory or missing Elements assets
+ (portal.New)]
+> address, portal
+{HTTP server}
+
+# type: arguments = []string
+# type: environment = func(string) string
+# type: directory name = string
+# type: spec path = string
+# type: portal configuration = portal.Config
+# type: address = string
+# type: portal = net/http.Handler

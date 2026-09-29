@@ -1,0 +1,121 @@
+package portal_test
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"testing/fstest"
+
+	"github.com/bilus/documentation-portal/portal"
+)
+
+const pets = "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths: {}\n"
+
+func newPortal(t *testing.T, files fstest.MapFS, specPath string) http.Handler {
+	t.Helper()
+	h, err := portal.New(portal.Config{Specs: files, SpecPath: specPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func get(h http.Handler, path string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+func TestIndexRedirects(t *testing.T) {
+	t.Skip("HOLE(4): / redirects to the viewer page")
+
+	rec := get(newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml"), "/")
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/specs/apis/pets.yaml" {
+		t.Errorf("got %d to %q", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestViewerPage(t *testing.T) {
+	t.Skip("HOLE(4): the viewer page embeds Stoplight Elements pointed at the raw spec")
+
+	rec := get(newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml"), "/specs/apis/pets.yaml")
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("got %d %s", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	for _, want := range []string{
+		"<title>Pets</title>",
+		`apiDescriptionUrl="/api/specs/apis/pets.yaml"`,
+		`router="hash"`,
+		`hideTryIt="true"`,
+		`src="/assets/elements/web-components.min.js"`,
+		`href="/assets/elements/styles.min.css"`,
+	} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("page does not contain %s", want)
+		}
+	}
+}
+
+func TestRawSpec(t *testing.T) {
+	t.Skip("HOLE(4): the configured spec is served as application/yaml, and no other file is")
+
+	files := fstest.MapFS{
+		"apis/pets.yaml":   {Data: []byte(pets)},
+		"apis/secret.yaml": {Data: []byte("token: hunter2\n")},
+		"broken.yaml":      {Data: []byte("openapi: [3.0\n")},
+	}
+	h := newPortal(t, files, "apis/pets.yaml")
+
+	rec := get(h, "/api/specs/apis/pets.yaml")
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "application/yaml") || rec.Body.String() != pets {
+		t.Errorf("configured spec: %d %s %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body)
+	}
+	for _, path := range []string{"/api/specs/apis/secret.yaml", "/api/specs/apis/../apis/secret.yaml", "/specs/apis/secret.yaml"} {
+		if rec := get(h, path); rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "hunter2") {
+			t.Errorf("%s: %d %q", path, rec.Code, rec.Body)
+		}
+	}
+
+	rec = get(newPortal(t, files, "broken.yaml"), "/api/specs/broken.yaml")
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "broken.yaml") {
+		t.Errorf("invalid spec: %d %q", rec.Code, rec.Body)
+	}
+}
+
+func TestSpecErrorPages(t *testing.T) {
+	t.Skip("HOLE(4): an invalid or missing spec gets an error page naming the file")
+
+	files := fstest.MapFS{
+		"broken.yaml":   {Data: []byte("openapi: [3.0\n")},
+		"swagger.yaml":  {Data: []byte("swagger: \"2.0\"\ninfo:\n  title: Pets\n  version: 1.0.0\n")},
+		"untitled.yaml": {Data: []byte("openapi: 3.1.0\ninfo:\n  version: 1.0.0\n")},
+	}
+	for path, reason := range map[string]string{"broken.yaml": "", "swagger.yaml": "Swagger 2.0", "untitled.yaml": "title"} {
+		rec := get(newPortal(t, files, path), "/specs/"+path)
+		body := rec.Body.String()
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(body, path) || !strings.Contains(body, reason) || strings.Contains(body, "<elements-api") {
+			t.Errorf("%s: %d %q", path, rec.Code, body)
+		}
+	}
+
+	rec := get(newPortal(t, files, "gone.yaml"), "/specs/gone.yaml")
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "gone.yaml") {
+		t.Errorf("missing spec: %d %q", rec.Code, rec.Body)
+	}
+}
+
+func TestElementsAssets(t *testing.T) {
+	t.Skip("HOLE(4): the portal serves the Elements assets from the binary")
+
+	h := newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml")
+	for path, ctype := range map[string]string{
+		"/assets/elements/web-components.min.js": "text/javascript",
+		"/assets/elements/styles.min.css":        "text/css",
+	} {
+		rec := get(h, path)
+		if rec.Code != http.StatusOK || rec.Body.Len() == 0 || !strings.HasPrefix(rec.Header().Get("Content-Type"), ctype) {
+			t.Errorf("%s: %d, %d bytes, %s", path, rec.Code, rec.Body.Len(), rec.Header().Get("Content-Type"))
+		}
+	}
+}

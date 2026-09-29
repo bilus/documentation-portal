@@ -2,7 +2,8 @@
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.5/.schema/devbox.schema.json",
   "packages": [
     "go@latest",
-    "gh@latest"
+    "gh@latest",
+    "gnumake@latest"
   ],
   "shell": {
     "init_hook": [
@@ -10,7 +11,7 @@
     ],
     "scripts": {
       "test": [
-        "echo \"Error: no test specified\" && exit 1"
+        "make test"
       ]
     }
   }
