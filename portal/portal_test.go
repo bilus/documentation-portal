@@ -60,13 +60,25 @@ func TestViewerPage(t *testing.T) {
 		"<title>Pets</title>",
 		`apiDescriptionUrl="/api/specs/apis/pets.yaml"`,
 		`router="hash"`,
-		`hideTryIt="true"`,
 		`src="/assets/elements/web-components.min.js"`,
 		`href="/assets/elements/styles.min.css"`,
 	} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("page does not contain %s", want)
 		}
+	}
+	if strings.Contains(rec.Body.String(), "hideTryIt") {
+		t.Error("the default viewer page hides the Try It console")
+	}
+}
+
+func TestViewerPageHidesTryIt(t *testing.T) {
+	h, err := portal.New(portal.Config{Specs: fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, SpecPath: "apis/pets.yaml", HideTryIt: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := get(h, "/specs/apis/pets.yaml").Body.String(); !strings.Contains(body, `hideTryIt="true"`) {
+		t.Errorf("the viewer page shows the Try It console: %q", body)
 	}
 }
 

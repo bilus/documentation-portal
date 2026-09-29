@@ -21,6 +21,10 @@
     > content directory name
     < content directory handle
     <Content directory>
+> portal configuration, Try It setting
+[5. Add the Try It setting to the portal configuration
+ so that the viewer page shows or hides the Try It console
+ (main.setTryIt)]
 > portal configuration
 [3. Build the portal
  or refuse a spec path outside the specs directory or missing Elements assets
@@ -33,6 +37,7 @@
 # type: specs directory name = string
 # type: spec path = string
 # type: content directory name = string
+# type: Try It setting = bool
 # type: portal configuration = portal.Config
 # type: address = string
 # type: portal = net/http.Handler

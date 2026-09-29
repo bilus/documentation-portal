@@ -10,6 +10,6 @@
 </head>
 <body>
 {{template "nav" .}}
-<elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash" hideTryIt="true" layout="sidebar"></elements-api>
+<elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash"{{if .HideTryIt}} hideTryIt="true"{{end}} layout="sidebar"></elements-api>
 </body>
 </html>

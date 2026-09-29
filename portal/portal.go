@@ -11,11 +11,13 @@ import (
 	"strings"
 )
 
-// Config says where the portal reads its content from.
+// Config says where the portal reads its content from and whether the viewer
+// page hides the Try It console.
 type Config struct {
-	Specs    fs.FS
-	SpecPath string // relative to Specs
-	Docs     fs.FS  // the content directory, or nil
+	Specs     fs.FS
+	SpecPath  string // relative to Specs
+	Docs      fs.FS  // the content directory, or nil
+	HideTryIt bool   // hides the Try It console of the viewer page
 }
 
 // New builds the portal, or refuses a spec path outside the specs directory
@@ -76,7 +78,7 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 // raw spec, the Elements assets and, with a content directory, the document
 // list, a document page or a raw file.
 func newRouter(cfg Config, assets fs.FS) http.Handler {
-	s := &site{specs: cfg.Specs, specPath: cfg.SpecPath, docs: cfg.Docs}
+	s := &site{specs: cfg.Specs, specPath: cfg.SpecPath, docs: cfg.Docs, hideTryIt: cfg.HideTryIt}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /specs/{path...}", s.viewerPage)

@@ -9,16 +9,18 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/bilus/documentation-portal/portal"
 )
 
 type config struct {
-	Addr     string
-	SpecsDir string
-	SpecPath string // relative to SpecsDir
-	DocsDir  string // empty without a content directory
+	Addr      string
+	SpecsDir  string
+	SpecPath  string // relative to SpecsDir
+	DocsDir   string // empty without a content directory
+	HideTryIt bool
 }
 
 func main() {
@@ -32,8 +34,8 @@ func main() {
 }
 
 // startup reads the configuration, opens the specs directory and the content
-// directory, and builds the portal. It returns the address to listen on and
-// the portal.
+// directory, adds the Try It setting, and builds the portal. It returns the
+// address to listen on and the portal.
 func startup(args []string, getenv func(string) string) (string, http.Handler, error) {
 	cfg, err := parseConfig(args, getenv)
 	if err != nil {
@@ -47,6 +49,7 @@ func startup(args []string, getenv func(string) string) (string, http.Handler, e
 	if err != nil {
 		return "", nil, err
 	}
+	pcfg = setTryIt(pcfg, cfg.HideTryIt)
 	h, err := portal.New(pcfg)
 	if err != nil {
 		return "", nil, err
@@ -70,6 +73,13 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	if v := getenv("DOCPORTAL_DOCS_DIR"); v != "" {
 		cfg.DocsDir = v
 	}
+	if v := getenv("DOCPORTAL_HIDE_TRY_IT"); v != "" {
+		hide, err := strconv.ParseBool(v)
+		if err != nil {
+			return config{}, fmt.Errorf("DOCPORTAL_HIDE_TRY_IT: %q is not a boolean", v)
+		}
+		cfg.HideTryIt = hide
+	}
 
 	// The flag package's message and usage go into the error, which main prints.
 	var out strings.Builder
@@ -79,6 +89,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&cfg.SpecsDir, "specs-dir", cfg.SpecsDir, "directory that holds the API specs")
 	fs.StringVar(&cfg.SpecPath, "spec-path", cfg.SpecPath, "API spec to serve, relative to -specs-dir")
 	fs.StringVar(&cfg.DocsDir, "docs-dir", cfg.DocsDir, "directory that holds the markdown files and their images")
+	fs.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	if err := fs.Parse(args); err != nil {
 		return config{}, errors.New(strings.TrimSpace(out.String()))
 	}
@@ -113,4 +124,10 @@ func openDocs(pcfg portal.Config, dir string) (portal.Config, error) {
 	}
 	pcfg.Docs = root.FS()
 	return pcfg, nil
+}
+
+// setTryIt adds the Try It setting to the portal configuration.
+func setTryIt(pcfg portal.Config, hide bool) portal.Config {
+	// HOLE(1): set pcfg.HideTryIt to hide
+	return pcfg
 }
