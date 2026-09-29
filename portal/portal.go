@@ -74,16 +74,11 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 // newRouter builds the router that sends each request to the viewer page, the
 // raw spec or the Elements assets.
 func newRouter(cfg Config, assets fs.FS) http.Handler {
-	// HOLE(4): redirect / to /specs/{spec path}; serve the viewer page at /specs/{spec path}, the raw spec at /api/specs/{spec path} and the assets under /assets/; answer an invalid spec with 422 naming the file and the reason, a missing spec or any other path with 404
+	s := &site{specs: cfg.Specs, specPath: cfg.SpecPath}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /specs/{path...}", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<elements-api apiDescriptionUrl="/api/specs/%s" router="hash" hideTryIt="true"></elements-api>`, cfg.SpecPath)
-	})
-	mux.HandleFunc("GET /api/specs/{path...}", func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := fs.ReadFile(cfg.Specs, cfg.SpecPath)
-		w.Header().Set("Content-Type", "application/yaml")
-		w.Write(raw)
-	})
+	mux.HandleFunc("GET /{$}", s.index)
+	mux.HandleFunc("GET /specs/{path...}", s.viewerPage)
+	mux.HandleFunc("GET /api/specs/{path...}", s.rawSpec)
+	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
 	return mux
 }

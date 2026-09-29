@@ -19,8 +19,6 @@ import (
 )
 
 func TestViewerRendersSampleBundles(t *testing.T) {
-	t.Skip("HOLE(4): the viewer page, the raw spec and the Elements assets are served for real")
-
 	browser := newBrowser(t)
 	for _, tc := range []struct{ file, version, description string }{
 		{"petstore-3.0.yaml", "v1.0.0", "written for OpenAPI 3.0"},

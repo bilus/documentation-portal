@@ -45,8 +45,6 @@ func TestNewServesSpec(t *testing.T) {
 }
 
 func TestIndexRedirects(t *testing.T) {
-	t.Skip("HOLE(4): / redirects to the viewer page")
-
 	rec := get(newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml"), "/")
 	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/specs/apis/pets.yaml" {
 		t.Errorf("got %d to %q", rec.Code, rec.Header().Get("Location"))
@@ -54,8 +52,6 @@ func TestIndexRedirects(t *testing.T) {
 }
 
 func TestViewerPage(t *testing.T) {
-	t.Skip("HOLE(4): the viewer page embeds Stoplight Elements pointed at the raw spec")
-
 	rec := get(newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml"), "/specs/apis/pets.yaml")
 	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("got %d %s", rec.Code, rec.Header().Get("Content-Type"))
@@ -75,8 +71,6 @@ func TestViewerPage(t *testing.T) {
 }
 
 func TestRawSpec(t *testing.T) {
-	t.Skip("HOLE(4): the configured spec is served as application/yaml, and no other file is")
-
 	files := fstest.MapFS{
 		"apis/pets.yaml":   {Data: []byte(pets)},
 		"apis/secret.yaml": {Data: []byte("token: hunter2\n")},
@@ -101,8 +95,6 @@ func TestRawSpec(t *testing.T) {
 }
 
 func TestSpecErrorPages(t *testing.T) {
-	t.Skip("HOLE(4): an invalid or missing spec gets an error page naming the file")
-
 	files := fstest.MapFS{
 		"broken.yaml":   {Data: []byte("openapi: [3.0\n")},
 		"swagger.yaml":  {Data: []byte("swagger: \"2.0\"\ninfo:\n  title: Pets\n  version: 1.0.0\n")},
@@ -123,8 +115,6 @@ func TestSpecErrorPages(t *testing.T) {
 }
 
 func TestElementsAssets(t *testing.T) {
-	t.Skip("HOLE(4): the portal serves the Elements assets from the binary")
-
 	h := newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml")
 	for path, ctype := range map[string]string{
 		"/assets/elements/web-components.min.js": "text/javascript",

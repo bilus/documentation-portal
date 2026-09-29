@@ -1,0 +1,49 @@
+package portal
+
+import (
+	"errors"
+	"strings"
+	"testing"
+	"testing/fstest"
+)
+
+func TestLoadSpec(t *testing.T) {
+	specs := fstest.MapFS{
+		"v30.yaml":      {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths: {}\n")},
+		"v31.yaml":      {Data: []byte("openapi: 3.1.0\ninfo:\n  title: Pets\n  version: 2.0.0\n")},
+		"broken.yaml":   {Data: []byte("openapi: [3.0\n")},
+		"workflow.yaml": {Data: []byte("name: ci\non: push\njobs: {}\n")},
+		"swagger.yaml":  {Data: []byte("swagger: \"2.0\"\ninfo:\n  title: Pets\n  version: 1.0.0\n")},
+		"untitled.yaml": {Data: []byte("openapi: 3.1.0\ninfo:\n  version: 1.0.0\n")},
+		// Unquoted, 3.1 is a YAML float and no OpenAPI version.
+		"float.yaml": {Data: []byte("openapi: 3.1\ninfo:\n  title: Pets\n")},
+	}
+
+	for _, path := range []string{"v30.yaml", "v31.yaml"} {
+		sp, err := (&site{specs: specs, specPath: path}).loadSpec(path)
+		if err != nil || sp.Title != "Pets" || string(sp.Raw) != string(specs[path].Data) {
+			t.Errorf("%s: %+v, %v", path, sp, err)
+		}
+	}
+
+	for path, reason := range map[string]string{
+		"broken.yaml":   "YAML",
+		"workflow.yaml": "OpenAPI",
+		"swagger.yaml":  "Swagger 2.0",
+		"untitled.yaml": "title",
+		"float.yaml":    "OpenAPI",
+	} {
+		_, err := (&site{specs: specs, specPath: path}).loadSpec(path)
+		var invalid invalidSpecError
+		if !errors.As(err, &invalid) || !strings.Contains(invalid.reason, reason) {
+			t.Errorf("%s: err = %v, want an invalid spec mentioning %s", path, err, reason)
+		}
+	}
+
+	if _, err := (&site{specs: specs, specPath: "gone.yaml"}).loadSpec("gone.yaml"); !errors.Is(err, errNoSpec) {
+		t.Errorf("missing file: err = %v", err)
+	}
+	if _, err := (&site{specs: specs, specPath: "v30.yaml"}).loadSpec("v31.yaml"); !errors.Is(err, errNoSpec) {
+		t.Errorf("a spec other than the configured one: err = %v", err)
+	}
+}
