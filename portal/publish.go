@@ -22,9 +22,6 @@ const maxCopies = 100_000
 // publishedSpec returns raw without its unpublished parts and marker keys, or
 // raw itself when the rules remove nothing.
 func publishedSpec(raw []byte) ([]byte, error) {
-	if !bytes.Contains(raw, []byte(markerKey)) {
-		return raw, nil
-	}
 	var docs []*yaml.Node
 	removed := false
 	budget := maxCopies

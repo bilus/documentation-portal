@@ -27,7 +27,7 @@ Out of scope: the script's second step, which cuts `info.version` to major, mino
 - Q3. Markers on parts that remain. Assumption: the portal removes every `x-doNotPublish` and `x-doNotPublish-<name>` key, since readers have no use for them.
 - Q4. Formatting. A spec with a removed part goes through `gopkg.in/yaml.v3` as a `yaml.Node`: its key order stays, most comments stay, and its layout may change. A comment attached to a removed part leaves with it, and so may a foot comment of the mapping that held it.
 - Q5. Where. Changed in stage 2: loading the spec applies the rules, so the viewer page's title and the raw spec both come from the published spec. The design does not change: the handlers and their helpers belong to box 3.3, as decided for #13.
-- Q6. Cost. The rules run on every request for the raw spec or the viewer page, as the reads do. On the 400 KB endpoints file of `conrad-api-docs`, a request for the raw spec takes 21 to 25 ms. Caching is out of scope.
+- Q6. Cost. The rules parse the spec on every request for the raw spec or the viewer page, a spec without markers too, since a text search misses an escaped marker key such as `"x-doNot\x50ublish"`. On the 400 KB endpoints file of `conrad-api-docs`, publishedSpec takes 13 ms with the file's marker and 6.4 ms without it, beside the 6.3 ms of the parse that loads the title; a request for the raw spec takes 21 to 25 ms. Caching is out of scope.
 - Q7. Metaphor: none, as before.
 - Q9. References. Decided at stage 2, for parity with the script: a `$ref` or a `required` entry that names a removed part stays.
 - Q10. The root. Decided at stage 2, for parity with the script: a marker on the spec's root mapping removes nothing but its own key.

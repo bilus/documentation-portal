@@ -84,6 +84,11 @@ func TestPublishedSpec(t *testing.T) {
 			gone: []string{"unpublishedField"}, present: []string{"shownField"},
 		},
 		{
+			name: "escaped marker key",
+			spec: "Pet:\n  properties:\n    unpublishedField:\n      type: string\n      \"x-doNot\\x50ublish\":\n        - main\n    shownField:\n      type: string\n",
+			gone: []string{"unpublishedField", `x-doNot\x50ublish`}, present: []string{"shownField"},
+		},
+		{
 			name: "marker list through an alias",
 			spec: "x-targets: &t\n  - main\nsecret:\n  x-doNotPublish: *t\n  value: unpublishedValue\nkept: shownValue\n",
 			gone: []string{"unpublishedValue", "secret"}, present: []string{"shownValue"},
