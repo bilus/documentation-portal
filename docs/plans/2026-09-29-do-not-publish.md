@@ -9,14 +9,14 @@ Branch: `bilus/development`, which tracks `origin/master`. Base: `b7413f3`.
 
 Restated from the issue, with the rules of `scripts/prepare_to_publish.py` in `iBiquity/conrad-api-docs`.
 
-1. The raw spec leaves out every unpublished part, so the reader's browser never receives one:
+1. The raw spec and the viewer page leave out every unpublished part, so the reader's browser never receives one:
    - a mapping whose `x-doNotPublish` list names `main`, together with its key;
-   - an object in a list whose `x-doNotPublish` list names `main`;
+   - a list element whose `x-doNotPublish` list names `main`;
    - the sibling `<name>` of a key `x-doNotPublish-<name>` whose list names `main`, a scalar or a whole list.
 2. Parts marked only for other targets remain.
 3. No `x-doNotPublish` or `x-doNotPublish-<name>` key reaches the browser.
-4. A configured spec without markers is served byte for byte as before.
-5. Tests cover each rule of requirement 1, a marker for another target and a spec without markers, following the cases of the script's own tests.
+4. A configured spec from which the rules remove nothing is served byte for byte as before, and every YAML document of the file stays.
+5. Tests cover each rule of requirement 1, a marker for another target and a spec from which the rules remove nothing, following the cases of the script's own tests.
 
 Out of scope: the script's second step, which cuts `info.version` to major, minor and patch for `main`, and any target other than `main`.
 
@@ -25,15 +25,19 @@ Out of scope: the script's second step, which cuts `info.version` to major, mino
 - Q1. Target. The script accepts `main` alone. Assumption: the portal always uses `main`, so nothing new is configured.
 - Q2. `info.version`. Assumption: out of scope, since it hides nothing. A later issue can add it.
 - Q3. Markers on parts that remain. Assumption: the portal removes every `x-doNotPublish` and `x-doNotPublish-<name>` key, since readers have no use for them.
-- Q4. Formatting. A spec with markers goes through `gopkg.in/yaml.v3` as a `yaml.Node`, so its key order and comments stay, but its layout may change. A spec without markers is served untouched, which keeps requirement 4 and the existing tests.
-- Q5. Where. Only the raw spec carries the content, since Elements renders what `/api/specs/{spec path}` returns. Assumption: the raw spec's handler applies the rules, and the viewer page stays as it is. The design does not change: the handler belongs to box 3.3, as decided for #13.
-- Q6. Cost. The rules run on every request for the raw spec, as the reads do. The endpoints file of `conrad-api-docs` is 400 KB, and the stage measures the time. Caching is out of scope.
+- Q4. Formatting. A spec with a removed part goes through `gopkg.in/yaml.v3` as a `yaml.Node`: its key order stays, most comments stay, and its layout may change. A comment attached to a removed part leaves with it, and so may a foot comment of the mapping that held it.
+- Q5. Where. Changed in stage 2: loading the spec applies the rules, so the viewer page's title and the raw spec both come from the published spec. The design does not change: the handlers and their helpers belong to box 3.3, as decided for #13.
+- Q6. Cost. The rules run on every request for the raw spec or the viewer page, as the reads do. On the 400 KB endpoints file of `conrad-api-docs`, a request for the raw spec takes 21 to 25 ms. Caching is out of scope.
 - Q7. Metaphor: none, as before.
+- Q9. References. Decided at stage 2, for parity with the script: a `$ref` or a `required` entry that names a removed part stays.
+- Q10. The root. Decided at stage 2, for parity with the script: a marker on the spec's root mapping removes nothing but its own key.
+- Q11. YAML aliases. Decided at stage 2: every alias is expanded into a copy before the rules apply, so a marker given through an alias counts and no alias points at a removed anchor; the output holds no anchors and no aliases. The expansion fails after 100,000 copied nodes, as yaml.v3 fails on excessive aliasing, so that nested aliases or an alias inside its own anchor cannot exhaust the memory or the stack. Merge keys (`<<`) stay out of scope: a marker in a merge source applies inside the source only.
+- Q12. The marker's value. Decided at stage 2: a list that holds `main`, or the scalar `main`. A mapping or any other value names no target.
 - Q8. Reviews: the design and vocabulary reviews run once, before the pull request.
 
 ## The change in brief
 
-The raw spec now leaves out its unpublished parts: the parts that an `x-doNotPublish` list marks for `main`, and the siblings that an `x-doNotPublish-<name>` key marks for it. It also drops every marker key. A configured spec without markers is served as before, byte for byte.
+The raw spec and the viewer page now leave out the unpublished parts of the configured spec: the parts that an `x-doNotPublish` value marks for `main`, and the siblings that an `x-doNotPublish-<name>` key marks for it. The raw spec also drops every marker key. A configured spec from which the rules remove nothing is served as before, byte for byte.
 
 ## Stages
 
@@ -49,3 +53,13 @@ The skeleton adds the call in the raw spec's handler, as one hole whose mock ret
 - Holes: `1 portal.publishedSpec`.
 - Acceptance: `TestPublishedSpec`, `TestRawSpecLeavesOutUnpublishedParts`.
 - Size: 120 lines.
+
+### Stage 2: the review's findings
+
+- Goal: the tests pin every rule, the viewer page uses the published spec, aliases and multi-document files work, and a spec from which nothing is removed is served byte for byte.
+- Requirement: 1 to 5.
+- Dependencies: 1.
+- Holes: none; each change inside `publishedSpec`, its helpers and `site.loadSpec` starts as a failing test.
+- Acceptance: `TestPublishedSpec`, `TestPublishedSpecKeepsBytesWhenNothingIsRemoved`, `TestPublishedSpecRejectsExcessiveAliasing`, `TestViewerPageLeavesOutUnpublishedTitle`, and each of the design review's 12 wrong fills failing at least one test.
+- Size: 100 lines.
+
