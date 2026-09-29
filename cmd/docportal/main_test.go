@@ -205,7 +205,6 @@ func TestOpenDocsKeepsReadsInside(t *testing.T) {
 }
 
 func TestStartupKeepsDocsInside(t *testing.T) {
-	t.Skip("HOLE(2): answer 404 for a symlink out of the content directory")
 	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-dir", writeEscape(t)}, noEnv)
 	if err != nil {
 		t.Fatal(err)

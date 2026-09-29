@@ -47,6 +47,7 @@ type page struct {
 	Nav     []navLink
 	Sidebar []sidebarGroup // document pages only
 	Paths   []string       // document list only
+	Body    template.HTML  // document page only
 }
 
 // navLink is one link of the navigation bar.

@@ -1,11 +1,23 @@
 package portal
 
 import (
+	"bytes"
+	"errors"
+	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path"
+	"slices"
 	"sort"
 	"strings"
+
+	"github.com/microcosm-cc/bluemonday"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
 )
 
 // docList writes the document list: a link to the document page of every
@@ -56,9 +68,83 @@ func markdownFiles(fsys fs.FS) ([]string, error) {
 // path, or a 404 error page naming the path, also without a content
 // directory.
 func (s *site) docPage(w http.ResponseWriter, r *http.Request) {
-	// HOLE(2): render it without active content, images via /raw/; else, or without s.docs, 404
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(`<h1 id="introduction">Introduction</h1>`))
+	p := r.PathValue("path")
+	src, err := s.readDoc(p)
+	if errors.Is(err, errNoDoc) {
+		render(w, http.StatusNotFound, "error.html", page{Title: "Document not found", Message: "No markdown file at " + p + ".", Nav: s.nav()})
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	body, err := renderMarkdown(src, p)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	render(w, http.StatusOK, "doc.html", page{Title: p, Body: body, Nav: s.nav(), Sidebar: s.sidebar(p)})
+}
+
+// errNoDoc means the request names no markdown file of the content directory.
+var errNoDoc = errors.New("no such document")
+
+// readDoc reads the markdown file at p, or returns errNoDoc for any path
+// missing from the document list.
+func (s *site) readDoc(p string) ([]byte, error) {
+	if s.docs == nil {
+		return nil, errNoDoc
+	}
+	paths, err := markdownFiles(s.docs)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(paths, p) {
+		return nil, errNoDoc
+	}
+	return fs.ReadFile(s.docs, p)
+}
+
+var markdown = goldmark.New(
+	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+)
+
+var sanitizer = bluemonday.UGCPolicy()
+
+// renderMarkdown renders src, the markdown file at docPath, as HTML without
+// active content, with its relative image references under /raw/.
+func renderMarkdown(src []byte, docPath string) (template.HTML, error) {
+	doc := markdown.Parser().Parse(text.NewReader(src))
+	dir := path.Dir(docPath)
+	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if img, ok := n.(*ast.Image); ok && entering {
+			img.Destination = rawImageURL(dir, img.Destination)
+		}
+		return ast.WalkContinue, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := markdown.Renderer().Render(&buf, src, doc); err != nil {
+		return "", err
+	}
+	return template.HTML(sanitizer.SanitizeBytes(buf.Bytes())), nil
+}
+
+// rawImageURL turns an image reference relative to dir into its /raw/ URL,
+// and returns any other reference unchanged.
+func rawImageURL(dir string, dest []byte) []byte {
+	u, err := url.Parse(string(dest))
+	if err != nil || u.Scheme != "" || u.Host != "" || u.Path == "" || strings.HasPrefix(u.Path, "/") {
+		return dest
+	}
+	p := path.Join(dir, u.Path)
+	if p == ".." || strings.HasPrefix(p, "../") {
+		return dest
+	}
+	return []byte((&url.URL{Path: "/raw/" + p, RawQuery: u.RawQuery, Fragment: u.Fragment}).String())
 }
 
 // rawFile writes the image file at the request's path with the image type

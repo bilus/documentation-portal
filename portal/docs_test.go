@@ -57,7 +57,6 @@ func TestDocList(t *testing.T) {
 }
 
 func TestDocPage(t *testing.T) {
-	t.Skip("HOLE(2): render a markdown file as its document page")
 	rec := get(newDocsPortal(t, sampleDocs), "/docs/guide/intro.md")
 	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("got %d %s", rec.Code, rec.Header().Get("Content-Type"))
@@ -78,7 +77,6 @@ func TestDocPage(t *testing.T) {
 }
 
 func TestDocPageDropsActiveContent(t *testing.T) {
-	t.Skip("HOLE(2): drop the active content of the markdown file")
 	rec := get(newDocsPortal(t, sampleDocs), "/docs/unsafe.md")
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(body, "Click me") {
@@ -92,7 +90,6 @@ func TestDocPageDropsActiveContent(t *testing.T) {
 }
 
 func TestDocPageReadsEachRequest(t *testing.T) {
-	t.Skip("HOLE(2): read the markdown file on every request")
 	docs := fstest.MapFS{"a.md": {Data: []byte("# First\n")}}
 	h := newDocsPortal(t, docs)
 	if body := get(h, "/docs/a.md").Body.String(); !strings.Contains(body, "First") {
@@ -115,7 +112,6 @@ func TestDocPageReadsEachRequest(t *testing.T) {
 }
 
 func TestDocsNotFound(t *testing.T) {
-	t.Skip("HOLE(2): answer 404 for a path without a markdown file")
 	h := newDocsPortal(t, sampleDocs)
 	for _, path := range []string{"missing.md", "notes.txt", "page.html", ".hidden.md", ".drafts/draft.md", "guide", "guide/"} {
 		rec := get(h, "/docs/"+path)

@@ -79,3 +79,29 @@ func TestDocListWithoutDocs(t *testing.T) {
 		t.Errorf("got %d, want 404", rec.Code)
 	}
 }
+
+func TestDocPageWithoutDocs(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/docs/a.md", nil)
+	req.SetPathValue("path", "a.md")
+	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).docPage(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404", rec.Code)
+	}
+}
+
+func TestRawImageURL(t *testing.T) {
+	for dest, want := range map[string]string{
+		"diagram.png":               "/raw/guide/diagram.png",
+		"../logo.svg":               "/raw/logo.svg",
+		"img/a b.png":               "/raw/guide/img/a%20b.png",
+		"../../outside.png":         "../../outside.png",
+		"/static/logo.png":          "/static/logo.png",
+		"https://example.com/a.png": "https://example.com/a.png",
+		"data:image/png;base64,AA":  "data:image/png;base64,AA",
+	} {
+		if got := string(rawImageURL("guide", []byte(dest))); got != want {
+			t.Errorf("%s: got %s, want %s", dest, got, want)
+		}
+	}
+}
