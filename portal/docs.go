@@ -1,14 +1,55 @@
 package portal
 
-import "net/http"
+import (
+	"io/fs"
+	"net/http"
+	"path"
+	"sort"
+	"strings"
+)
 
 // docList writes the document list: a link to the document page of every
 // markdown file in the content directory, sorted by path, or a 404 without a
 // content directory.
 func (s *site) docList(w http.ResponseWriter, r *http.Request) {
-	// HOLE(1): list the markdown files that are not hidden, by path; 404 without s.docs
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(`<a href="/docs/guide/intro.md">guide/intro.md</a>`))
+	if s.docs == nil {
+		http.NotFound(w, r)
+		return
+	}
+	paths, err := markdownFiles(s.docs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	render(w, http.StatusOK, "list.html", page{Title: "Documents", Paths: paths, Nav: s.nav(), Sidebar: s.sidebar("")})
+}
+
+// markdownFiles returns the paths of the markdown files of fsys that are not
+// hidden, in byte order.
+func markdownFiles(fsys fs.FS) ([]string, error) {
+	var paths []string
+	err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if p != "." && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if ext := path.Ext(p); d.IsDir() || ext != ".md" && ext != ".markdown" {
+			return nil
+		}
+		// Stat follows a symlink, and one out of the content directory fails.
+		if info, err := fs.Stat(fsys, p); err != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		paths = append(paths, p)
+		return nil
+	})
+	sort.Strings(paths)
+	return paths, err
 }
 
 // docPage writes the document page of the markdown file at the request's

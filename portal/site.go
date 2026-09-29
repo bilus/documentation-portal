@@ -46,6 +46,7 @@ type page struct {
 	Message string // error page only
 	Nav     []navLink
 	Sidebar []sidebarGroup // document pages only
+	Paths   []string       // document list only
 }
 
 // navLink is one link of the navigation bar.

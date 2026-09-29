@@ -35,7 +35,7 @@ Out of scope: markdown from a source repository (#11), branches (#6), release no
 - Q7. Design. Request handling stays inside box 3.3, as decided for #2: the top diagram shows startup, and the handlers with their helpers belong to the box of `portal.newRouter`. Most of this feature runs per request, so a diagram of the request flow may help the reviewer. Assumption: as decided for #2.
 - Q8. Metaphor. The user dropped the metaphor during #2. Assumption: this plan has none.
 - Q10. Sidebar markup. The document sidebar copies the markup and the `sl-` classes of the Elements 9.0.25 sidebar, which are internal to Elements, so an upgrade of Elements can change them. `TestDocSidebarMatchesElements` compares the computed styles of both sidebars, so an upgrade that breaks the match fails the test. Assumption: the document sidebar's title is "Documents", and it leaves out Elements' "powered by Stoplight" link.
-- Q9. Delivery. Each stage lands as one commit on `bilus/development` after its approval, and `devbox run -- gps rr` opens its pull request. Commit messages stay under 15 words, which overrides the skill's two-sentence body. Handoffs go into the chat. Until stage 4 lands, master carries the open holes: `-docs-dir` works there but serves the mock pages.
+- Q9. Delivery, changed by the user after the plan's approval: one pull request with the whole issue. Stages are still reviewed at their boundaries, with handoffs in the chat. After the last approval, `bilus/development` keeps one commit per stage, and `devbox run -- gps rr` opens one pull request for the series. Commit messages stay under 15 words, which overrides the skill's two-sentence body.
 
 ## The change in brief
 

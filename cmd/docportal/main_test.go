@@ -158,7 +158,6 @@ func TestParseConfigReadsDocsDir(t *testing.T) {
 }
 
 func TestStartupRejectsMissingDocsDir(t *testing.T) {
-	t.Skip("HOLE(1): refuse a content directory that cannot be opened, naming it")
 	_, _, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-dir", "testdata/no-such-docs"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "testdata/no-such-docs") {
 		t.Errorf("err = %v, want it to name the directory", err)
@@ -186,7 +185,6 @@ func writeEscape(t *testing.T) string {
 }
 
 func TestOpenDocsKeepsReadsInside(t *testing.T) {
-	t.Skip("HOLE(1): read the content directory through os.OpenRoot")
 	cfg, err := openDocs(portal.Config{SpecPath: "api.yaml"}, writeEscape(t))
 	if err != nil {
 		t.Fatal(err)

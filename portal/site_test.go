@@ -2,6 +2,9 @@ package portal
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -45,5 +48,34 @@ func TestLoadSpec(t *testing.T) {
 	}
 	if _, err := (&site{specs: specs, specPath: "v30.yaml"}).loadSpec("v31.yaml"); !errors.Is(err, errNoSpec) {
 		t.Errorf("a spec other than the configured one: err = %v", err)
+	}
+}
+
+func TestMarkdownFiles(t *testing.T) {
+	docs := fstest.MapFS{
+		"a.md":       {},
+		"a/b.md":     {},
+		"a-b.md":     {},
+		"b.markdown": {},
+		"c.txt":      {},
+		".x.md":      {},
+		".d/e.md":    {},
+		"f/.g.md":    {},
+	}
+	got, err := markdownFiles(docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Byte order puts "-" and "." before "/", unlike a directory walk.
+	if want := []string{"a-b.md", "a.md", "a/b.md", "b.markdown"}; !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestDocListWithoutDocs(t *testing.T) {
+	rec := httptest.NewRecorder()
+	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).docList(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404", rec.Code)
 	}
 }

@@ -33,7 +33,6 @@ func TestNoDocsWithoutContentDir(t *testing.T) {
 }
 
 func TestDocList(t *testing.T) {
-	t.Skip("HOLE(1): list the markdown files of the content directory")
 	rec := get(newDocsPortal(t, sampleDocs), "/docs/")
 	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("got %d %s", rec.Code, rec.Header().Get("Content-Type"))

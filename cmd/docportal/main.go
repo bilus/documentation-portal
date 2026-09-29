@@ -103,9 +103,14 @@ func openSpecs(dir, specPath string) (portal.Config, error) {
 // portal configuration. Without a content directory name it returns pcfg
 // unchanged.
 func openDocs(pcfg portal.Config, dir string) (portal.Config, error) {
-	// HOLE(1): open dir with os.OpenRoot, naming it in the error, as pcfg.Docs
-	if dir != "" {
-		pcfg.Docs = os.DirFS(dir)
+	if dir == "" {
+		return pcfg, nil
 	}
+	// The root stays open for as long as docportal runs.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return portal.Config{}, fmt.Errorf("open content directory: %w", err)
+	}
+	pcfg.Docs = root.FS()
 	return pcfg, nil
 }
