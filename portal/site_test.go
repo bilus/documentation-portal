@@ -2,6 +2,10 @@ package portal
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -45,5 +49,87 @@ func TestLoadSpec(t *testing.T) {
 	}
 	if _, err := (&site{specs: specs, specPath: "v30.yaml"}).loadSpec("v31.yaml"); !errors.Is(err, errNoSpec) {
 		t.Errorf("a spec other than the configured one: err = %v", err)
+	}
+}
+
+func TestMarkdownFiles(t *testing.T) {
+	docs := fstest.MapFS{
+		"a.md":       {},
+		"a/b.md":     {},
+		"a-b.md":     {},
+		"b.markdown": {},
+		"c.txt":      {},
+		".x.md":      {},
+		".d/e.md":    {},
+		"f/.g.md":    {},
+	}
+	got, err := markdownFiles(docs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Byte order puts "-" and "." before "/", unlike a directory walk.
+	if want := []string{"a-b.md", "a.md", "a/b.md", "b.markdown"}; !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestDocListWithoutDocs(t *testing.T) {
+	rec := httptest.NewRecorder()
+	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).docList(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404", rec.Code)
+	}
+}
+
+func TestDocPageWithoutDocs(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/docs/a.md", nil)
+	req.SetPathValue("path", "a.md")
+	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).docPage(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404", rec.Code)
+	}
+}
+
+func TestRawImageURL(t *testing.T) {
+	for dest, want := range map[string]string{
+		"diagram.png":               "/raw/guide/diagram.png",
+		"../logo.svg":               "/raw/logo.svg",
+		"img/a b.png":               "/raw/guide/img/a%20b.png",
+		"../../outside.png":         "../../outside.png",
+		"/static/logo.png":          "/static/logo.png",
+		"https://example.com/a.png": "https://example.com/a.png",
+		"data:image/png;base64,AA":  "data:image/png;base64,AA",
+	} {
+		if got := string(rawImageURL("guide", []byte(dest))); got != want {
+			t.Errorf("%s: got %s, want %s", dest, got, want)
+		}
+	}
+}
+
+func TestRawFileWithoutDocs(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/raw/a.png", nil)
+	req.SetPathValue("path", "a.png")
+	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).rawFile(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("got %d, want 404", rec.Code)
+	}
+}
+
+func TestSidebarGroups(t *testing.T) {
+	docs := fstest.MapFS{"b.md": {}, "a/x.md": {}, "a/sub/y.md": {}, "a/z.md": {}, "c/w.md": {}, ".h/v.md": {}}
+	got := (&site{docs: docs}).sidebar("a/z.md")
+	want := []sidebarGroup{
+		{Links: []sidebarLink{{Title: "b.md", URL: "/docs/b.md"}}},
+		{Title: "a", Links: []sidebarLink{{Title: "x.md", URL: "/docs/a/x.md"}, {Title: "z.md", URL: "/docs/a/z.md", Current: true}}},
+		{Title: "a/sub", Links: []sidebarLink{{Title: "y.md", URL: "/docs/a/sub/y.md"}}},
+		{Title: "c", Links: []sidebarLink{{Title: "w.md", URL: "/docs/c/w.md"}}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+	if got := (&site{}).sidebar(""); got != nil {
+		t.Errorf("without a content directory: %+v", got)
 	}
 }

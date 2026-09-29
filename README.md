@@ -1,19 +1,25 @@
 # documentation-portal
 
 `docportal` serves the documentation of one OpenAPI 3.0 or 3.1 spec, rendered
-with [Stoplight Elements](https://github.com/stoplightio/elements).
+with [Stoplight Elements](https://github.com/stoplightio/elements), and the
+markdown files of an optional content directory.
 
 Everything runs through [devbox](https://www.jetify.com/devbox). The first
 `make` target that needs them downloads the Elements assets, checked against a
 pinned SHA-256, into `portal/elements/`, where the binary embeds them.
 
-    devbox run make run ARGS='-specs-dir testdata/specs -spec-path petstore-3.1.yaml'
+    devbox run make run ARGS='-specs-dir testdata/specs -spec-path petstore-3.1.yaml -docs-dir testdata/docs'
 
 Then open http://localhost:8080. Each flag falls back to an environment
 variable: `-addr` to `DOCPORTAL_ADDR` (default `:8080`), `-specs-dir` to
-`DOCPORTAL_SPECS_DIR` (default `.`) and `-spec-path` to `DOCPORTAL_SPEC_PATH`
-(default `openapi.yaml`). The portal reads nothing outside the specs directory
-and serves no file of it except the spec.
+`DOCPORTAL_SPECS_DIR` (default `.`), `-spec-path` to `DOCPORTAL_SPEC_PATH`
+(default `openapi.yaml`) and `-docs-dir` to `DOCPORTAL_DOCS_DIR` (default none).
+
+With a content directory, `/docs/` lists its markdown files, `/docs/{path}`
+renders one as HTML without scripts, and `/raw/{path}` serves its PNG, JPEG,
+GIF, WebP and SVG images. The portal reads nothing outside the two
+directories, and under `/specs/` and `/api/specs/` it serves no file of the
+specs directory except the spec.
 
 ## Tests
 

@@ -18,6 +18,7 @@ type config struct {
 	Addr     string
 	SpecsDir string
 	SpecPath string // relative to SpecsDir
+	DocsDir  string // empty without a content directory
 }
 
 func main() {
@@ -30,14 +31,19 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, h))
 }
 
-// startup reads the configuration, opens the specs directory and builds the
-// portal. It returns the address to listen on and the portal.
+// startup reads the configuration, opens the specs directory and the content
+// directory, and builds the portal. It returns the address to listen on and
+// the portal.
 func startup(args []string, getenv func(string) string) (string, http.Handler, error) {
 	cfg, err := parseConfig(args, getenv)
 	if err != nil {
 		return "", nil, err
 	}
 	pcfg, err := openSpecs(cfg.SpecsDir, cfg.SpecPath)
+	if err != nil {
+		return "", nil, err
+	}
+	pcfg, err = openDocs(pcfg, cfg.DocsDir)
 	if err != nil {
 		return "", nil, err
 	}
@@ -61,6 +67,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	if v := getenv("DOCPORTAL_SPEC_PATH"); v != "" {
 		cfg.SpecPath = v
 	}
+	if v := getenv("DOCPORTAL_DOCS_DIR"); v != "" {
+		cfg.DocsDir = v
+	}
 
 	// The flag package's message and usage go into the error, which main prints.
 	var out strings.Builder
@@ -69,6 +78,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "address to listen on")
 	fs.StringVar(&cfg.SpecsDir, "specs-dir", cfg.SpecsDir, "directory that holds the API specs")
 	fs.StringVar(&cfg.SpecPath, "spec-path", cfg.SpecPath, "API spec to serve, relative to -specs-dir")
+	fs.StringVar(&cfg.DocsDir, "docs-dir", cfg.DocsDir, "directory that holds the markdown files and their images")
 	if err := fs.Parse(args); err != nil {
 		return config{}, errors.New(strings.TrimSpace(out.String()))
 	}
@@ -87,4 +97,20 @@ func openSpecs(dir, specPath string) (portal.Config, error) {
 		return portal.Config{}, fmt.Errorf("open specs directory: %w", err)
 	}
 	return portal.Config{Specs: root.FS(), SpecPath: specPath}, nil
+}
+
+// openDocs opens the named content directory, if any, and adds it to the
+// portal configuration. Without a content directory name it returns pcfg
+// unchanged.
+func openDocs(pcfg portal.Config, dir string) (portal.Config, error) {
+	if dir == "" {
+		return pcfg, nil
+	}
+	// The root stays open for as long as docportal runs.
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return portal.Config{}, fmt.Errorf("open content directory: %w", err)
+	}
+	pcfg.Docs = root.FS()
+	return pcfg, nil
 }

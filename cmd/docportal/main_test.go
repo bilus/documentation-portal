@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bilus/documentation-portal/portal"
 )
 
 func noEnv(string) string { return "" }
@@ -126,5 +128,91 @@ func TestStartupRejectsSpecPathOutsideDir(t *testing.T) {
 	_, _, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "../specs/petstore-3.0.yaml"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "../specs/petstore-3.0.yaml") {
 		t.Errorf("err = %v, want it to name the spec path", err)
+	}
+}
+
+func TestStartupServesDocs(t *testing.T) {
+	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-dir", "../../testdata/docs"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	list := get(h, "/docs/")
+	if list.Code != http.StatusOK || !strings.HasPrefix(list.Header().Get("Content-Type"), "text/html") || !strings.Contains(list.Body.String(), `href="/docs/guide/intro.md"`) {
+		t.Errorf("document list: %d %s %q", list.Code, list.Header().Get("Content-Type"), list.Body)
+	}
+	page := get(h, "/docs/guide/intro.md")
+	if page.Code != http.StatusOK || !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") || !strings.Contains(page.Body.String(), "Introduction") {
+		t.Errorf("document page: %d %s %q", page.Code, page.Header().Get("Content-Type"), page.Body)
+	}
+}
+
+func TestParseConfigReadsDocsDir(t *testing.T) {
+	env := func(k string) string { return map[string]string{"DOCPORTAL_DOCS_DIR": "/srv/docs"}[k] }
+	if cfg, err := parseConfig(nil, env); err != nil || cfg.DocsDir != "/srv/docs" {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig([]string{"-docs-dir", "docs"}, env); err != nil || cfg.DocsDir != "docs" {
+		t.Errorf("the flag over the environment: %+v, %v", cfg, err)
+	}
+}
+
+func TestStartupRejectsMissingDocsDir(t *testing.T) {
+	_, _, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-dir", "testdata/no-such-docs"}, noEnv)
+	if err == nil || !strings.Contains(err.Error(), "testdata/no-such-docs") {
+		t.Errorf("err = %v, want it to name the directory", err)
+	}
+}
+
+// writeEscape writes dir/secret.md, dir/docs/a.md and dir/docs/escape.md, a
+// symlink to the secret, and returns dir/docs.
+func writeEscape(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	docs := filepath.Join(dir, "docs")
+	if err := os.Mkdir(docs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{"secret.md": "# hunter2\n", "docs/a.md": "# A\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("../secret.md", filepath.Join(docs, "escape.md")); err != nil {
+		t.Fatal(err)
+	}
+	return docs
+}
+
+func TestOpenDocsKeepsReadsInside(t *testing.T) {
+	cfg, err := openDocs(portal.Config{SpecPath: "api.yaml"}, writeEscape(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SpecPath != "api.yaml" {
+		t.Errorf("SpecPath = %q", cfg.SpecPath)
+	}
+	if _, err := fs.ReadFile(cfg.Docs, "a.md"); err != nil {
+		t.Errorf("a.md: %v", err)
+	}
+	if b, err := fs.ReadFile(cfg.Docs, "escape.md"); err == nil {
+		t.Errorf("a symlink out of the directory was followed: %q", b)
+	}
+
+	if cfg, err := openDocs(portal.Config{SpecPath: "api.yaml"}, ""); err != nil || cfg.Docs != nil {
+		t.Errorf("without a content directory name: %+v, %v", cfg, err)
+	}
+}
+
+func TestStartupKeepsDocsInside(t *testing.T) {
+	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-dir", writeEscape(t)}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(h, "/docs/escape.md"); rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "hunter2") {
+		t.Errorf("escape.md: %d %q", rec.Code, rec.Body)
+	}
+	if list := get(h, "/docs/").Body.String(); strings.Contains(list, "escape.md") || !strings.Contains(list, `href="/docs/a.md"`) {
+		t.Errorf("document list: %q", list)
 	}
 }

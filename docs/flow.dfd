@@ -7,13 +7,20 @@
 [1. Read the configuration
  from the flags and the environment
  (main.parseConfig)]
-> directory name, spec path
+> specs directory name, spec path
 [2. Open the specs directory and pair it with the spec path
  so that the portal cannot read outside the directory
  (main.openSpecs)]
-    > directory name
-    < directory handle
+    > specs directory name
+    < specs directory handle
     <Specs directory>
+> portal configuration, content directory name
+[4. Open the named content directory, if any, and add it to the portal configuration
+ so that the portal cannot read outside the content directory
+ (main.openDocs)]
+    > content directory name
+    < content directory handle
+    <Content directory>
 > portal configuration
 [3. Build the portal
  or refuse a spec path outside the specs directory or missing Elements assets
@@ -23,8 +30,9 @@
 
 # type: arguments = []string
 # type: environment = func(string) string
-# type: directory name = string
+# type: specs directory name = string
 # type: spec path = string
+# type: content directory name = string
 # type: portal configuration = portal.Config
 # type: address = string
 # type: portal = net/http.Handler

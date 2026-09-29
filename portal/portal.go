@@ -15,6 +15,7 @@ import (
 type Config struct {
 	Specs    fs.FS
 	SpecPath string // relative to Specs
+	Docs     fs.FS  // the content directory, or nil
 }
 
 // New builds the portal, or refuses a spec path outside the specs directory
@@ -72,13 +73,19 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 }
 
 // newRouter builds the router that sends each request to the viewer page, the
-// raw spec or the Elements assets.
+// raw spec, the Elements assets and, with a content directory, the document
+// list, a document page or a raw file.
 func newRouter(cfg Config, assets fs.FS) http.Handler {
-	s := &site{specs: cfg.Specs, specPath: cfg.SpecPath}
+	s := &site{specs: cfg.Specs, specPath: cfg.SpecPath, docs: cfg.Docs}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /specs/{path...}", s.viewerPage)
 	mux.HandleFunc("GET /api/specs/{path...}", s.rawSpec)
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
+	if cfg.Docs != nil {
+		mux.HandleFunc("GET /docs/{$}", s.docList)
+		mux.HandleFunc("GET /docs/{path...}", s.docPage)
+		mux.HandleFunc("GET /raw/{path...}", s.rawFile)
+	}
 	return mux
 }

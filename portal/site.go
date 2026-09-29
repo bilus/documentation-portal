@@ -13,10 +13,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// site answers the requests for the one configured spec.
+// site answers the requests for the configured spec and the content directory.
 type site struct {
 	specs    fs.FS
 	specPath string
+	docs     fs.FS // nil without a content directory
 }
 
 func (s *site) index(w http.ResponseWriter, r *http.Request) {
@@ -29,13 +30,13 @@ func (s *site) viewerPage(w http.ResponseWriter, r *http.Request) {
 	var invalid invalidSpecError
 	switch {
 	case errors.Is(err, errNoSpec):
-		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec at " + path + "."})
+		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec at " + path + ".", Nav: s.nav()})
 	case errors.As(err, &invalid):
-		render(w, http.StatusUnprocessableEntity, "error.html", page{Title: "Cannot show " + path, Message: invalid.reason})
+		render(w, http.StatusUnprocessableEntity, "error.html", page{Title: "Cannot show " + path, Message: invalid.reason, Nav: s.nav()})
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
-		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: (&url.URL{Path: "/api/specs/" + path}).String()})
+		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: (&url.URL{Path: "/api/specs/" + path}).String(), Nav: s.nav()})
 	}
 }
 
@@ -43,6 +44,26 @@ type page struct {
 	Title   string
 	SpecURL string // viewer page only
 	Message string // error page only
+	Nav     []navLink
+	Sidebar []sidebarGroup // document pages only
+	Paths   []string       // document list only
+	Body    template.HTML  // document page only
+}
+
+// navLink is one link of the navigation bar.
+type navLink struct {
+	Label string
+	URL   string
+}
+
+// nav returns the links of the navigation bar: the viewer page, and the
+// document list when a content directory is configured.
+func (s *site) nav() []navLink {
+	links := []navLink{{Label: "API", URL: (&url.URL{Path: "/specs/" + s.specPath}).String()}}
+	if s.docs != nil {
+		links = append(links, navLink{Label: "Documents", URL: "/docs/"})
+	}
+	return links
 }
 
 //go:embed templates/*.html
