@@ -9,7 +9,6 @@ import (
 )
 
 func TestPublishedSpec(t *testing.T) {
-	t.Skip("HOLE(1): drop the parts that x-doNotPublish marks for main")
 	for _, tc := range []struct {
 		name, spec    string
 		gone, present []string
