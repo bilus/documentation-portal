@@ -13,7 +13,13 @@ pinned SHA-256, into `portal/elements/`, where the binary embeds them.
 Then open http://localhost:8080. Each flag falls back to an environment
 variable: `-addr` to `DOCPORTAL_ADDR` (default `:8080`), `-specs-dir` to
 `DOCPORTAL_SPECS_DIR` (default `.`), `-spec-path` to `DOCPORTAL_SPEC_PATH`
-(default `openapi.yaml`) and `-docs-dir` to `DOCPORTAL_DOCS_DIR` (default none).
+(default `openapi.yaml`), `-docs-dir` to `DOCPORTAL_DOCS_DIR` (default none) and
+`-hide-try-it` to `DOCPORTAL_HIDE_TRY_IT` (default `false`).
+
+The viewer page shows the Try It console of Stoplight Elements, which sends
+requests from the reader's browser to the servers of the spec, so those
+servers must allow the portal's origin through CORS. `-hide-try-it` hides the
+console.
 
 With a content directory, `/docs/` lists its markdown files, `/docs/{path}`
 renders one as HTML without scripts, and `/raw/{path}` serves its PNG, JPEG,

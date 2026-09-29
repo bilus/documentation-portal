@@ -216,3 +216,41 @@ func TestStartupKeepsDocsInside(t *testing.T) {
 		t.Errorf("document list: %q", list)
 	}
 }
+
+func TestParseConfigReadsHideTryIt(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string { return map[string]string{"DOCPORTAL_HIDE_TRY_IT": v}[k] }
+	}
+	if cfg, err := parseConfig(nil, env("true")); err != nil || !cfg.HideTryIt {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig([]string{"-hide-try-it"}, noEnv); err != nil || !cfg.HideTryIt {
+		t.Errorf("from the flag: %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig([]string{"-hide-try-it=false"}, env("1")); err != nil || cfg.HideTryIt {
+		t.Errorf("the flag over the environment: %+v, %v", cfg, err)
+	}
+	if _, err := parseConfig(nil, env("maybe")); err == nil || !strings.Contains(err.Error(), "DOCPORTAL_HIDE_TRY_IT") {
+		t.Errorf("err = %v, want it to name DOCPORTAL_HIDE_TRY_IT", err)
+	}
+}
+
+func TestStartupShowsTryIt(t *testing.T) {
+	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := get(h, "/specs/petstore-3.0.yaml").Body.String(); strings.Contains(body, "hideTryIt") {
+		t.Errorf("the viewer page hides the Try It console by default: %q", body)
+	}
+}
+
+func TestStartupHidesTryIt(t *testing.T) {
+	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-hide-try-it"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := get(h, "/specs/petstore-3.0.yaml").Body.String(); !strings.Contains(body, `hideTryIt="true"`) {
+		t.Errorf("the viewer page shows the Try It console: %q", body)
+	}
+}

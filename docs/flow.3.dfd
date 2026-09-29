@@ -1,7 +1,7 @@
 # Process 3, the body of portal.New: its steps in the order it calls them.
 # By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 3. docs/flow.3.dfd -o flow.3.svg
 
-{4 Open the content directory}
+{5 Add the Try It setting}
 > portal configuration
 [3.1. Check the portal configuration
  so that the spec path stays inside the specs directory

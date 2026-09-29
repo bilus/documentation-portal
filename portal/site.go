@@ -15,9 +15,10 @@ import (
 
 // site answers the requests for the configured spec and the content directory.
 type site struct {
-	specs    fs.FS
-	specPath string
-	docs     fs.FS // nil without a content directory
+	specs     fs.FS
+	specPath  string
+	docs      fs.FS // nil without a content directory
+	hideTryIt bool
 }
 
 func (s *site) index(w http.ResponseWriter, r *http.Request) {
@@ -36,18 +37,19 @@ func (s *site) viewerPage(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
-		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: (&url.URL{Path: "/api/specs/" + path}).String(), Nav: s.nav()})
+		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: (&url.URL{Path: "/api/specs/" + path}).String(), HideTryIt: s.hideTryIt, Nav: s.nav()})
 	}
 }
 
 type page struct {
-	Title   string
-	SpecURL string // viewer page only
-	Message string // error page only
-	Nav     []navLink
-	Sidebar []sidebarGroup // document pages only
-	Paths   []string       // document list only
-	Body    template.HTML  // document page only
+	Title     string
+	SpecURL   string // viewer page only
+	HideTryIt bool   // viewer page only
+	Message   string // error page only
+	Nav       []navLink
+	Sidebar   []sidebarGroup // document pages only
+	Paths     []string       // document list only
+	Body      template.HTML  // document page only
 }
 
 // navLink is one link of the navigation bar.

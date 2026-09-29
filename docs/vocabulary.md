@@ -11,10 +11,10 @@ Terms of docportal, one per line.
 - operator: the person who starts docportal and gives it its configuration.
 - reader: the person who reads the documentation in a browser.
 - arguments: docportal's command-line arguments, without the program name: the flags and nothing else.
-- flags: -addr, -specs-dir, -spec-path and -docs-dir. Any other flag is rejected.
-- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_SPECS_DIR, DOCPORTAL_SPEC_PATH and DOCPORTAL_DOCS_DIR. Tests pass their own lookup.
-- configuration: the address, the specs directory name, the spec path and the content directory name, each taken from its flag, else from the environment, else from its default: :8080, ., openapi.yaml and empty.
-- startup: reading the configuration, opening the specs directory and the named content directory, if any, and building the portal, in main.startup. A failure there stops docportal before it listens.
+- flags: -addr, -specs-dir, -spec-path, -docs-dir and -hide-try-it. Any other flag is rejected.
+- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_SPECS_DIR, DOCPORTAL_SPEC_PATH, DOCPORTAL_DOCS_DIR and DOCPORTAL_HIDE_TRY_IT. Tests pass their own lookup.
+- configuration: the address, the specs directory name, the spec path, the content directory name and the Try It setting, each taken from its flag, else from the environment, else from its default: :8080, ., openapi.yaml, empty and false.
+- startup: reading the configuration, opening the specs directory and the named content directory, if any, adding the Try It setting to the portal configuration, and building the portal, in main.startup. A failure there stops docportal before it listens.
 - address: the network address docportal listens on, such as :8080.
 - specs directory: the local directory that holds the API specs.
 - specs directory name: the specs directory's path on the local file system, as the operator gives it.
@@ -32,11 +32,13 @@ Terms of docportal, one per line.
 - hidden: of a file or directory of the content directory, with a name that starts with a dot. The portal lists and serves nothing hidden and nothing inside a hidden directory.
 - path: in /docs/{path} and /raw/{path}, a slash-separated path relative to the content directory.
 - sample documents: testdata/docs, the fixture directory of the markdown file and raw file tests.
-- portal configuration: the specs directory handle, the spec path and the content directory handle, as portal.New takes them. The content directory handle is nil without a content directory and nil before startup opens the content directory. Tests pass any fs.FS in a handle's place.
+- portal configuration: the specs directory handle, the spec path, the content directory handle and the Try It setting, as portal.New takes them. The content directory handle is nil without a content directory and nil before startup opens the content directory. Tests pass any fs.FS in a handle's place.
 - portal: the HTTP handler that redirects / to the viewer page and serves the viewer page, the raw spec and the Elements assets, and with a content directory the document list, the document pages and the raw files.
 - router: the http.ServeMux that newRouter builds and portal.New returns as the portal. It sends each request to its handler by method and path.
 - HTTP server: net/http's server, which listens on the address and calls the portal for each request.
-- viewer page: the HTML page at /specs/{spec path} that embeds Stoplight Elements pointed at the raw spec.
+- viewer page: the HTML page at /specs/{spec path} that embeds Stoplight Elements pointed at the raw spec, with the Try It console unless the Try It setting hides it.
+- Try It console: the part of the viewer page where Stoplight Elements sends requests from the reader's browser to the servers of the API spec.
+- Try It setting: whether the viewer page hides the Try It console. It is true with -hide-try-it or a true DOCPORTAL_HIDE_TRY_IT, and false by default.
 - document list: the HTML page at /docs/ that links the document page of every markdown file that is not hidden, each titled with its path, in byte order of the paths.
 - document page: the HTML page at /docs/{path} that shows one markdown file rendered as HTML without active content.
 - document sidebar: the column at the left of the document list and the document pages that links the document page of every markdown file that is not hidden, grouped by directory, with the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
