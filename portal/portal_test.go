@@ -120,6 +120,14 @@ func TestRawSpecLeavesOutUnpublishedParts(t *testing.T) {
 	}
 }
 
+func TestViewerPageLeavesOutUnpublishedTitle(t *testing.T) {
+	spec := "openapi: 3.0.3\ninfo:\n  title: Internal Billing API\n  x-doNotPublish-title:\n    - main\n  version: 1.0.0\npaths: {}\n"
+	body := get(newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(spec)}}, "apis/pets.yaml"), "/specs/apis/pets.yaml").Body.String()
+	if strings.Contains(body, "Internal Billing API") {
+		t.Errorf("the viewer page shows the unpublished title: %q", body)
+	}
+}
+
 func TestSpecErrorPages(t *testing.T) {
 	files := fstest.MapFS{
 		"broken.yaml":   {Data: []byte("openapi: [3.0\n")},

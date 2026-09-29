@@ -97,20 +97,15 @@ func (s *site) rawSpec(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
-		body, err := publishedSpec(sp.Raw)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 		w.Header().Set("Content-Type", "application/yaml")
-		w.Write(body)
+		w.Write(sp.Raw)
 	}
 }
 
 // spec is an API spec checked for the viewer.
 type spec struct {
 	Title string
-	Raw   []byte
+	Raw   []byte // without its unpublished parts and marker keys
 }
 
 // errNoSpec means the request names no spec: a missing file, or any path
@@ -121,8 +116,9 @@ type invalidSpecError struct{ reason string }
 
 func (e invalidSpecError) Error() string { return e.reason }
 
-// loadSpec reads the configured spec, if path names it, and checks that it is
-// an OpenAPI 3.0 or 3.1 document with a title.
+// loadSpec reads the configured spec, if path names it, leaves out its
+// unpublished parts, and checks that it is an OpenAPI 3.0 or 3.1 document with
+// a title.
 func (s *site) loadSpec(path string) (*spec, error) {
 	if path != s.specPath {
 		return nil, errNoSpec
@@ -134,6 +130,10 @@ func (s *site) loadSpec(path string) (*spec, error) {
 	if err != nil {
 		return nil, err
 	}
+	published, err := publishedSpec(raw)
+	if err != nil {
+		return nil, invalidSpecError{"not valid YAML: " + err.Error()}
+	}
 
 	var doc struct {
 		OpenAPI string `yaml:"openapi"`
@@ -142,7 +142,7 @@ func (s *site) loadSpec(path string) (*spec, error) {
 			Title string `yaml:"title"`
 		} `yaml:"info"`
 	}
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
+	if err := yaml.Unmarshal(published, &doc); err != nil {
 		return nil, invalidSpecError{"not valid YAML: " + err.Error()}
 	}
 	switch {
@@ -153,5 +153,5 @@ func (s *site) loadSpec(path string) (*spec, error) {
 	case doc.Info.Title == "":
 		return nil, invalidSpecError{"info.title is missing"}
 	}
-	return &spec{Title: doc.Info.Title, Raw: raw}, nil
+	return &spec{Title: doc.Info.Title, Raw: published}, nil
 }
