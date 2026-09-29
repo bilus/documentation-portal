@@ -1,9 +1,11 @@
 package main
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -47,8 +49,6 @@ func TestStartupServesSpec(t *testing.T) {
 }
 
 func TestParseConfig(t *testing.T) {
-	t.Skip("HOLE(1): flags win over the environment, which wins over the defaults")
-
 	cfg, err := parseConfig(nil, noEnv)
 	if err != nil {
 		t.Fatal(err)
@@ -71,12 +71,54 @@ func TestParseConfig(t *testing.T) {
 	}
 }
 
-func TestStartupRejectsMissingSpecsDir(t *testing.T) {
-	t.Skip("HOLE(1): startup names a specs directory it cannot open")
+func TestParseConfigRejectsUnknownFlag(t *testing.T) {
+	// -spec was the flag's name before it became -spec-path.
+	if _, err := parseConfig([]string{"-spec", "api.yaml"}, noEnv); err == nil || !strings.Contains(err.Error(), "-spec") {
+		t.Errorf("err = %v, want an error about -spec", err)
+	}
+}
 
+func TestParseConfigHelpListsFlags(t *testing.T) {
+	_, err := parseConfig([]string{"-h"}, noEnv)
+	if err == nil || !strings.Contains(err.Error(), "-spec-path") {
+		t.Errorf("err = %v, want the usage with -spec-path", err)
+	}
+}
+
+func TestStartupRejectsMissingSpecsDir(t *testing.T) {
 	_, _, err := startup([]string{"-specs-dir", "testdata/no-such-dir"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "testdata/no-such-dir") {
 		t.Errorf("err = %v, want it to name the directory", err)
+	}
+}
+
+func TestOpenSpecsKeepsReadsInside(t *testing.T) {
+	dir := t.TempDir()
+	specs := filepath.Join(dir, "specs")
+	if err := os.Mkdir(specs, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{"secret.yaml": "token: hunter2\n", "specs/api.yaml": "openapi: 3.1.0\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("../secret.yaml", filepath.Join(specs, "escape.yaml")); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := openSpecs(specs, "api.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SpecPath != "api.yaml" {
+		t.Errorf("SpecPath = %q", cfg.SpecPath)
+	}
+	if _, err := fs.ReadFile(cfg.Specs, "api.yaml"); err != nil {
+		t.Errorf("api.yaml: %v", err)
+	}
+	if b, err := fs.ReadFile(cfg.Specs, "escape.yaml"); err == nil {
+		t.Errorf("a symlink out of the directory was followed: %q", b)
 	}
 }
 

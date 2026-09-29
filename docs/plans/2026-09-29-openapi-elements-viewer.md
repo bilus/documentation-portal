@@ -50,7 +50,7 @@ docportal gains its startup and a portal for one API spec. Startup reads the con
 
 ## Metaphor
 
-Startup is a shop's opening routine. The manager reads the day's orders, unlocks the one stockroom they name and sets up the counter from it. A counter short of anything, such as its instruction booklets, keeps the shop shut. Otherwise the manager hands the counter and the street address to the doorman, who lets readers in.
+Startup is a shop's opening routine. The manager reads the day's orders, unlocks the one stockroom they name and sets up the counter from it. If the counter cannot be set up, the shop stays shut; otherwise the manager hands it to the doorman, who opens the doors.
 
 ## Stages
 
