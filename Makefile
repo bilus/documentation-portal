@@ -5,6 +5,8 @@ ELEMENTS_SHA256  := 46ec1e31068195810725ae204950137a373ad0c2b78059ca07fd1580bfb7
 ELEMENTS_URL     := https://registry.npmjs.org/@stoplight/elements/-/elements-$(ELEMENTS_VERSION).tgz
 ELEMENTS_TGZ     := bin/elements-$(ELEMENTS_VERSION).tgz
 ELEMENTS_DIR     := portal/elements
+ELEMENTS_ASSETS  := web-components.min.js styles.min.css LICENSE
+ELEMENTS_FILES   := $(addprefix $(ELEMENTS_DIR)/,$(ELEMENTS_ASSETS))
 
 # macOS has shasum but not always sha256sum.
 SHA256SUM := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
@@ -16,13 +18,17 @@ export CHROME_BIN
 
 .PHONY: setup build lint test test-e2e run
 
-setup: $(ELEMENTS_DIR)/web-components.min.js
+setup: $(ELEMENTS_FILES)
 
-$(ELEMENTS_DIR)/web-components.min.js:
+# &: makes one run of the recipe produce all three assets. The Makefile
+# prerequisite reruns the download after a version bump. tar -m gives the
+# assets the current time, because npm dates every file in its tarballs
+# 1985-10-26, which would leave them older than the Makefile.
+$(ELEMENTS_FILES) &: Makefile
 	mkdir -p bin
 	curl -fsSL -o $(ELEMENTS_TGZ) $(ELEMENTS_URL)
 	echo "$(ELEMENTS_SHA256)  $(ELEMENTS_TGZ)" | $(SHA256SUM) -c -
-	tar -xzf $(ELEMENTS_TGZ) -C $(ELEMENTS_DIR) --strip-components=1 package/web-components.min.js package/styles.min.css package/LICENSE
+	tar -m -xzf $(ELEMENTS_TGZ) -C $(ELEMENTS_DIR) --strip-components=1 $(addprefix package/,$(ELEMENTS_ASSETS))
 	rm $(ELEMENTS_TGZ)
 
 build: setup
