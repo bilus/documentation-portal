@@ -27,6 +27,23 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
+func TestNewServesSpec(t *testing.T) {
+	h := newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml")
+
+	page := get(h, "/specs/apis/pets.yaml")
+	if page.Code != http.StatusOK || !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("viewer page: %d %s", page.Code, page.Header().Get("Content-Type"))
+	}
+	if want := `apiDescriptionUrl="/api/specs/apis/pets.yaml"`; !strings.Contains(page.Body.String(), want) {
+		t.Errorf("viewer page does not contain %s", want)
+	}
+
+	raw := get(h, "/api/specs/apis/pets.yaml")
+	if raw.Code != http.StatusOK || !strings.HasPrefix(raw.Header().Get("Content-Type"), "application/yaml") || raw.Body.String() != pets {
+		t.Errorf("raw spec: %d %s %q", raw.Code, raw.Header().Get("Content-Type"), raw.Body)
+	}
+}
+
 func TestIndexRedirects(t *testing.T) {
 	t.Skip("HOLE(4): / redirects to the viewer page")
 

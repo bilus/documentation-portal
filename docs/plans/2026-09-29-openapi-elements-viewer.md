@@ -48,10 +48,6 @@ New at this gate:
 
 docportal gains its startup and a portal for one API spec. Startup reads the configuration from the flags and the environment, opens the specs directory so that the portal cannot read outside it, and builds the portal, refusing a spec path that leaves the specs directory or missing Elements assets. The HTTP server then serves the portal at the address. The viewer page embeds Stoplight Elements, which renders the configured spec in the reader's browser from the raw spec, and an invalid or missing spec gets an error page naming the file.
 
-## Metaphor
-
-Startup is a shop's opening routine. The manager reads the day's orders, unlocks the one stockroom they name and sets up the counter from it. If the counter cannot be set up, the shop stays shut; otherwise the manager hands it to the doorman, who opens the doors.
-
 ## Stages
 
 Each stage ends with `devbox run make build lint test test-e2e`, the hole census (`grep -rn "HOLE(" --include=*.go --include=Makefile .`), a design review when a diagram changed, the score card, the review page and a halt for review.
@@ -79,7 +75,7 @@ Each stage ends with `devbox run make build lint test test-e2e`, the hole census
 - Goal: the portal refuses a spec path outside the specs directory and missing Elements assets, and `make setup` fetches the pinned assets and checks them.
 - Requirement: 9, 1.
 - Dependencies: 2.
-- Holes: the checking and asset-loading holes that stage 2 declares.
+- Holes: `3 portal.checkConfig`, `3 portal.loadAssets` (with the Makefile's `setup` target and the embedded `elements/` directory as its helpers).
 - Acceptance: `TestStartupRejectsSpecPathOutsideDir`, and the asset check's own test, written with the fill.
 - Size: 90 lines.
 
@@ -88,6 +84,6 @@ Each stage ends with `devbox run make build lint test test-e2e`, the hole census
 - Goal: a reader opens the viewer page and Stoplight Elements renders the spec, the raw spec and the Elements assets are served, and an invalid or missing spec gets an error naming the file.
 - Requirement: 1 to 8.
 - Dependencies: 3.
-- Holes: the routing hole that stage 2 declares, and the helpers its fill declares: the handlers, loading and checking a spec, and the page templates.
+- Holes: `4 portal.newRouter`, and the helpers its fill declares: the handlers, loading and checking a spec, and the page templates.
 - Acceptance: `TestIndexRedirects`, `TestViewerPage`, `TestRawSpec`, `TestSpecErrorPages`, `TestElementsAssets`, `TestViewerRendersSampleBundles`.
 - Size: 280 lines, with a README section on setup and running.

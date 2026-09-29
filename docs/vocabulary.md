@@ -31,8 +31,3 @@ Terms of docportal, one per line.
 - raw spec: the response at /api/specs/{spec path}: the configured spec's content, unchanged, as application/yaml.
 - Stoplight Elements: the web component that renders an API spec as documentation in the reader's browser.
 - Elements assets: the Stoplight Elements script, stylesheet and license, downloaded by `make setup` and embedded in docportal.
-- opening routine: in the metaphor, startup.
-- day's orders: in the metaphor, the configuration.
-- stockroom: in the metaphor, the specs directory.
-- counter: in the metaphor, the portal.
-- doorman: in the metaphor, the HTTP server.
