@@ -37,14 +37,17 @@ Terms of docportal, one per line.
 - router: the http.ServeMux that newRouter builds and portal.New returns as the portal. It sends each request to its handler by method and path.
 - HTTP server: net/http's server, which listens on the address and calls the portal for each request.
 - viewer page: the HTML page at /specs/{spec path} that embeds Stoplight Elements pointed at the raw spec, with the Try It console unless the Try It setting hides it.
-- Try It console: the part of the viewer page where Stoplight Elements sends requests from the reader's browser to the servers of the API spec.
+- Try It console: the part of the viewer page where Stoplight Elements sends requests from the reader's browser to the servers listed in the raw spec.
 - Try It setting: whether the viewer page hides the Try It console. It is true with -hide-try-it or a true DOCPORTAL_HIDE_TRY_IT, and false by default.
 - document list: the HTML page at /docs/ that links the document page of every markdown file that is not hidden, each titled with its path, in byte order of the paths.
 - document page: the HTML page at /docs/{path} that shows one markdown file rendered as HTML without active content.
 - document sidebar: the column at the left of the document list and the document pages that links the document page of every markdown file that is not hidden, grouped by directory, with the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
 - active content: markup that runs in the reader's browser, such as a <script> element or a javascript: link.
 - navigation bar: the links at the top of every HTML page of the portal: to the viewer page, and to the document list when a content directory is configured.
-- raw spec: the response at /api/specs/{spec path}: the configured spec's content, unchanged, as application/yaml.
+- raw spec: the response at /api/specs/{spec path}, as application/yaml: the configured spec without its unpublished parts and marker keys. A configured spec from which the rules remove nothing comes back byte for byte. Any other spec is written again from its parsed form, with every YAML document and the order of its keys, but not its layout.
+- unpublished part: a part of the configured spec that a marker key marks for the publication target main: a key whose value is a mapping with an x-doNotPublish value that names main, together with that mapping; a list element that is such a mapping; or the sibling <name> of a key x-doNotPublish-<name> whose value names main. A value names main when it is the scalar main or a list that holds main. The root mapping is never an unpublished part, and an alias counts as a copy of its anchor's node.
+- marker key: an x-doNotPublish key or a key x-doNotPublish-<name>. Its value names one or more publication targets.
+- publication target: a name in the value of a marker key, such as main or beta, for one publication of the documentation. The portal publishes for main alone.
 - raw file: the response at /raw/{path}: an image that is not hidden, unchanged, with the image type of its extension, X-Content-Type-Options: nosniff, so that the browser reads it as that type only, and Content-Security-Policy: sandbox, so that no script in it runs.
 - Stoplight Elements: the web component that renders an API spec as documentation in the reader's browser.
 - Elements assets: the Stoplight Elements script, stylesheet and license, downloaded by `make setup` and embedded in docportal.
