@@ -18,6 +18,10 @@
 [5. Add the Try It setting to the portal configuration
  so that the viewer page shows or hides the Try It console
  (main.setTryIt)]
+> portal configuration, chat model
+[6. Add the chat to the portal configuration, if a chat model is named
+ so that the portal serves the chat page
+ (main.addChat)]
 > portal configuration
 [3. Build the portal
  or refuse a spec path outside the documentation root, a content directory path that names no directory in it, or missing Elements assets
@@ -31,6 +35,7 @@
 # type: spec path = string
 # type: content directory path = string
 # type: Try It setting = bool
+# type: chat model = string
 # type: portal configuration = portal.Config
 # type: address = string
 # type: portal = net/http.Handler

@@ -16,7 +16,7 @@ SHA256SUM := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || e
 CHROME_BIN ?= $(wildcard /opt/pw-browsers/chromium)
 export CHROME_BIN
 
-.PHONY: setup build lint test test-e2e run
+.PHONY: setup generate build lint test test-e2e run
 
 setup: $(ELEMENTS_FILES)
 
@@ -30,6 +30,12 @@ $(ELEMENTS_FILES) &: Makefile
 	echo "$(ELEMENTS_SHA256)  $(ELEMENTS_TGZ)" | $(SHA256SUM) -c -
 	tar -m -xzf $(ELEMENTS_TGZ) -C $(ELEMENTS_DIR) --strip-components=1 $(addprefix package/,$(ELEMENTS_ASSETS))
 	rm $(ELEMENTS_TGZ)
+
+# livegen compiles chat/page.templ into page_templ.go and page_live.go, which
+# are committed; run it after changing the template.
+generate:
+	go tool livegen chat
+	gofmt -w chat/page_templ.go chat/page_live.go
 
 build: setup
 	go build -o bin/docportal ./cmd/docportal

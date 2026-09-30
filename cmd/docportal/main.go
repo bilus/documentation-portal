@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bilus/documentation-portal/anthropicmodel"
+	"github.com/bilus/documentation-portal/chat"
 	"github.com/bilus/documentation-portal/portal"
 )
 
@@ -21,6 +23,7 @@ type config struct {
 	SpecPath  string // relative to RootDir
 	DocsPath  string // relative to RootDir, empty without a content directory
 	HideTryIt bool
+	ChatModel string // empty without a chat
 }
 
 func main() {
@@ -34,8 +37,8 @@ func main() {
 }
 
 // startup reads the configuration, opens the documentation root, adds the Try
-// It setting, and builds the portal. It returns the address to listen on and
-// the portal.
+// It setting and the chat, and builds the portal. It returns the address to
+// listen on and the portal.
 func startup(args []string, getenv func(string) string) (string, http.Handler, error) {
 	cfg, err := parseConfig(args, getenv)
 	if err != nil {
@@ -46,6 +49,10 @@ func startup(args []string, getenv func(string) string) (string, http.Handler, e
 		return "", nil, err
 	}
 	pcfg = setTryIt(pcfg, cfg.HideTryIt)
+	pcfg, err = addChat(pcfg, cfg.ChatModel)
+	if err != nil {
+		return "", nil, err
+	}
 	h, err := portal.New(pcfg)
 	if err != nil {
 		return "", nil, err
@@ -69,6 +76,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	if v := getenv("DOCPORTAL_DOCS_PATH"); v != "" {
 		cfg.DocsPath = v
 	}
+	if v := getenv("DOCPORTAL_CHAT_MODEL"); v != "" {
+		cfg.ChatModel = v
+	}
 	if v := getenv("DOCPORTAL_HIDE_TRY_IT"); v != "" {
 		hide, err := strconv.ParseBool(v)
 		if err != nil {
@@ -86,6 +96,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&cfg.SpecPath, "spec-path", cfg.SpecPath, "API spec to serve, relative to -root-dir")
 	fs.StringVar(&cfg.DocsPath, "docs-path", cfg.DocsPath, "directory of the markdown files and their images, relative to -root-dir")
 	fs.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
+	fs.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
 	if err := fs.Parse(args); err != nil {
 		return config{}, errors.New(strings.TrimSpace(out.String()))
 	}
@@ -110,4 +121,26 @@ func openRoot(dir, specPath, docsPath string) (portal.Config, error) {
 func setTryIt(pcfg portal.Config, hide bool) portal.Config {
 	pcfg.HideTryIt = hide
 	return pcfg
+}
+
+// addChat adds the chat's routes to the portal configuration when modelID
+// names a model, so that the portal serves the chat page.
+func addChat(pcfg portal.Config, modelID string) (portal.Config, error) {
+	if modelID == "" {
+		return pcfg, nil
+	}
+	lib, err := portal.NewLibrary(pcfg)
+	if err != nil {
+		return portal.Config{}, err
+	}
+	m, err := anthropicmodel.New(modelID, anthropicmodel.Config{})
+	if err != nil {
+		return portal.Config{}, err
+	}
+	c, err := chat.New(chat.Config{Model: m, Library: lib})
+	if err != nil {
+		return portal.Config{}, err
+	}
+	pcfg.Chat = c.Routes()
+	return pcfg, nil
 }

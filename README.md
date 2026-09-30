@@ -34,6 +34,22 @@ that operation. The portal reads nothing outside the documentation root,
 follows no symlink in the content directory, and under `/specs/` and
 `/api/specs/` serves no file of the root except the spec.
 
+## Chat
+
+With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
+`claude-opus-5-5`, the portal serves a chat page at `/chat`, where readers ask
+questions about the API. The model answers from the published spec and the
+markdown files alone, through read-only tools, and links the pages it used.
+The Anthropic SDK reads its credentials from `ANTHROPIC_API_KEY`.
+
+    ANTHROPIC_API_KEY=... devbox run make run ARGS='-root-dir testdata -spec-path specs/petstore-3.1.yaml -docs-path docs -chat-model claude-opus-5-5'
+
+Each client address may ask 20 questions an hour, a conversation holds 20
+questions, and one answer may make 12 lookups. Behind a proxy, every reader
+shares the proxy's address. The page uses live-templ, a private module that Go
+fetches with git, so devbox sets `GOPRIVATE` for it. After changing
+`chat/page.templ`, run `devbox run make generate`.
+
 ## Tests
 
     devbox run make test       # unit and acceptance tests
