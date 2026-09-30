@@ -75,7 +75,6 @@ func TestDocLinks(t *testing.T) {
 }
 
 func TestSpecLinks(t *testing.T) {
-	t.Skip("HOLE(2): point a link to the configured spec or one of its operations at the viewer page")
 	spec := "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n" +
 		"  /pets:\n" +
 		"    post:\n      summary: Add a pet\n" +

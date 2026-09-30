@@ -156,3 +156,27 @@ func TestLinkURL(t *testing.T) {
 		}
 	}
 }
+
+func TestOperationRoute(t *testing.T) {
+	spec := []byte("openapi: 3.0.3\ninfo:\n  title: Radio\n  version: 1.0.0\npaths:\n" +
+		"  /devices:\n    parameters: []\n    post:\n      operationId: registerDevice\n" +
+		"  /apps/links/{appLinkId}:\n    get:\n      summary: Retrieve an app link\n" +
+		"  /a/{b}/c/{d}:\n    get:\n      summary: Two parameters\n" +
+		"  /a~b:\n    get:\n      operationId: tilde\n")
+	for pointer, want := range map[string]string{
+		"paths/~1devices/post":                 "/operations/registerDevice",
+		"paths/~1apps~1links~1{appLinkId}/get": "/paths/apps-links-appLinkId/get",
+		// Elements collapses the first run of dashes only.
+		"paths/~1a~1{b}~1c~1{d}/get": "/paths/a-b--c--d/get",
+		"paths/~1a~0b/get":           "/operations/tilde",
+	} {
+		if got, ok := operationRoute(spec, pointer); !ok || got != want {
+			t.Errorf("%s: %q %v, want %q", pointer, got, ok, want)
+		}
+	}
+	for _, pointer := range []string{"paths/~1devices/get", "paths/~1devices/parameters", "paths/~1cats/get", "paths/~1devices", "paths/~1devices/post/responses", "components/schemas/Device", ""} {
+		if got, ok := operationRoute(spec, pointer); ok {
+			t.Errorf("%s: %q, want no operation", pointer, got)
+		}
+	}
+}

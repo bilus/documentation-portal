@@ -15,7 +15,6 @@ import (
 )
 
 func TestOperationLinkOpensOperation(t *testing.T) {
-	t.Skip("HOLE(2): point a Stoplight operation link at the viewer page's operation route")
 	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), SpecPath: "specs/petstore-3.1.yaml", DocsPath: "docs"})
 	if err != nil {
 		t.Fatal(err)

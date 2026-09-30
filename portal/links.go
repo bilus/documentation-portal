@@ -3,8 +3,11 @@ package portal
 import (
 	"net/url"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // linkURL returns the URL of the page that serves the link target of dest, a
@@ -54,16 +57,69 @@ func (s *site) docAt(target string) (string, bool) {
 // a part of it: at the operation route for an operation of the published
 // spec, else at the spec's start. It reports false for any other target.
 func (s *site) specURL(target string) (string, bool) {
-	// HOLE(2): match target against the spec path, and route a Stoplight
-	// operation link with operationRoute
-	return "", false
+	pointer, inside := strings.CutPrefix(target, s.specPath+"/")
+	if !inside && target != s.specPath {
+		return "", false
+	}
+	u := url.URL{Path: "/specs/" + s.specPath}
+	if inside {
+		if sp, err := s.loadSpec(s.specPath); err == nil {
+			u.Fragment, _ = operationRoute(sp.Raw, pointer)
+		}
+	}
+	return u.String(), true
 }
 
 // operationRoute returns the operation route of pointer in spec, such as
 // /operations/registerDevice for paths/~1devices/post, or false when spec has
 // no such operation.
 func operationRoute(spec []byte, pointer string) (string, bool) {
-	// HOLE(2): unescape the path and the method of pointer, and look up the
-	// operation's operationId in spec
-	return "", false
+	parts := strings.Split(pointer, "/")
+	if len(parts) != 3 || parts[0] != "paths" || !slices.Contains(methods, parts[2]) {
+		return "", false
+	}
+	p := strings.ReplaceAll(strings.ReplaceAll(parts[1], "~1", "/"), "~0", "~")
+	var doc yaml.Node
+	if yaml.Unmarshal(spec, &doc) != nil || len(doc.Content) == 0 {
+		return "", false
+	}
+	op := mappingValue(mappingValue(mappingValue(doc.Content[0], "paths"), p), parts[2])
+	if op == nil || op.Kind != yaml.MappingNode {
+		return "", false
+	}
+	if id := mappingValue(op, "operationId"); id != nil && id.Kind == yaml.ScalarNode && id.Value != "" {
+		return "/operations/" + id.Value, true
+	}
+	return "/paths/" + elementsSlug(p) + "/" + parts[2], true
+}
+
+// methods are the keys of the operations in a path item.
+var methods = []string{"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+
+// mappingValue returns the value of key in the mapping n, or nil.
+func mappingValue(n *yaml.Node, key string) *yaml.Node {
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == key {
+			return n.Content[i+1]
+		}
+	}
+	return nil
+}
+
+var (
+	slugChars = regexp.MustCompile(`[/{}\s]`)
+	dashes    = regexp.MustCompile(`-{2,}`)
+)
+
+// elementsSlug turns path p into the slug of Stoplight Elements' routes for an
+// operation without an operationId.
+func elementsSlug(p string) string {
+	slug := slugChars.ReplaceAllString(p, "-")
+	if run := dashes.FindStringIndex(slug); run != nil {
+		slug = slug[:run[0]] + "-" + slug[run[1]:]
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(slug, "-"), "-")
 }
