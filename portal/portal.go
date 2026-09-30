@@ -56,8 +56,8 @@ func checkConfig(cfg Config) (fs.FS, error) {
 	if err != nil {
 		return nil, fmt.Errorf("content directory path %q: %w", cfg.DocsPath, err)
 	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("content directory path %q is not a directory", cfg.DocsPath)
+	if !info.IsDir() || !directory(cfg.Root, cfg.DocsPath) {
+		return nil, fmt.Errorf("content directory path %q is not a directory reached through no symlink", cfg.DocsPath)
 	}
 	return docs, nil
 }

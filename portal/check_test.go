@@ -1,6 +1,7 @@
 package portal
 
 import (
+	"errors"
 	"io/fs"
 	"strings"
 	"testing"
@@ -61,5 +62,30 @@ func TestCheckConfig(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), path) {
 			t.Errorf("content directory path %q: err = %v", path, err)
 		}
+	}
+}
+
+func TestCheckConfigRefusesSymlinkedDocsPath(t *testing.T) {
+	link := func(target string) *fstest.MapFile {
+		return &fstest.MapFile{Data: []byte(target), Mode: fs.ModeSymlink}
+	}
+	root := fstest.MapFS{
+		"api.yaml":             {Data: []byte("openapi: 3.1.0\n")},
+		"elsewhere/a.md":       {Data: []byte("# A\n")},
+		"elsewhere/sub/b.md":   {Data: []byte("# B\n")},
+		"docs":                 link("elsewhere"),
+		"up":                   link("elsewhere"),
+		"real/guides/intro.md": {Data: []byte("# Intro\n")},
+	}
+	for _, path := range []string{"docs", "up/sub"} {
+		if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", DocsPath: path}); err == nil || !strings.Contains(err.Error(), path) {
+			t.Errorf("content directory path %q: err = %v, want a refusal", path, err)
+		}
+	}
+	if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", DocsPath: "real/guides"}); err != nil {
+		t.Errorf("real/guides: %v", err)
+	}
+	if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", DocsPath: "missing"}); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing: err = %v, want the cause fs.ErrNotExist", err)
 	}
 }

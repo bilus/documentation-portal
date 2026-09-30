@@ -258,3 +258,37 @@ func TestContentDirFollowsNoSymlink(t *testing.T) {
 		})
 	}
 }
+
+// untypedFS reports every directory entry with type 0, as a filesystem that
+// does not track its entries' types might.
+type untypedFS struct{ fstest.MapFS }
+
+func (u untypedFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	entries, err := u.MapFS.ReadDir(name)
+	for i, e := range entries {
+		entries[i] = untypedEntry{e}
+	}
+	return entries, err
+}
+
+type untypedEntry struct{ fs.DirEntry }
+
+func (untypedEntry) Type() fs.FileMode { return 0 }
+
+func TestDocListLstatsEachFile(t *testing.T) {
+	root := untypedFS{fstest.MapFS{
+		"api.yaml": {Data: []byte(pets)},
+		"a.md":     {Data: []byte("# A\n")},
+		"notes.md": {Data: []byte("api.yaml"), Mode: fs.ModeSymlink},
+	}}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list := get(h, "/docs/").Body.String(); strings.Contains(list, "notes.md") || !strings.Contains(list, `href="/docs/a.md"`) {
+		t.Errorf("document list: %q", list)
+	}
+	if rec := get(h, "/docs/notes.md"); rec.Code != http.StatusNotFound {
+		t.Errorf("/docs/notes.md: %d", rec.Code)
+	}
+}

@@ -51,8 +51,8 @@ func markdownFiles(fsys fs.FS) ([]string, error) {
 			}
 			return nil
 		}
-		// A symlink is not regular, and WalkDir does not follow one.
-		if ext := path.Ext(p); !d.Type().IsRegular() || ext != ".md" && ext != ".markdown" {
+		// Lstat, not the entry's type bits, rules out a symlink.
+		if ext := path.Ext(p); d.IsDir() || ext != ".md" && ext != ".markdown" || !regularFile(fsys, p) {
 			return nil
 		}
 		paths = append(paths, p)
@@ -203,11 +203,15 @@ func (s *site) rawFile(w http.ResponseWriter, r *http.Request) {
 // regularFile reports whether p is a regular file of fsys that no symlink
 // leads to, in its own name or in the name of a directory above it.
 func regularFile(fsys fs.FS, p string) bool {
-	if info, err := fs.Lstat(fsys, p); err != nil || !info.Mode().IsRegular() {
-		return false
-	}
-	for dir := path.Dir(p); dir != "."; dir = path.Dir(dir) {
-		if info, err := fs.Lstat(fsys, dir); err != nil || !info.IsDir() {
+	info, err := fs.Lstat(fsys, p)
+	return err == nil && info.Mode().IsRegular() && directory(fsys, path.Dir(p))
+}
+
+// directory reports whether p is a directory of fsys that no symlink leads
+// to, in its own name or in the name of a directory above it.
+func directory(fsys fs.FS, p string) bool {
+	for ; p != "."; p = path.Dir(p) {
+		if info, err := fs.Lstat(fsys, p); err != nil || !info.IsDir() {
 			return false
 		}
 	}
