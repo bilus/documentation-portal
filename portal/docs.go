@@ -18,6 +18,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 // docList writes the document list: a link to the document page of every
@@ -50,11 +51,8 @@ func markdownFiles(fsys fs.FS) ([]string, error) {
 			}
 			return nil
 		}
-		if ext := path.Ext(p); d.IsDir() || ext != ".md" && ext != ".markdown" {
-			return nil
-		}
-		// Stat follows a symlink, and one out of the content directory fails.
-		if info, err := fs.Stat(fsys, p); err != nil || !info.Mode().IsRegular() {
+		// A symlink is not regular, and WalkDir does not follow one.
+		if ext := path.Ext(p); !d.Type().IsRegular() || ext != ".md" && ext != ".markdown" {
 			return nil
 		}
 		paths = append(paths, p)
@@ -125,12 +123,17 @@ func (s *site) renderMarkdown(src []byte, docPath string) (template.HTML, error)
 		}
 		switch n := n.(type) {
 		case *ast.Image:
-			n.Destination = rawImageURL(dir, n.Destination)
+			dest := unescape(n.Destination)
+			if url := rawImageURL(dir, dest); !bytes.Equal(url, dest) {
+				n.Destination = url
+			}
 		case *ast.Link:
-			if dest, ok := s.linkURL(docPath, n.Destination); ok {
-				n.Destination = dest
-			} else {
+			dest := unescape(n.Destination)
+			switch url, ok := s.linkURL(docPath, dest); {
+			case !ok:
 				nowhere = append(nowhere, n)
+			case !bytes.Equal(url, dest):
+				n.Destination = url
 			}
 		}
 		return ast.WalkContinue, nil
@@ -150,6 +153,12 @@ func (s *site) renderMarkdown(src []byte, docPath string) (template.HTML, error)
 		return "", err
 	}
 	return template.HTML(sanitizer.SanitizeBytes(buf.Bytes())), nil
+}
+
+// unescape resolves the backslash escapes and character references of a link
+// destination, as goldmark's renderer does before it writes one.
+func unescape(dest []byte) []byte {
+	return util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(dest)))
 }
 
 // rawImageURL turns an image reference relative to dir into its /raw/ URL,
@@ -178,8 +187,7 @@ func (s *site) rawFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Stat follows a symlink, and one out of the content directory fails.
-	if info, err := fs.Stat(s.docs, p); err != nil || !info.Mode().IsRegular() {
+	if !regularFile(s.docs, p) {
 		http.NotFound(w, r)
 		return
 	}
@@ -190,6 +198,20 @@ func (s *site) rawFile(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.Write(data)
+}
+
+// regularFile reports whether p is a regular file of fsys that no symlink
+// leads to, in its own name or in the name of a directory above it.
+func regularFile(fsys fs.FS, p string) bool {
+	if info, err := fs.Lstat(fsys, p); err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	for dir := path.Dir(p); dir != "."; dir = path.Dir(dir) {
+		if info, err := fs.Lstat(fsys, dir); err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 // imageTypes maps the extension of an image to its Content-Type.

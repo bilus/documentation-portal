@@ -179,3 +179,60 @@ func TestDocLinkTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestDocLinkEscapes(t *testing.T) {
+	page := "# Escapes\n\n" +
+		"- [escape](docs/guide\\_oauth.md)\n" +
+		"- [entity](docs/guide&#95;oauth.md)\n" +
+		"- [parens](docs/a\\(1\\).md)\n" +
+		"- [ampersand](docs/r&amp;d.md)\n" +
+		"- [accent](docs/guide_oauth.md#café)\n" +
+		"- [up to the spec](../apis/pets.yaml)\n" +
+		"- [case](docs/Guide_OAuth.md)\n" +
+		"- [see *the* guide](docs/missing.md)\n"
+	root := fstest.MapFS{
+		"apis/pets.yaml":      {Data: []byte(pets)},
+		"docs/guide_oauth.md": {Data: []byte("# OAuth\n")},
+		"docs/a(1).md":        {Data: []byte("# One\n")},
+		"docs/r&d.md":         {Data: []byte("# R and D\n")},
+		"docs/links.md":       {Data: []byte(page)},
+	}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := get(h, "/docs/links.md").Body.String()
+	hrefs := linkHrefs(body)
+	for text, want := range map[string]string{
+		"escape":         "/docs/guide_oauth.md",
+		"entity":         "/docs/guide_oauth.md",
+		"parens":         "/docs/a%281%29.md",
+		"ampersand":      "/docs/r&amp;d.md",
+		"accent":         "/docs/guide_oauth.md#caf%C3%A9",
+		"up to the spec": "/specs/apis/pets.yaml",
+	} {
+		if hrefs[text] != want {
+			t.Errorf("%s: href %q, want %q", text, hrefs[text], want)
+		}
+	}
+	if href, ok := hrefs["case"]; ok {
+		t.Errorf("case leads to %q, want no link", href)
+	}
+	if !strings.Contains(body, "see <em>the</em> guide") {
+		t.Error("a link that leads nowhere lost the order of its text")
+	}
+}
+
+func TestSpecLinkToMissingSpec(t *testing.T) {
+	root := fstest.MapFS{"docs/links.md": {Data: []byte("- [spec](api.yaml)\n- [operation](api.yaml/paths/~1pets/get)\n")}}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hrefs := linkHrefs(get(h, "/docs/links.md").Body.String())
+	for _, text := range []string{"spec", "operation"} {
+		if href, ok := hrefs[text]; ok {
+			t.Errorf("%s leads to %q, want no link", text, href)
+		}
+	}
+}

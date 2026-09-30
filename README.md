@@ -30,9 +30,9 @@ the documentation root, as on Stoplight, and then against the file's own
 directory, and it shows as plain text when no page serves its target. A link
 to the spec opens the viewer page, and a link to one of its operations in
 Stoplight's form, such as `openapi.yaml/paths/~1pets/get`, opens the viewer at
-that operation. The portal reads nothing outside the documentation
-root, and under `/specs/` and `/api/specs/` it serves no file of the root
-except the spec.
+that operation. The portal reads nothing outside the documentation root,
+follows no symlink in the content directory, and under `/specs/` and
+`/api/specs/` serves no file of the root except the spec.
 
 ## Tests
 

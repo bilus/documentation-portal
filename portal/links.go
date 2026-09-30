@@ -1,6 +1,7 @@
 package portal
 
 import (
+	"io/fs"
 	"net/url"
 	"path"
 	"regexp"
@@ -59,11 +60,15 @@ func (s *site) docAt(target string) (string, bool) {
 // specURL returns the viewer page URL for target, a path inside the
 // documentation root that names the configured spec or, in Stoplight's form,
 // a part of it: at the operation route for an operation of the published
-// spec, else at the overview. It reports false for any other target.
+// spec, else at the overview. It reports false for any other target, and
+// while the spec file is missing.
 func (s *site) specURL(target string) (string, bool) {
 	target = path.Clean(target)
 	pointer, inside := strings.CutPrefix(target, s.specPath+"/")
 	if !inside && target != s.specPath {
+		return "", false
+	}
+	if _, err := fs.Stat(s.root, s.specPath); err != nil {
 		return "", false
 	}
 	u := url.URL{Path: "/specs/" + s.specPath}
@@ -92,7 +97,7 @@ func operationRoute(spec []byte, pointer string) (string, bool) {
 	if op == nil || op.Kind != yaml.MappingNode {
 		return "", false
 	}
-	if id := mappingValue(op, "operationId"); id != nil && id.Kind == yaml.ScalarNode && id.Value != "" {
+	if id := mappingValue(op, "operationId"); id != nil && id.Kind == yaml.ScalarNode && id.ShortTag() != "!!null" && id.Value != "" {
 		return "/operations/" + id.Value, true
 	}
 	return "/paths/" + elementsSlug(p) + "/" + parts[2], true
@@ -101,14 +106,18 @@ func operationRoute(spec []byte, pointer string) (string, bool) {
 // methods are the keys of the operations in a path item.
 var methods = []string{"get", "put", "post", "delete", "options", "head", "patch", "trace"}
 
-// mappingValue returns the value of key in the mapping n, or nil.
+// mappingValue returns the value of key in the mapping n, or nil. It returns
+// an alias as its anchor's node.
 func mappingValue(n *yaml.Node, key string) *yaml.Node {
 	if n == nil || n.Kind != yaml.MappingNode {
 		return nil
 	}
 	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			return n.Content[i+1]
+		if v := n.Content[i+1]; n.Content[i].Value == key {
+			if v.Kind == yaml.AliasNode {
+				v = v.Alias
+			}
+			return v
 		}
 	}
 	return nil

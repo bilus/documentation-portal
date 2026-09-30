@@ -216,3 +216,27 @@ func TestSpecURLEdges(t *testing.T) {
 		t.Errorf("docAt(./guide/../a.md): %q %v", got, ok)
 	}
 }
+
+func TestOperationRouteYAML(t *testing.T) {
+	spec := []byte("openapi: 3.1.0\ninfo:\n  title: Pets\n  version: 1.0.0\n" +
+		"x-items:\n  pets: &pets\n    get:\n      operationId: listPets\n" +
+		"paths:\n" +
+		"  /pets: *pets\n" +
+		"  /nulls:\n    get:\n      operationId: null\n" +
+		"  /empty:\n    get:\n      operationId: \"\"\n" +
+		"  /pets/{pet id}:\n    get:\n      summary: A space\n" +
+		"webhooks:\n  /pets:\n    get:\n      operationId: petHook\n")
+	for pointer, want := range map[string]string{
+		"paths/~1pets/get":           "/operations/listPets",
+		"paths/~1nulls/get":          "/paths/nulls/get",
+		"paths/~1empty/get":          "/paths/empty/get",
+		"paths/~1pets~1{pet id}/get": "/paths/pets-pet-id/get",
+	} {
+		if got, ok := operationRoute(spec, pointer); !ok || got != want {
+			t.Errorf("%s: %q %v, want %q", pointer, got, ok, want)
+		}
+	}
+	if got, ok := operationRoute(spec, "webhooks/~1pets/get"); ok {
+		t.Errorf("webhooks/~1pets/get: %q, want no operation", got)
+	}
+}
