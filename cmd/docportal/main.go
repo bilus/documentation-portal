@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -103,7 +104,23 @@ func openRoot(dir, specPath, docsPath string) (portal.Config, error) {
 	if err != nil {
 		return portal.Config{}, fmt.Errorf("open documentation root: %w", err)
 	}
-	return portal.Config{Root: root.FS(), SpecPath: specPath, DocsPath: docsPath}, nil
+	return portal.Config{Root: rootFS{root.FS(), root}, SpecPath: specPath, DocsPath: docsPath}, nil
+}
+
+// rootFS is a documentation root whose Sub opens the directory as an os.Root
+// of its own, so that no symlink in the directory leads out of it.
+type rootFS struct {
+	fs.FS
+	root *os.Root
+}
+
+func (r rootFS) Sub(dir string) (fs.FS, error) {
+	// The directory stays open for as long as docportal runs.
+	sub, err := r.root.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	return sub.FS(), nil
 }
 
 // setTryIt adds the Try It setting to the portal configuration.

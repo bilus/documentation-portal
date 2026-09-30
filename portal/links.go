@@ -12,11 +12,14 @@ import (
 
 // linkURL returns the URL of the page that serves the link target of dest, a
 // link in the markdown file at docPath, or false when the link leads nowhere.
-// It returns dest unchanged when dest has a scheme, a host or no path, or does
-// not parse.
+// It returns dest unchanged when dest has a scheme, a host or no path, and
+// false when dest does not parse.
 func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
 	u, err := url.Parse(string(dest))
-	if err != nil || u.Scheme != "" || u.Host != "" || u.Path == "" {
+	if err != nil {
+		return nil, false
+	}
+	if u.Scheme != "" || u.Host != "" || u.Path == "" {
 		return dest, true
 	}
 	targets := []string{strings.TrimPrefix(path.Clean(u.Path), "/")}
@@ -41,6 +44,7 @@ func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
 // target, a path inside the documentation root, or false when no document
 // page serves it.
 func (s *site) docAt(target string) (string, bool) {
+	target = path.Clean(target)
 	doc, ok := target, s.docsPath == "."
 	if !ok {
 		doc, ok = strings.CutPrefix(target, s.docsPath+"/")
@@ -55,8 +59,9 @@ func (s *site) docAt(target string) (string, bool) {
 // specURL returns the viewer page URL for target, a path inside the
 // documentation root that names the configured spec or, in Stoplight's form,
 // a part of it: at the operation route for an operation of the published
-// spec, else at the spec's start. It reports false for any other target.
+// spec, else at the overview. It reports false for any other target.
 func (s *site) specURL(target string) (string, bool) {
+	target = path.Clean(target)
 	pointer, inside := strings.CutPrefix(target, s.specPath+"/")
 	if !inside && target != s.specPath {
 		return "", false

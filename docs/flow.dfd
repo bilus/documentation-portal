@@ -20,7 +20,7 @@
  (main.setTryIt)]
 > portal configuration
 [3. Build the portal
- or refuse a spec path or a content directory path that leaves the documentation root, or missing Elements assets
+ or refuse a spec path outside the documentation root, a content directory path that names no directory in it, or missing Elements assets
  (portal.New)]
 > address, portal
 {HTTP server}

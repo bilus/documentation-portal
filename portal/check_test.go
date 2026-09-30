@@ -36,25 +36,28 @@ func TestAssetsInNamesMissingFiles(t *testing.T) {
 
 func TestCheckConfig(t *testing.T) {
 	root := fstest.MapFS{"apis/pets.yaml": {Data: []byte("openapi: 3.1.0\n")}, "docs/a.md": {Data: []byte("# A\n")}}
-	if err := checkConfig(Config{Root: root, SpecPath: "apis/pets.yaml"}); err != nil {
-		t.Errorf("valid config: %v", err)
+	if docs, err := checkConfig(Config{Root: root, SpecPath: "apis/pets.yaml"}); err != nil || docs != nil {
+		t.Errorf("valid config: %v, %v", docs, err)
 	}
-	if err := checkConfig(Config{SpecPath: "apis/pets.yaml"}); err == nil {
+	if _, err := checkConfig(Config{SpecPath: "apis/pets.yaml"}); err == nil {
 		t.Error("nil Root accepted")
 	}
 	for _, path := range []string{".", "", "/etc/passwd", "../pets.yaml", "apis/../../pets.yaml"} {
-		err := checkConfig(Config{Root: root, SpecPath: path})
+		_, err := checkConfig(Config{Root: root, SpecPath: path})
 		if err == nil || !strings.Contains(err.Error(), path) {
 			t.Errorf("%q: err = %v", path, err)
 		}
 	}
-	for _, path := range []string{"docs", "."} {
-		if err := checkConfig(Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: path}); err != nil {
+	for path, file := range map[string]string{"docs": "a.md", ".": "docs/a.md"} {
+		docs, err := checkConfig(Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: path})
+		if err != nil {
 			t.Errorf("content directory path %q: %v", path, err)
+		} else if _, err := fs.Stat(docs, file); err != nil {
+			t.Errorf("content directory %q: %v", path, err)
 		}
 	}
 	for _, path := range []string{"missing", "docs/a.md", "/docs", "../docs", "docs/"} {
-		err := checkConfig(Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: path})
+		_, err := checkConfig(Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: path})
 		if err == nil || !strings.Contains(err.Error(), path) {
 			t.Errorf("content directory path %q: err = %v", path, err)
 		}
