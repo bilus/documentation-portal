@@ -133,3 +133,26 @@ func TestSidebarGroups(t *testing.T) {
 		t.Errorf("without a content directory: %+v", got)
 	}
 }
+
+func TestLinkURL(t *testing.T) {
+	root := fstest.MapFS{
+		"api.yaml":       {Data: []byte("openapi: 3.1.0\n")},
+		"a.md":           {Data: []byte("# A\n")},
+		"guide/intro.md": {Data: []byte("# Intro\n")},
+		"my guide.md":    {Data: []byte("# Mine\n")},
+	}
+	s := &site{root: root, specPath: "api.yaml", docsPath: ".", docs: root}
+	for _, tc := range []struct{ doc, dest, want string }{
+		{"a.md", "guide/intro.md?x=1#y", "/docs/guide/intro.md?x=1#y"},
+		{"a.md", "./guide/intro.md", "/docs/guide/intro.md"},
+		{"guide/intro.md", "../a.md", "/docs/a.md"},
+		{"a.md", "my%20guide.md", "/docs/my%20guide.md"},
+		{"a.md", "%zz", "%zz"},
+		{"a.md", "?page=2", "?page=2"},
+	} {
+		got, ok := s.linkURL(tc.doc, []byte(tc.dest))
+		if !ok || string(got) != tc.want {
+			t.Errorf("%s in %s: %q %v, want %q", tc.dest, tc.doc, got, ok, tc.want)
+		}
+	}
+}

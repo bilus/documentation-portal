@@ -21,7 +21,6 @@ func linkHrefs(body string) map[string]string {
 }
 
 func TestDocLinks(t *testing.T) {
-	t.Skip("HOLE(1): point each relative link at the page that serves its link target")
 	page := "# Links\n\n" +
 		"- [root](docs/guide-oauth.md)\n" +
 		"- [slash](/docs/guide-oauth.md)\n" +
