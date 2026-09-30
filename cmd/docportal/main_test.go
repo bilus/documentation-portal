@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/bilus/documentation-portal/portal"
 )
 
 func noEnv(string) string { return "" }
@@ -21,7 +19,7 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 }
 
 func TestStartupServesSpec(t *testing.T) {
-	addr, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml"}, noEnv)
+	addr, h, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,16 +53,16 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config{Addr: ":8080", SpecsDir: ".", SpecPath: "openapi.yaml"}); cfg != want {
+	if want := (config{Addr: ":8080", RootDir: ".", SpecPath: "openapi.yaml"}); cfg != want {
 		t.Errorf("defaults = %+v, want %+v", cfg, want)
 	}
 
-	env := map[string]string{"DOCPORTAL_SPECS_DIR": "/srv/specs", "DOCPORTAL_SPEC_PATH": "api.yaml"}
+	env := map[string]string{"DOCPORTAL_ROOT_DIR": "/srv/docs", "DOCPORTAL_SPEC_PATH": "api.yaml"}
 	cfg, err = parseConfig([]string{"-spec-path", "apis/pets.yaml"}, func(k string) string { return env[k] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config{Addr: ":8080", SpecsDir: "/srv/specs", SpecPath: "apis/pets.yaml"}); cfg != want {
+	if want := (config{Addr: ":8080", RootDir: "/srv/docs", SpecPath: "apis/pets.yaml"}); cfg != want {
 		t.Errorf("got %+v, want %+v", cfg, want)
 	}
 
@@ -87,52 +85,22 @@ func TestParseConfigHelpListsFlags(t *testing.T) {
 	}
 }
 
-func TestStartupRejectsMissingSpecsDir(t *testing.T) {
-	_, _, err := startup([]string{"-specs-dir", "testdata/no-such-dir"}, noEnv)
+func TestStartupRejectsMissingRootDir(t *testing.T) {
+	_, _, err := startup([]string{"-root-dir", "testdata/no-such-dir"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "testdata/no-such-dir") {
 		t.Errorf("err = %v, want it to name the directory", err)
 	}
 }
 
-func TestOpenSpecsKeepsReadsInside(t *testing.T) {
-	dir := t.TempDir()
-	specs := filepath.Join(dir, "specs")
-	if err := os.Mkdir(specs, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for name, data := range map[string]string{"secret.yaml": "token: hunter2\n", "specs/api.yaml": "openapi: 3.1.0\n"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.Symlink("../secret.yaml", filepath.Join(specs, "escape.yaml")); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := openSpecs(specs, "api.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SpecPath != "api.yaml" {
-		t.Errorf("SpecPath = %q", cfg.SpecPath)
-	}
-	if _, err := fs.ReadFile(cfg.Specs, "api.yaml"); err != nil {
-		t.Errorf("api.yaml: %v", err)
-	}
-	if b, err := fs.ReadFile(cfg.Specs, "escape.yaml"); err == nil {
-		t.Errorf("a symlink out of the directory was followed: %q", b)
-	}
-}
-
 func TestStartupRejectsSpecPathOutsideDir(t *testing.T) {
-	_, _, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "../specs/petstore-3.0.yaml"}, noEnv)
+	_, _, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "../specs/petstore-3.0.yaml"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "../specs/petstore-3.0.yaml") {
 		t.Errorf("err = %v, want it to name the spec path", err)
 	}
 }
 
 func TestStartupServesDocs(t *testing.T) {
-	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-dir", "../../testdata/docs"}, noEnv)
+	_, h, err := startup([]string{"-root-dir", "../../testdata", "-spec-path", "specs/petstore-3.0.yaml", "-docs-path", "docs"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,65 +115,61 @@ func TestStartupServesDocs(t *testing.T) {
 	}
 }
 
-func TestParseConfigReadsDocsDir(t *testing.T) {
-	env := func(k string) string { return map[string]string{"DOCPORTAL_DOCS_DIR": "/srv/docs"}[k] }
-	if cfg, err := parseConfig(nil, env); err != nil || cfg.DocsDir != "/srv/docs" {
+func TestParseConfigReadsDocsPath(t *testing.T) {
+	env := func(k string) string { return map[string]string{"DOCPORTAL_DOCS_PATH": "guides"}[k] }
+	if cfg, err := parseConfig(nil, env); err != nil || cfg.DocsPath != "guides" {
 		t.Errorf("from the environment: %+v, %v", cfg, err)
 	}
-	if cfg, err := parseConfig([]string{"-docs-dir", "docs"}, env); err != nil || cfg.DocsDir != "docs" {
+	if cfg, err := parseConfig([]string{"-docs-path", "docs"}, env); err != nil || cfg.DocsPath != "docs" {
 		t.Errorf("the flag over the environment: %+v, %v", cfg, err)
 	}
 }
 
-func TestStartupRejectsMissingDocsDir(t *testing.T) {
-	_, _, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-dir", "testdata/no-such-docs"}, noEnv)
-	if err == nil || !strings.Contains(err.Error(), "testdata/no-such-docs") {
+func TestStartupRejectsMissingDocsPath(t *testing.T) {
+	_, _, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-path", "no-such-docs"}, noEnv)
+	if err == nil || !strings.Contains(err.Error(), "no-such-docs") {
 		t.Errorf("err = %v, want it to name the directory", err)
 	}
 }
 
-// writeEscape writes dir/secret.md, dir/docs/a.md and dir/docs/escape.md, a
-// symlink to the secret, and returns dir/docs.
+// writeEscape writes dir/secret.md, dir/root/docs/a.md and
+// dir/root/docs/escape.md, a symlink to the secret, and returns dir/root.
 func writeEscape(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	docs := filepath.Join(dir, "docs")
-	if err := os.Mkdir(docs, 0o755); err != nil {
+	docs := filepath.Join(dir, "root", "docs")
+	if err := os.MkdirAll(docs, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, data := range map[string]string{"secret.md": "# hunter2\n", "docs/a.md": "# A\n"} {
+	for name, data := range map[string]string{"secret.md": "# hunter2\n", "root/docs/a.md": "# A\n"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Symlink("../secret.md", filepath.Join(docs, "escape.md")); err != nil {
+	if err := os.Symlink("../../secret.md", filepath.Join(docs, "escape.md")); err != nil {
 		t.Fatal(err)
 	}
-	return docs
+	return filepath.Join(dir, "root")
 }
 
-func TestOpenDocsKeepsReadsInside(t *testing.T) {
-	cfg, err := openDocs(portal.Config{SpecPath: "api.yaml"}, writeEscape(t))
+func TestOpenRootKeepsReadsInside(t *testing.T) {
+	cfg, err := openRoot(writeEscape(t), "api.yaml", "docs")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.SpecPath != "api.yaml" {
-		t.Errorf("SpecPath = %q", cfg.SpecPath)
+	if cfg.SpecPath != "api.yaml" || cfg.DocsPath != "docs" {
+		t.Errorf("SpecPath = %q, DocsPath = %q", cfg.SpecPath, cfg.DocsPath)
 	}
-	if _, err := fs.ReadFile(cfg.Docs, "a.md"); err != nil {
-		t.Errorf("a.md: %v", err)
+	if _, err := fs.ReadFile(cfg.Root, "docs/a.md"); err != nil {
+		t.Errorf("docs/a.md: %v", err)
 	}
-	if b, err := fs.ReadFile(cfg.Docs, "escape.md"); err == nil {
+	if b, err := fs.ReadFile(cfg.Root, "docs/escape.md"); err == nil {
 		t.Errorf("a symlink out of the directory was followed: %q", b)
-	}
-
-	if cfg, err := openDocs(portal.Config{SpecPath: "api.yaml"}, ""); err != nil || cfg.Docs != nil {
-		t.Errorf("without a content directory name: %+v, %v", cfg, err)
 	}
 }
 
 func TestStartupKeepsDocsInside(t *testing.T) {
-	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-dir", writeEscape(t)}, noEnv)
+	_, h, err := startup([]string{"-root-dir", writeEscape(t), "-spec-path", "api.yaml", "-docs-path", "docs"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +200,7 @@ func TestParseConfigReadsHideTryIt(t *testing.T) {
 }
 
 func TestStartupShowsTryIt(t *testing.T) {
-	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml"}, noEnv)
+	_, h, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +210,7 @@ func TestStartupShowsTryIt(t *testing.T) {
 }
 
 func TestStartupHidesTryIt(t *testing.T) {
-	_, h, err := startup([]string{"-specs-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-hide-try-it"}, noEnv)
+	_, h, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-hide-try-it"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}

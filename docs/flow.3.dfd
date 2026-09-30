@@ -4,7 +4,7 @@
 {5 Add the Try It setting}
 > portal configuration
 [3.1. Check the portal configuration
- so that the spec path stays inside the specs directory
+ so that the spec path and the content directory stay inside the documentation root
  (portal.checkConfig)]
 >
 [3.2. Load the Elements assets

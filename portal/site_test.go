@@ -24,7 +24,7 @@ func TestLoadSpec(t *testing.T) {
 	}
 
 	for _, path := range []string{"v30.yaml", "v31.yaml"} {
-		sp, err := (&site{specs: specs, specPath: path}).loadSpec(path)
+		sp, err := (&site{root: specs, specPath: path}).loadSpec(path)
 		if err != nil || sp.Title != "Pets" || string(sp.Raw) != string(specs[path].Data) {
 			t.Errorf("%s: %+v, %v", path, sp, err)
 		}
@@ -37,17 +37,17 @@ func TestLoadSpec(t *testing.T) {
 		"untitled.yaml": "title",
 		"float.yaml":    "OpenAPI",
 	} {
-		_, err := (&site{specs: specs, specPath: path}).loadSpec(path)
+		_, err := (&site{root: specs, specPath: path}).loadSpec(path)
 		var invalid invalidSpecError
 		if !errors.As(err, &invalid) || !strings.Contains(invalid.reason, reason) {
 			t.Errorf("%s: err = %v, want an invalid spec mentioning %s", path, err, reason)
 		}
 	}
 
-	if _, err := (&site{specs: specs, specPath: "gone.yaml"}).loadSpec("gone.yaml"); !errors.Is(err, errNoSpec) {
+	if _, err := (&site{root: specs, specPath: "gone.yaml"}).loadSpec("gone.yaml"); !errors.Is(err, errNoSpec) {
 		t.Errorf("missing file: err = %v", err)
 	}
-	if _, err := (&site{specs: specs, specPath: "v30.yaml"}).loadSpec("v31.yaml"); !errors.Is(err, errNoSpec) {
+	if _, err := (&site{root: specs, specPath: "v30.yaml"}).loadSpec("v31.yaml"); !errors.Is(err, errNoSpec) {
 		t.Errorf("a spec other than the configured one: err = %v", err)
 	}
 }
@@ -75,7 +75,7 @@ func TestMarkdownFiles(t *testing.T) {
 
 func TestDocListWithoutDocs(t *testing.T) {
 	rec := httptest.NewRecorder()
-	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).docList(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
+	(&site{root: fstest.MapFS{}, specPath: "api.yaml"}).docList(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("got %d, want 404", rec.Code)
 	}
@@ -85,7 +85,7 @@ func TestDocPageWithoutDocs(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/docs/a.md", nil)
 	req.SetPathValue("path", "a.md")
-	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).docPage(rec, req)
+	(&site{root: fstest.MapFS{}, specPath: "api.yaml"}).docPage(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("got %d, want 404", rec.Code)
 	}
@@ -111,7 +111,7 @@ func TestRawFileWithoutDocs(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/raw/a.png", nil)
 	req.SetPathValue("path", "a.png")
-	(&site{specs: fstest.MapFS{}, specPath: "api.yaml"}).rawFile(rec, req)
+	(&site{root: fstest.MapFS{}, specPath: "api.yaml"}).rawFile(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("got %d, want 404", rec.Code)
 	}

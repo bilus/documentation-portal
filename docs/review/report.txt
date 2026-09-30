@@ -1,10 +1,10 @@
-design flow.dfd: 2 diagrams, 8 boxes
+design flow.dfd: 2 diagrams, 7 boxes
 
 private items
   none
 
 pressure
-  flow.dfd    max 0 in 4 gaps, first between 1 and 2
+  flow.dfd    max 0 in 3 gaps, first between 1 and 2
   flow.3.dfd  max 0 in 2 gaps, first between 3.1 and 3.2
 
 findings

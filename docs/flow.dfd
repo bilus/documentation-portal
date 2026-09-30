@@ -7,36 +7,29 @@
 [1. Read the configuration
  from the flags and the environment
  (main.parseConfig)]
-> specs directory name, spec path
-[2. Open the specs directory and pair it with the spec path
- so that the portal cannot read outside the directory
- (main.openSpecs)]
-    > specs directory name
-    < specs directory handle
-    <Specs directory>
-> portal configuration, content directory name
-[4. Open the named content directory, if any, and add it to the portal configuration
- so that the portal cannot read outside the content directory
- (main.openDocs)]
-    > content directory name
-    < content directory handle
-    <Content directory>
+> documentation root name, spec path, content directory path
+[2. Open the documentation root and pair it with the spec path and the content directory path
+ so that the portal cannot read outside the root
+ (main.openRoot)]
+    > documentation root name
+    < documentation root handle
+    <Documentation root>
 > portal configuration, Try It setting
 [5. Add the Try It setting to the portal configuration
  so that the viewer page shows or hides the Try It console
  (main.setTryIt)]
 > portal configuration
 [3. Build the portal
- or refuse a spec path outside the specs directory or missing Elements assets
+ or refuse a spec path or a content directory path that leaves the documentation root, or missing Elements assets
  (portal.New)]
 > address, portal
 {HTTP server}
 
 # type: arguments = []string
 # type: environment = func(string) string
-# type: specs directory name = string
+# type: documentation root name = string
 # type: spec path = string
-# type: content directory name = string
+# type: content directory path = string
 # type: Try It setting = bool
 # type: portal configuration = portal.Config
 # type: address = string

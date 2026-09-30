@@ -17,9 +17,9 @@ import (
 
 type config struct {
 	Addr      string
-	SpecsDir  string
-	SpecPath  string // relative to SpecsDir
-	DocsDir   string // empty without a content directory
+	RootDir   string
+	SpecPath  string // relative to RootDir
+	DocsPath  string // relative to RootDir, empty without a content directory
 	HideTryIt bool
 }
 
@@ -33,19 +33,15 @@ func main() {
 	log.Fatal(http.ListenAndServe(addr, h))
 }
 
-// startup reads the configuration, opens the specs directory and the content
-// directory, adds the Try It setting, and builds the portal. It returns the
-// address to listen on and the portal.
+// startup reads the configuration, opens the documentation root, adds the Try
+// It setting, and builds the portal. It returns the address to listen on and
+// the portal.
 func startup(args []string, getenv func(string) string) (string, http.Handler, error) {
 	cfg, err := parseConfig(args, getenv)
 	if err != nil {
 		return "", nil, err
 	}
-	pcfg, err := openSpecs(cfg.SpecsDir, cfg.SpecPath)
-	if err != nil {
-		return "", nil, err
-	}
-	pcfg, err = openDocs(pcfg, cfg.DocsDir)
+	pcfg, err := openRoot(cfg.RootDir, cfg.SpecPath, cfg.DocsPath)
 	if err != nil {
 		return "", nil, err
 	}
@@ -60,18 +56,18 @@ func startup(args []string, getenv func(string) string) (string, http.Handler, e
 // parseConfig reads the configuration from the flags and the environment.
 // Flags win over the environment, which wins over the defaults.
 func parseConfig(args []string, getenv func(string) string) (config, error) {
-	cfg := config{Addr: ":8080", SpecsDir: ".", SpecPath: "openapi.yaml"}
+	cfg := config{Addr: ":8080", RootDir: ".", SpecPath: "openapi.yaml"}
 	if v := getenv("DOCPORTAL_ADDR"); v != "" {
 		cfg.Addr = v
 	}
-	if v := getenv("DOCPORTAL_SPECS_DIR"); v != "" {
-		cfg.SpecsDir = v
+	if v := getenv("DOCPORTAL_ROOT_DIR"); v != "" {
+		cfg.RootDir = v
 	}
 	if v := getenv("DOCPORTAL_SPEC_PATH"); v != "" {
 		cfg.SpecPath = v
 	}
-	if v := getenv("DOCPORTAL_DOCS_DIR"); v != "" {
-		cfg.DocsDir = v
+	if v := getenv("DOCPORTAL_DOCS_PATH"); v != "" {
+		cfg.DocsPath = v
 	}
 	if v := getenv("DOCPORTAL_HIDE_TRY_IT"); v != "" {
 		hide, err := strconv.ParseBool(v)
@@ -86,9 +82,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs := flag.NewFlagSet("docportal", flag.ContinueOnError)
 	fs.SetOutput(&out)
 	fs.StringVar(&cfg.Addr, "addr", cfg.Addr, "address to listen on")
-	fs.StringVar(&cfg.SpecsDir, "specs-dir", cfg.SpecsDir, "directory that holds the API specs")
-	fs.StringVar(&cfg.SpecPath, "spec-path", cfg.SpecPath, "API spec to serve, relative to -specs-dir")
-	fs.StringVar(&cfg.DocsDir, "docs-dir", cfg.DocsDir, "directory that holds the markdown files and their images")
+	fs.StringVar(&cfg.RootDir, "root-dir", cfg.RootDir, "documentation root, the directory that holds the API spec and the markdown files")
+	fs.StringVar(&cfg.SpecPath, "spec-path", cfg.SpecPath, "API spec to serve, relative to -root-dir")
+	fs.StringVar(&cfg.DocsPath, "docs-path", cfg.DocsPath, "directory of the markdown files and their images, relative to -root-dir")
 	fs.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	if err := fs.Parse(args); err != nil {
 		return config{}, errors.New(strings.TrimSpace(out.String()))
@@ -99,31 +95,15 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	return cfg, nil
 }
 
-// openSpecs opens the specs directory and pairs it with the spec path, so
-// that the portal cannot read outside the directory.
-func openSpecs(dir, specPath string) (portal.Config, error) {
+// openRoot opens the documentation root and pairs it with the spec path and
+// the content directory path, so that the portal cannot read outside the root.
+func openRoot(dir, specPath, docsPath string) (portal.Config, error) {
 	// The root stays open for as long as docportal runs.
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return portal.Config{}, fmt.Errorf("open specs directory: %w", err)
+		return portal.Config{}, fmt.Errorf("open documentation root: %w", err)
 	}
-	return portal.Config{Specs: root.FS(), SpecPath: specPath}, nil
-}
-
-// openDocs opens the named content directory, if any, and adds it to the
-// portal configuration. Without a content directory name it returns pcfg
-// unchanged.
-func openDocs(pcfg portal.Config, dir string) (portal.Config, error) {
-	if dir == "" {
-		return pcfg, nil
-	}
-	// The root stays open for as long as docportal runs.
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return portal.Config{}, fmt.Errorf("open content directory: %w", err)
-	}
-	pcfg.Docs = root.FS()
-	return pcfg, nil
+	return portal.Config{Root: root.FS(), SpecPath: specPath, DocsPath: docsPath}, nil
 }
 
 // setTryIt adds the Try It setting to the portal configuration.
