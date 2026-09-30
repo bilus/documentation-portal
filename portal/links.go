@@ -71,13 +71,19 @@ func (s *site) specURL(target string) (string, bool) {
 	if info, err := fs.Stat(s.root, s.specPath); err != nil || !info.Mode().IsRegular() {
 		return "", false
 	}
-	u := url.URL{Path: "/specs/" + s.specPath}
+	var fragment string
 	if inside {
 		if sp, err := s.loadSpec(s.specPath); err == nil {
-			u.Fragment, _ = operationRoute(sp.Raw, pointer)
+			fragment, _ = operationRoute(sp.Raw, pointer)
 		}
 	}
-	return u.String(), true
+	return s.viewerURL(fragment), true
+}
+
+// viewerURL returns the viewer page's URL with fragment, an operation route
+// or "".
+func (s *site) viewerURL(fragment string) string {
+	return (&url.URL{Path: "/specs/" + s.specPath, Fragment: fragment}).String()
 }
 
 // operationRoute returns the operation route of pointer in spec, such as
@@ -93,28 +99,53 @@ func operationRoute(spec []byte, pointer string) (string, bool) {
 	if yaml.Unmarshal(spec, &doc) != nil || len(doc.Content) == 0 {
 		return "", false
 	}
-	item := mappingValue(mappingValue(doc.Content[0], "paths"), p)
+	op := mappingValue(pathItem(doc.Content[0], p), parts[2])
+	if op == nil || op.Kind != yaml.MappingNode {
+		return "", false
+	}
+	return route(op, p, parts[2]), true
+}
+
+// pathItem returns the path item of path p in root, the spec's root node,
+// following the item's $ref, or nil.
+func pathItem(root *yaml.Node, p string) *yaml.Node {
+	item := mappingValue(mappingValue(root, "paths"), p)
 	// A path item may be a $ref to another; a few hops end any cycle.
 	for hops := 0; hops < 8; hops++ {
 		ref := mappingValue(item, "$ref")
 		if ref == nil {
 			break
 		}
-		item = refTarget(doc.Content[0], ref.Value)
+		item = refTarget(root, ref.Value)
 	}
-	op := mappingValue(item, parts[2])
-	if op == nil || op.Kind != yaml.MappingNode {
-		return "", false
+	return item
+}
+
+// route returns the operation route of op, the operation of method on path p.
+func route(op *yaml.Node, p, method string) string {
+	if id := scalarValue(op, "operationId"); id != "" {
+		return "/operations/" + id
 	}
-	if id := mappingValue(op, "operationId"); id != nil && id.Kind == yaml.ScalarNode && id.ShortTag() != "!!null" && id.Value != "" {
-		return "/operations/" + id.Value, true
+	return "/paths/" + elementsSlug(p) + "/" + method
+}
+
+// scalarValue returns the value of key in the mapping n when it is a scalar
+// other than null, or "".
+func scalarValue(n *yaml.Node, key string) string {
+	if v := mappingValue(n, key); v != nil && v.Kind == yaml.ScalarNode && v.ShortTag() != "!!null" {
+		return v.Value
 	}
-	return "/paths/" + elementsSlug(p) + "/" + parts[2], true
+	return ""
 }
 
 // unescapeToken turns a token of a JSON pointer back into the key it names.
 func unescapeToken(token string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+}
+
+// escapeToken turns a key into a token of a JSON pointer.
+func escapeToken(key string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1")
 }
 
 // refTarget returns the node in root that ref names, when ref is a reference
