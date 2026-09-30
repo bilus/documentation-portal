@@ -5,7 +5,7 @@
 This section supersedes every review instruction of the hole-driven-delivery skill: the vocabulary review and the design review of its step 5, their runs at the plan gate and at stage boundaries, and its `prompts.md`. The rest of the skill still applies, including dfdmetrics, the score card and the review page.
 
 - When: once per issue, on the complete change, after the user approves the last stage and before the pull request opens.
-- How: one sub-agent runs the prompt below. Paste its inputs into the prompt, so that it needs few tool calls. It should finish in 5 minutes or less; record its time, tokens and tool calls in the ledger.
+- How: one sub-agent runs the prompt below. Paste its inputs into the prompt, or write the filled prompt with its inputs to one file that the sub-agent reads first, so that it needs few tool calls. It should finish in 5 minutes or less; record its time, tokens and tool calls in the ledger.
 - After it reports: run its wrong implementations against the tests with a script, in a scratch copy of the module, and record which of them pass every test. Confirm each high-severity finding with a test or an experiment before acting on it. Record a decision on each finding in the ledger, and plan a new stage for the findings that need changes.
 
 The prompt, with `<base>` the commit before the issue, `<head>` the tip, and `<scratch dir>` a directory in the session's scratchpad:
