@@ -147,13 +147,15 @@ func TestLinkURL(t *testing.T) {
 		{"a.md", "./guide/intro.md", "/docs/guide/intro.md"},
 		{"guide/intro.md", "../a.md", "/docs/a.md"},
 		{"a.md", "my%20guide.md", "/docs/my%20guide.md"},
-		{"a.md", "%zz", "%zz"},
 		{"a.md", "?page=2", "?page=2"},
 	} {
 		got, ok := s.linkURL(tc.doc, []byte(tc.dest))
 		if !ok || string(got) != tc.want {
 			t.Errorf("%s in %s: %q %v, want %q", tc.dest, tc.doc, got, ok, tc.want)
 		}
+	}
+	if got, ok := s.linkURL("a.md", []byte("%zz")); ok {
+		t.Errorf("%%zz leads to %q, want nowhere", got)
 	}
 }
 
@@ -178,5 +180,39 @@ func TestOperationRoute(t *testing.T) {
 		if got, ok := operationRoute(spec, pointer); ok {
 			t.Errorf("%s: %q, want no operation", pointer, got)
 		}
+	}
+}
+
+func TestOperationRouteEdges(t *testing.T) {
+	spec := []byte("openapi: 3.0.3\ninfo:\n  title: Radio\n  version: 1.0.0\npaths:\n" +
+		"  /a~1b:\n    get:\n      operationId: tildeOne\n" +
+		"  /x/{a}/:\n    get:\n      summary: A trailing slash\n")
+	for pointer, want := range map[string]string{
+		// ~01 decodes to ~1, since ~1 is replaced before ~0.
+		"paths/~1a~01b/get": "/operations/tildeOne",
+		// Elements trims one dash from each end, so x-a- keeps its last one.
+		"paths/~1x~1{a}~1/get": "/paths/x-a-/get",
+	} {
+		if got, ok := operationRoute(spec, pointer); !ok || got != want {
+			t.Errorf("%s: %q %v, want %q", pointer, got, ok, want)
+		}
+	}
+}
+
+func TestSpecURLEdges(t *testing.T) {
+	root := fstest.MapFS{
+		"api.yaml":    {Data: []byte("openapi: 3.1.0\ninfo:\n  title: Radio\n")},
+		"api.yaml.md": {Data: []byte("# Notes on the API\n")},
+		"a.md":        {Data: []byte("# A\n")},
+	}
+	s := &site{root: root, specPath: "api.yaml", docsPath: ".", docs: root}
+	if got, ok := s.linkURL("a.md", []byte("api.yaml.md")); !ok || string(got) != "/docs/api.yaml.md" {
+		t.Errorf("api.yaml.md: %q %v, want its document page", got, ok)
+	}
+	if got, ok := s.specURL("./api.yaml"); !ok || got != "/specs/api.yaml" {
+		t.Errorf("specURL(./api.yaml): %q %v", got, ok)
+	}
+	if got, ok := s.docAt("./guide/../a.md"); !ok || got != "a.md" {
+		t.Errorf("docAt(./guide/../a.md): %q %v", got, ok)
 	}
 }

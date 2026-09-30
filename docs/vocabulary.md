@@ -16,7 +16,7 @@ Terms of docportal, one per line.
 - configuration: the address, the documentation root name, the spec path, the content directory path and the Try It setting, each taken from its flag, else from the environment, else from its default: :8080, ., openapi.yaml, empty and false.
 - startup: reading the configuration, opening the documentation root, adding the Try It setting to the portal configuration, and building the portal, in main.startup. A failure there stops docportal before it listens.
 - address: the network address docportal listens on, such as :8080.
-- documentation root: the local directory that holds the configured spec and the content directory. The portal resolves the links of the markdown files against it, as Stoplight resolves them against its project root.
+- documentation root: the local directory that holds the configured spec and the content directory.
 - documentation root name: the documentation root's path on the local file system, as the operator gives it.
 - documentation root handle: the documentation root opened with os.OpenRoot, as an fs.FS. Every read of the spec, a markdown file or an image goes through it, and os.OpenRoot keeps each read inside the root, symlinks included.
 - spec path: the path, relative to the documentation root, of the API spec to serve.
@@ -26,6 +26,7 @@ Terms of docportal, one per line.
 - error page: the HTML page the portal shows instead of the viewer page for an invalid or missing spec, and instead of a document page for a path that names no markdown file, or a hidden one.
 - content directory: the directory at the content directory path, which holds the markdown files and their images. docportal runs without one.
 - content directory path: the content directory's path inside the documentation root, from -docs-path or DOCPORTAL_DOCS_PATH, or empty without a content directory.
+- content directory handle: the content directory as an fs.FS, which portal.New opens through the documentation root handle. With the handle from startup, it is an os.Root of its own, so no symlink leads out of the content directory.
 - markdown file: a file of the content directory named *.md or *.markdown.
 - image: a file of the content directory named *.png, *.jpg, *.jpeg, *.gif, *.webp or *.svg.
 - hidden: of a file or directory of the content directory, with a name that starts with a dot. The portal lists and serves nothing hidden and nothing inside a hidden directory.
@@ -39,15 +40,17 @@ Terms of docportal, one per line.
 - Try It console: the part of the viewer page where Stoplight Elements sends requests from the reader's browser to the servers listed in the raw spec.
 - Try It setting: whether the viewer page hides the Try It console. It is true with -hide-try-it or a true DOCPORTAL_HIDE_TRY_IT, and false by default.
 - document list: the HTML page at /docs/ that links the document page of every markdown file that is not hidden, each titled with its path, in byte order of the paths.
-- document page: the HTML page at /docs/{path} that shows one markdown file rendered as HTML without active content, with each relative link pointed at the page that serves its link target.
-- relative link: a link of a markdown file whose destination has a path but no scheme and no host, such as docs/guide-oauth.md or /docs/guide-oauth.md.
-- link target: the path inside the documentation root named by a relative link: its path against the documentation root or, when no page serves that and the path has no leading /, its path against the markdown file's directory.
-- Stoplight operation link: a relative link to <spec path>/paths/<path>/<method>, with the path escaped as in a JSON pointer, as Stoplight writes a link to an operation, such as CONRAD-Delivery-API.oas2.yml/paths/~1devices/post.
-- operation route: the part of a viewer page URL after the #, which opens one operation: /operations/{operationId}, or /paths/{slug}/{method} for an operation without an operationId.
-- leads nowhere: of a link, shown as its text alone, without the link.
+- document page: the HTML page at /docs/{path} that shows one markdown file rendered as HTML without active content, with each relative link pointed at the page that serves its link target, or shown as text when the link leads nowhere.
+- relative link: a markdown link, inline or by reference, whose destination has a path but no scheme and no host, such as docs/guide-oauth.md or /docs/guide-oauth.md. An <a> element in raw HTML is not one.
+- link target: the path named by a relative link, taken against the documentation root or, when no page serves that and the link has no leading /, against the markdown file's directory. It may leave the documentation root. A document page serves the link target of a markdown file of the content directory, and the viewer page serves the configured spec and its parts.
+- Stoplight: a hosted documentation platform, the target of the guides in conrad-api-docs. It resolves a relative link against its project root, the top directory of the repository.
+- Stoplight operation link: a relative link to <spec path>/paths/<path>/<method>, with the path escaped as in a JSON pointer, as Stoplight writes a link to an operation, such as CONRAD-Delivery-API.oas2.yml/paths/~1devices/post. The part after <spec path>/ is its pointer: a JSON pointer into the spec without its leading /.
+- operation route: the part of a viewer page URL after the #, which opens one operation: /operations/{operationId}, or /paths/{slug}/{method} for an operation without an operationId. The slug is the operation's path with each /, {, } and space turned into -, the first run of dashes collapsed to one and a dash trimmed from each end, as Stoplight Elements makes it.
+- leads nowhere: of a relative link, shown as its text alone, without the link, because no page serves its link target, the target leaves the documentation root, or the destination does not parse.
 - document sidebar: the column at the left of the document list and the document pages that links the document page of every markdown file that is not hidden, grouped by directory, with the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
 - active content: markup that runs in the reader's browser, such as a <script> element or a javascript: link.
 - navigation bar: the links at the top of every HTML page of the portal: to the viewer page, and to the document list when a content directory is configured.
+- published spec: the configured spec without its unpublished parts and marker keys. The raw spec carries it, and the viewer page's title and the operation routes come from it.
 - raw spec: the response at /api/specs/{spec path}, as application/yaml: the configured spec without its unpublished parts and marker keys. A configured spec from which the rules remove nothing comes back byte for byte. Any other spec is written again from its parsed form, with every YAML document and the order of its keys, but not its layout.
 - unpublished part: a part of the configured spec that a marker key marks for the publication target main: a key whose value is a mapping with an x-doNotPublish value that names main, together with that mapping; a list element that is such a mapping; or the sibling <name> of a key x-doNotPublish-<name> whose value names main. A value names main when it is the scalar main or a list that holds main. The root mapping is never an unpublished part, and an alias counts as a copy of its anchor's node.
 - marker key: an x-doNotPublish key or a key x-doNotPublish-<name>. Its value names one or more publication targets.

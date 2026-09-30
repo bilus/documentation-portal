@@ -121,3 +121,61 @@ func TestSpecLinks(t *testing.T) {
 		t.Error("the page names the unpublished operation")
 	}
 }
+
+func TestDocLinkWalk(t *testing.T) {
+	page := "# Walk\n\n" +
+		"First [missing](docs/missing.md) then [second](docs/guide-oauth.md) then ![diagram](diagram.png).\n\n" +
+		"[![inner](diagram.png)](docs/guide-oauth.md)\n"
+	root := fstest.MapFS{
+		"apis/pets.yaml":      {Data: []byte(pets)},
+		"docs/guide-oauth.md": {Data: []byte("# OAuth\n")},
+		"docs/walk.md":        {Data: []byte(page)},
+		"docs/diagram.png":    {Data: []byte("png")},
+	}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := get(h, "/docs/walk.md").Body.String()
+	prose := body[strings.Index(body, "sl-markdown-viewer"):]
+	if href := linkHrefs(prose)["second"]; href != "/docs/guide-oauth.md" {
+		t.Errorf("the link after one that leads nowhere: href %q", href)
+	}
+	if n := strings.Count(prose, `src="/raw/diagram.png"`); n != 2 {
+		t.Errorf("%d images under /raw/, want the one after the links and the one inside a link:\n%s", n, prose)
+	}
+	if n := strings.Count(prose, `href="/docs/guide-oauth.md"`); n != 2 {
+		t.Errorf("%d links to the document, want 2:\n%s", n, prose)
+	}
+}
+
+func TestDocLinkTargets(t *testing.T) {
+	page := "# Targets\n\n" +
+		"- [directory](docs/guide/)\n" +
+		"- [image](docs/guide/diagram.png)\n" +
+		"- [dot](./docs/guide-oauth.md)\n" +
+		"- [host only](//cdn.example.com/x.md)\n" +
+		"- [root dots](/../docs/guide-oauth.md)\n"
+	root := fstest.MapFS{
+		"apis/pets.yaml":                 {Data: []byte(pets)},
+		"docs/guide-oauth.md":            {Data: []byte("# OAuth\n")},
+		"docs/guide/p.md":                {Data: []byte(page)},
+		"docs/guide/diagram.png":         {Data: []byte("png")},
+		"docs/guide/docs/guide-oauth.md": {Data: []byte("# Not the root's\n")},
+	}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hrefs := linkHrefs(get(h, "/docs/guide/p.md").Body.String())
+	for text, want := range map[string]string{"dot": "/docs/guide-oauth.md", "host only": "//cdn.example.com/x.md", "root dots": "/docs/guide-oauth.md"} {
+		if hrefs[text] != want {
+			t.Errorf("%s: href %q, want %q", text, hrefs[text], want)
+		}
+	}
+	for _, text := range []string{"directory", "image"} {
+		if href, ok := hrefs[text]; ok {
+			t.Errorf("%s leads to %q, want no link", text, href)
+		}
+	}
+}

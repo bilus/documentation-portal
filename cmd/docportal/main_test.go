@@ -132,8 +132,10 @@ func TestStartupRejectsMissingDocsPath(t *testing.T) {
 	}
 }
 
-// writeEscape writes dir/secret.md, dir/root/docs/a.md and
-// dir/root/docs/escape.md, a symlink to the secret, and returns dir/root.
+// writeEscape writes dir/secret.md and dir/root holding private.md,
+// private.png and a content directory docs with a.md and three symlinks:
+// escape.md to the secret, inside.md to private.md and leak.png to
+// private.png. It returns dir/root.
 func writeEscape(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -141,13 +143,20 @@ func writeEscape(t *testing.T) string {
 	if err := os.MkdirAll(docs, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, data := range map[string]string{"secret.md": "# hunter2\n", "root/docs/a.md": "# A\n"} {
+	for name, data := range map[string]string{
+		"secret.md":        "# hunter2\n",
+		"root/private.md":  "# hunter3\n",
+		"root/private.png": "hunter4",
+		"root/docs/a.md":   "# A\n",
+	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Symlink("../../secret.md", filepath.Join(docs, "escape.md")); err != nil {
-		t.Fatal(err)
+	for link, target := range map[string]string{"escape.md": "../../secret.md", "inside.md": "../private.md", "leak.png": "../private.png"} {
+		if err := os.Symlink(target, filepath.Join(docs, link)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return filepath.Join(dir, "root")
 }
@@ -173,10 +182,12 @@ func TestStartupKeepsDocsInside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := get(h, "/docs/escape.md"); rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "hunter2") {
-		t.Errorf("escape.md: %d %q", rec.Code, rec.Body)
+	for _, path := range []string{"/docs/escape.md", "/docs/inside.md", "/raw/leak.png"} {
+		if rec := get(h, path); rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "hunter") {
+			t.Errorf("%s: %d %q", path, rec.Code, rec.Body)
+		}
 	}
-	if list := get(h, "/docs/").Body.String(); strings.Contains(list, "escape.md") || !strings.Contains(list, `href="/docs/a.md"`) {
+	if list := get(h, "/docs/").Body.String(); strings.Contains(list, "escape.md") || strings.Contains(list, "inside.md") || !strings.Contains(list, `href="/docs/a.md"`) {
 		t.Errorf("document list: %q", list)
 	}
 }
