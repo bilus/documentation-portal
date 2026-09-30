@@ -3,7 +3,8 @@
   "packages": [
     "go@latest",
     "gh@latest",
-    "gnumake@latest"
+    "gnumake@latest",
+    "git@latest"
   ],
   "shell": {
     "init_hook": [

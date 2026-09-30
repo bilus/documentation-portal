@@ -14,9 +14,23 @@ import (
 
 var sampleDocs = os.DirFS("../testdata/docs")
 
+// docsRoot is a documentation root that holds the spec apis/pets.yaml and
+// serves docs as its content directory docs/.
+type docsRoot struct{ docs fs.FS }
+
+func (r docsRoot) Open(name string) (fs.File, error) {
+	if name == "docs" {
+		return r.docs.Open(".")
+	}
+	if rest, ok := strings.CutPrefix(name, "docs/"); ok {
+		return r.docs.Open(rest)
+	}
+	return fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}, "docs": {Mode: fs.ModeDir}}.Open(name)
+}
+
 func newDocsPortal(t *testing.T, docs fs.FS) http.Handler {
 	t.Helper()
-	h, err := portal.New(portal.Config{Specs: fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, SpecPath: "apis/pets.yaml", Docs: docs})
+	h, err := portal.New(portal.Config{Root: docsRoot{docs}, SpecPath: "apis/pets.yaml", DocsPath: "docs"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +82,7 @@ func TestDocPage(t *testing.T) {
 		"<em>markdown</em>",
 		"<li>one</li>",
 		"<pre><code",
-		`href="../README.md"`,
+		`href="/docs/README.md"`,
 		`src="/raw/guide/diagram.png"`,
 	} {
 		if !strings.Contains(rec.Body.String(), want) {
@@ -191,5 +205,90 @@ func TestDocSidebar(t *testing.T) {
 	list := get(h, "/docs/").Body.String()
 	if strings.Count(list, "ElementsTableOfContentsItem") != 3 || strings.Contains(list, "sl-bg-primary-tint") {
 		t.Errorf("the document list's sidebar: %q", list)
+	}
+}
+
+func TestContentDirFollowsNoSymlink(t *testing.T) {
+	spec := "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    delete:\n      operationId: secretDeleteAll\n      x-doNotPublish:\n        - main\n"
+	link := func(target string) *fstest.MapFile {
+		return &fstest.MapFile{Data: []byte(target), Mode: fs.ModeSymlink}
+	}
+	for _, tc := range []struct {
+		name, docsPath string
+		root           fstest.MapFS
+		gone           []string
+	}{
+		{"below the root", "docs", fstest.MapFS{
+			"api.yaml":       {Data: []byte(spec)},
+			"private.md":     {Data: []byte("# hunter3\n")},
+			"private.png":    {Data: []byte("hunter4")},
+			"docs/a.md":      {Data: []byte("# A\n")},
+			"docs/inside.md": link("../private.md"),
+			"docs/leak.png":  link("../private.png"),
+			"docs/spec.md":   link("../api.yaml"),
+			"docs/latest.md": link("a.md"),
+		}, []string{"/docs/inside.md", "/docs/spec.md", "/docs/latest.md", "/raw/leak.png"}},
+		{"at the root", ".", fstest.MapFS{
+			"api.yaml":    {Data: []byte(spec)},
+			"a.md":        {Data: []byte("# A\n")},
+			"notes.md":    link("api.yaml"),
+			"diagram.svg": link("api.yaml"),
+		}, []string{"/docs/notes.md", "/raw/diagram.svg"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, err := portal.New(portal.Config{Root: tc.root, SpecPath: "api.yaml", DocsPath: tc.docsPath})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range tc.gone {
+				rec := get(h, path)
+				if body := rec.Body.String(); rec.Code != http.StatusNotFound || strings.Contains(body, "hunter") || strings.Contains(body, "secretDeleteAll") {
+					t.Errorf("%s: %d %q", path, rec.Code, body)
+				}
+			}
+			list := get(h, "/docs/").Body.String()
+			for _, path := range tc.gone {
+				if name := path[strings.LastIndex(path, "/")+1:]; strings.Contains(list, name) {
+					t.Errorf("the document list shows %s", name)
+				}
+			}
+			if !strings.Contains(list, `href="/docs/a.md"`) {
+				t.Error("the document list lost a.md")
+			}
+		})
+	}
+}
+
+// untypedFS reports every directory entry with type 0, as a filesystem that
+// does not track its entries' types might.
+type untypedFS struct{ fstest.MapFS }
+
+func (u untypedFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	entries, err := u.MapFS.ReadDir(name)
+	for i, e := range entries {
+		entries[i] = untypedEntry{e}
+	}
+	return entries, err
+}
+
+type untypedEntry struct{ fs.DirEntry }
+
+func (untypedEntry) Type() fs.FileMode { return 0 }
+
+func TestDocListLstatsEachFile(t *testing.T) {
+	root := untypedFS{fstest.MapFS{
+		"api.yaml": {Data: []byte(pets)},
+		"a.md":     {Data: []byte("# A\n")},
+		"notes.md": {Data: []byte("api.yaml"), Mode: fs.ModeSymlink},
+	}}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list := get(h, "/docs/").Body.String(); strings.Contains(list, "notes.md") || !strings.Contains(list, `href="/docs/a.md"`) {
+		t.Errorf("document list: %q", list)
+	}
+	if rec := get(h, "/docs/notes.md"); rec.Code != http.StatusNotFound {
+		t.Errorf("/docs/notes.md: %d", rec.Code)
 	}
 }

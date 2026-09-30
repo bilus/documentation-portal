@@ -15,9 +15,10 @@ import (
 
 // site answers the requests for the configured spec and the content directory.
 type site struct {
-	specs     fs.FS
+	root      fs.FS
 	specPath  string
-	docs      fs.FS // nil without a content directory
+	docsPath  string
+	docs      fs.FS // the content directory, or nil
 	hideTryIt bool
 }
 
@@ -123,7 +124,7 @@ func (s *site) loadSpec(path string) (*spec, error) {
 	if path != s.specPath {
 		return nil, errNoSpec
 	}
-	raw, err := fs.ReadFile(s.specs, path)
+	raw, err := fs.ReadFile(s.root, path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, errNoSpec
 	}

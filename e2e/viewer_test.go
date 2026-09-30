@@ -25,7 +25,7 @@ func TestViewerRendersSampleBundles(t *testing.T) {
 		{"petstore-3.1.yaml", "v2.0.0", "written for OpenAPI 3.1"},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
-			h, err := portal.New(portal.Config{Specs: os.DirFS("../testdata/specs"), SpecPath: tc.file})
+			h, err := portal.New(portal.Config{Root: os.DirFS("../testdata/specs"), SpecPath: tc.file})
 			if err != nil {
 				t.Fatal(err)
 			}

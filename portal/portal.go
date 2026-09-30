@@ -14,35 +14,52 @@ import (
 // Config says where the portal reads its content from and whether the viewer
 // page hides the Try It console.
 type Config struct {
-	Specs     fs.FS
-	SpecPath  string // relative to Specs
-	Docs      fs.FS  // the content directory, or nil
+	Root      fs.FS  // the documentation root handle
+	SpecPath  string // relative to Root
+	DocsPath  string // the content directory, relative to Root, or empty
 	HideTryIt bool   // hides the Try It console of the viewer page
 }
 
-// New builds the portal, or refuses a spec path outside the specs directory
-// or missing Elements assets.
+// New builds the portal, or refuses a spec path outside the documentation
+// root, a content directory path that names no directory in it, or missing
+// Elements assets.
 func New(cfg Config) (http.Handler, error) {
-	if err := checkConfig(cfg); err != nil {
+	docs, err := checkConfig(cfg)
+	if err != nil {
 		return nil, err
 	}
 	assets, err := loadAssets()
 	if err != nil {
 		return nil, err
 	}
-	return newRouter(cfg, assets), nil
+	return newRouter(cfg, docs, assets), nil
 }
 
-// checkConfig checks the portal configuration, so that the spec path stays
-// inside the specs directory.
-func checkConfig(cfg Config) error {
-	if cfg.Specs == nil {
-		return errors.New("no specs directory")
+// checkConfig checks the portal configuration and opens its content
+// directory, so that the spec path and the content directory stay inside the
+// documentation root. Without a content directory path it returns nil.
+func checkConfig(cfg Config) (fs.FS, error) {
+	if cfg.Root == nil {
+		return nil, errors.New("no documentation root")
 	}
 	if cfg.SpecPath == "." || !fs.ValidPath(cfg.SpecPath) {
-		return fmt.Errorf("spec path %q is not a file inside the specs directory", cfg.SpecPath)
+		return nil, fmt.Errorf("spec path %q is not a file inside the documentation root", cfg.SpecPath)
 	}
-	return nil
+	if cfg.DocsPath == "" {
+		return nil, nil
+	}
+	docs, err := fs.Sub(cfg.Root, cfg.DocsPath)
+	var info fs.FileInfo
+	if err == nil {
+		info, err = fs.Stat(docs, ".")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("content directory path %q: %w", cfg.DocsPath, err)
+	}
+	if !info.IsDir() || !directory(cfg.Root, cfg.DocsPath) {
+		return nil, fmt.Errorf("content directory path %q is not a directory reached through no symlink", cfg.DocsPath)
+	}
+	return docs, nil
 }
 
 // loadAssets loads the Elements assets, or refuses to start without them.
@@ -77,14 +94,14 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 // newRouter builds the router that sends each request to the viewer page, the
 // raw spec, the Elements assets and, with a content directory, the document
 // list, a document page or a raw file.
-func newRouter(cfg Config, assets fs.FS) http.Handler {
-	s := &site{specs: cfg.Specs, specPath: cfg.SpecPath, docs: cfg.Docs, hideTryIt: cfg.HideTryIt}
+func newRouter(cfg Config, docs, assets fs.FS) http.Handler {
+	s := &site{root: cfg.Root, specPath: cfg.SpecPath, docsPath: cfg.DocsPath, docs: docs, hideTryIt: cfg.HideTryIt}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /specs/{path...}", s.viewerPage)
 	mux.HandleFunc("GET /api/specs/{path...}", s.rawSpec)
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
-	if cfg.Docs != nil {
+	if docs != nil {
 		mux.HandleFunc("GET /docs/{$}", s.docList)
 		mux.HandleFunc("GET /docs/{path...}", s.docPage)
 		mux.HandleFunc("GET /raw/{path...}", s.rawFile)

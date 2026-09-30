@@ -18,6 +18,7 @@ import (
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 // docList writes the document list: a link to the document page of every
@@ -50,11 +51,8 @@ func markdownFiles(fsys fs.FS) ([]string, error) {
 			}
 			return nil
 		}
-		if ext := path.Ext(p); d.IsDir() || ext != ".md" && ext != ".markdown" {
-			return nil
-		}
-		// Stat follows a symlink, and one out of the content directory fails.
-		if info, err := fs.Stat(fsys, p); err != nil || !info.Mode().IsRegular() {
+		// Lstat, not the entry's type bits, rules out a symlink.
+		if ext := path.Ext(p); d.IsDir() || ext != ".md" && ext != ".markdown" || !regularFile(fsys, p) {
 			return nil
 		}
 		paths = append(paths, p)
@@ -78,7 +76,7 @@ func (s *site) docPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	body, err := renderMarkdown(src, p)
+	body, err := s.renderMarkdown(src, p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -113,24 +111,54 @@ var markdown = goldmark.New(
 var sanitizer = bluemonday.UGCPolicy()
 
 // renderMarkdown renders src, the markdown file at docPath, as HTML without
-// active content, with its relative image references under /raw/.
-func renderMarkdown(src []byte, docPath string) (template.HTML, error) {
+// active content, with its relative image references under /raw/ and each
+// relative link pointed at the page that serves its link target.
+func (s *site) renderMarkdown(src []byte, docPath string) (template.HTML, error) {
 	doc := markdown.Parser().Parse(text.NewReader(src))
 	dir := path.Dir(docPath)
+	var nowhere []*ast.Link
 	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if img, ok := n.(*ast.Image); ok && entering {
-			img.Destination = rawImageURL(dir, img.Destination)
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n := n.(type) {
+		case *ast.Image:
+			dest := unescape(n.Destination)
+			if url := rawImageURL(dir, dest); !bytes.Equal(url, dest) {
+				n.Destination = url
+			}
+		case *ast.Link:
+			dest := unescape(n.Destination)
+			switch url, ok := s.linkURL(docPath, dest); {
+			case !ok:
+				nowhere = append(nowhere, n)
+			case !bytes.Equal(url, dest):
+				n.Destination = url
+			}
 		}
 		return ast.WalkContinue, nil
 	})
 	if err != nil {
 		return "", err
 	}
+	for _, link := range nowhere {
+		parent := link.Parent()
+		for c := link.FirstChild(); c != nil; c = link.FirstChild() {
+			parent.InsertBefore(parent, link, c)
+		}
+		parent.RemoveChild(parent, link)
+	}
 	var buf bytes.Buffer
 	if err := markdown.Renderer().Render(&buf, src, doc); err != nil {
 		return "", err
 	}
 	return template.HTML(sanitizer.SanitizeBytes(buf.Bytes())), nil
+}
+
+// unescape resolves the backslash escapes and character references of a link
+// destination, as goldmark's renderer does before it writes one.
+func unescape(dest []byte) []byte {
+	return util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(dest)))
 }
 
 // rawImageURL turns an image reference relative to dir into its /raw/ URL,
@@ -159,8 +187,7 @@ func (s *site) rawFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Stat follows a symlink, and one out of the content directory fails.
-	if info, err := fs.Stat(s.docs, p); err != nil || !info.Mode().IsRegular() {
+	if !regularFile(s.docs, p) {
 		http.NotFound(w, r)
 		return
 	}
@@ -171,6 +198,24 @@ func (s *site) rawFile(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.Write(data)
+}
+
+// regularFile reports whether p is a regular file of fsys that no symlink
+// leads to, in its own name or in the name of a directory above it.
+func regularFile(fsys fs.FS, p string) bool {
+	info, err := fs.Lstat(fsys, p)
+	return err == nil && info.Mode().IsRegular() && directory(fsys, path.Dir(p))
+}
+
+// directory reports whether p is a directory of fsys that no symlink leads
+// to, in its own name or in the name of a directory above it.
+func directory(fsys fs.FS, p string) bool {
+	for ; p != "."; p = path.Dir(p) {
+		if info, err := fs.Lstat(fsys, p); err != nil || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 // imageTypes maps the extension of an image to its Content-Type.

@@ -3,14 +3,17 @@
 
 {5 Add the Try It setting}
 > portal configuration
-[3.1. Check the portal configuration
- so that the spec path stays inside the specs directory
+[3.1. Check the portal configuration and open its content directory
+ so that the spec path and the content directory stay inside the documentation root
  (portal.checkConfig)]
+    > content directory path
+    < content directory handle
+    <Documentation root>
 >
 [3.2. Load the Elements assets
  or refuse to start without them
  (portal.loadAssets)]
-> portal configuration, Elements assets
+> portal configuration, content directory handle, Elements assets
 [3.3. Build the router
  that sends each request to the viewer page, the raw spec, the Elements assets
  and, with a content directory, the document list, a document page or a raw file
@@ -19,5 +22,6 @@
 {HTTP server}
 
 # type: portal configuration = portal.Config
+# type: content directory handle = io/fs.FS
 # type: Elements assets = io/fs.FS
 # type: portal = net/http.Handler
