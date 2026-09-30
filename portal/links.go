@@ -61,14 +61,14 @@ func (s *site) docAt(target string) (string, bool) {
 // documentation root that names the configured spec or, in Stoplight's form,
 // a part of it: at the operation route for an operation of the published
 // spec, else at the overview. It reports false for any other target, and
-// while the spec file is missing.
+// while no regular file is at the spec path.
 func (s *site) specURL(target string) (string, bool) {
 	target = path.Clean(target)
 	pointer, inside := strings.CutPrefix(target, s.specPath+"/")
 	if !inside && target != s.specPath {
 		return "", false
 	}
-	if _, err := fs.Stat(s.root, s.specPath); err != nil {
+	if info, err := fs.Stat(s.root, s.specPath); err != nil || !info.Mode().IsRegular() {
 		return "", false
 	}
 	u := url.URL{Path: "/specs/" + s.specPath}
@@ -88,12 +88,21 @@ func operationRoute(spec []byte, pointer string) (string, bool) {
 	if len(parts) != 3 || parts[0] != "paths" || !slices.Contains(methods, parts[2]) {
 		return "", false
 	}
-	p := strings.ReplaceAll(strings.ReplaceAll(parts[1], "~1", "/"), "~0", "~")
+	p := unescapeToken(parts[1])
 	var doc yaml.Node
 	if yaml.Unmarshal(spec, &doc) != nil || len(doc.Content) == 0 {
 		return "", false
 	}
-	op := mappingValue(mappingValue(mappingValue(doc.Content[0], "paths"), p), parts[2])
+	item := mappingValue(mappingValue(doc.Content[0], "paths"), p)
+	// A path item may be a $ref to another; a few hops end any cycle.
+	for hops := 0; hops < 8; hops++ {
+		ref := mappingValue(item, "$ref")
+		if ref == nil {
+			break
+		}
+		item = refTarget(doc.Content[0], ref.Value)
+	}
+	op := mappingValue(item, parts[2])
 	if op == nil || op.Kind != yaml.MappingNode {
 		return "", false
 	}
@@ -101,6 +110,25 @@ func operationRoute(spec []byte, pointer string) (string, bool) {
 		return "/operations/" + id.Value, true
 	}
 	return "/paths/" + elementsSlug(p) + "/" + parts[2], true
+}
+
+// unescapeToken turns a token of a JSON pointer back into the key it names.
+func unescapeToken(token string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")
+}
+
+// refTarget returns the node in root that ref names, when ref is a reference
+// inside the document such as #/components/pathItems/Pets, or nil.
+func refTarget(root *yaml.Node, ref string) *yaml.Node {
+	pointer, ok := strings.CutPrefix(ref, "#/")
+	if !ok {
+		return nil
+	}
+	n := root
+	for _, token := range strings.Split(pointer, "/") {
+		n = mappingValue(n, unescapeToken(token))
+	}
+	return n
 }
 
 // methods are the keys of the operations in a path item.

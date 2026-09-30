@@ -240,3 +240,32 @@ func TestOperationRouteYAML(t *testing.T) {
 		t.Errorf("webhooks/~1pets/get: %q, want no operation", got)
 	}
 }
+
+func TestOperationRoutePathItemRef(t *testing.T) {
+	spec := []byte("openapi: 3.1.0\ninfo:\n  title: Pets\n  version: 1.0.0\n" +
+		"components:\n  pathItems:\n" +
+		"    Pets:\n      get:\n        operationId: listPets\n      post:\n        summary: Add a pet\n" +
+		"    Hop:\n      $ref: '#/components/pathItems/Pets'\n" +
+		"    A:\n      $ref: '#/components/pathItems/B'\n" +
+		"    B:\n      $ref: '#/components/pathItems/A'\n" +
+		"paths:\n" +
+		"  /pets:\n    $ref: '#/components/pathItems/Pets'\n" +
+		"  /hop:\n    $ref: '#/components/pathItems/Hop'\n" +
+		"  /loop:\n    $ref: '#/components/pathItems/A'\n" +
+		"  /gone:\n    $ref: '#/components/pathItems/Missing'\n" +
+		"  /external:\n    $ref: 'other.yaml#/components/pathItems/Pets'\n")
+	for pointer, want := range map[string]string{
+		"paths/~1pets/get":  "/operations/listPets",
+		"paths/~1pets/post": "/paths/pets/post",
+		"paths/~1hop/get":   "/operations/listPets",
+	} {
+		if got, ok := operationRoute(spec, pointer); !ok || got != want {
+			t.Errorf("%s: %q %v, want %q", pointer, got, ok, want)
+		}
+	}
+	for _, pointer := range []string{"paths/~1loop/get", "paths/~1gone/get", "paths/~1external/get"} {
+		if got, ok := operationRoute(spec, pointer); ok {
+			t.Errorf("%s: %q, want no operation", pointer, got)
+		}
+	}
+}

@@ -236,3 +236,17 @@ func TestSpecLinkToMissingSpec(t *testing.T) {
 		}
 	}
 }
+
+func TestSpecLinkToSpecDirectory(t *testing.T) {
+	root := fstest.MapFS{
+		"api.yaml/readme.txt": {Data: []byte("not a spec\n")},
+		"docs/links.md":       {Data: []byte("- [spec](api.yaml)\n")},
+	}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if href, ok := linkHrefs(get(h, "/docs/links.md").Body.String())["spec"]; ok {
+		t.Errorf("spec leads to %q, want no link", href)
+	}
+}
