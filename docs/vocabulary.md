@@ -25,7 +25,7 @@ Terms of docportal, one per line.
 - invalid spec: a configured spec that is not an API spec: not YAML, not OpenAPI 3.0 or 3.1, or without a title. It gets an error page naming the file and the reason, and /api/specs/{spec path} answers with an error naming the file and the reason, both with status 422.
 - error page: the HTML page the portal shows instead of the viewer page for an invalid or missing spec, and instead of a document page for a path that names no markdown file, or a hidden one.
 - content directory: the directory at the content directory path, which holds the markdown files and their images. docportal runs without one.
-- content directory path: the content directory's path inside the documentation root, from -docs-path or DOCPORTAL_DOCS_PATH, or empty without a content directory.
+- content directory path: the content directory's path inside the documentation root, from -docs-path or DOCPORTAL_DOCS_PATH, or empty without a content directory. No part of it may be a symlink.
 - content directory handle: the content directory as an fs.FS, which portal.New opens through the documentation root handle. The portal follows no symlink in it.
 - markdown file: a regular file of the content directory named *.md or *.markdown, reached through no symlink.
 - image: a regular file of the content directory named *.png, *.jpg, *.jpeg, *.gif, *.webp or *.svg, reached through no symlink.
