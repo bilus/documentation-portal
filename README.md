@@ -25,7 +25,9 @@ console.
 
 With a content directory, `/docs/` lists its markdown files, `/docs/{path}`
 renders one as HTML without scripts, and `/raw/{path}` serves its PNG, JPEG,
-GIF, WebP and SVG images. The portal reads nothing outside the documentation
+GIF, WebP and SVG images. A relative link in a markdown file resolves against
+the documentation root, as on Stoplight, and then against the file's own
+directory, and it shows as plain text when no page serves its target. The portal reads nothing outside the documentation
 root, and under `/specs/` and `/api/specs/` it serves no file of the root
 except the spec.
 

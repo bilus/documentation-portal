@@ -118,16 +118,32 @@ var sanitizer = bluemonday.UGCPolicy()
 func (s *site) renderMarkdown(src []byte, docPath string) (template.HTML, error) {
 	doc := markdown.Parser().Parse(text.NewReader(src))
 	dir := path.Dir(docPath)
+	var nowhere []*ast.Link
 	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if img, ok := n.(*ast.Image); ok && entering {
-			img.Destination = rawImageURL(dir, img.Destination)
+		if !entering {
+			return ast.WalkContinue, nil
 		}
-		// HOLE(1): point each link at the URL from s.linkURL, and replace a
-		// link that leads nowhere with its text
+		switch n := n.(type) {
+		case *ast.Image:
+			n.Destination = rawImageURL(dir, n.Destination)
+		case *ast.Link:
+			if dest, ok := s.linkURL(docPath, n.Destination); ok {
+				n.Destination = dest
+			} else {
+				nowhere = append(nowhere, n)
+			}
+		}
 		return ast.WalkContinue, nil
 	})
 	if err != nil {
 		return "", err
+	}
+	for _, link := range nowhere {
+		parent := link.Parent()
+		for c := link.FirstChild(); c != nil; c = link.FirstChild() {
+			parent.InsertBefore(parent, link, c)
+		}
+		parent.RemoveChild(parent, link)
 	}
 	var buf bytes.Buffer
 	if err := markdown.Renderer().Render(&buf, src, doc); err != nil {

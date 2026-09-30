@@ -82,7 +82,7 @@ func TestDocPage(t *testing.T) {
 		"<em>markdown</em>",
 		"<li>one</li>",
 		"<pre><code",
-		`href="../README.md"`,
+		`href="/docs/README.md"`,
 		`src="/raw/guide/diagram.png"`,
 	} {
 		if !strings.Contains(rec.Body.String(), want) {
