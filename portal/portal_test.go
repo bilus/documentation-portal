@@ -14,7 +14,7 @@ const pets = "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths: {}\
 
 func newPortal(t *testing.T, files fstest.MapFS, specPath string) http.Handler {
 	t.Helper()
-	h, err := portal.New(portal.Config{Specs: files, SpecPath: specPath})
+	h, err := portal.New(portal.Config{Root: files, SpecPath: specPath})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestViewerPage(t *testing.T) {
 }
 
 func TestViewerPageHidesTryIt(t *testing.T) {
-	h, err := portal.New(portal.Config{Specs: fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, SpecPath: "apis/pets.yaml", HideTryIt: true})
+	h, err := portal.New(portal.Config{Root: fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, SpecPath: "apis/pets.yaml", HideTryIt: true})
 	if err != nil {
 		t.Fatal(err)
 	}

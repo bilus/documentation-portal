@@ -78,7 +78,7 @@ func (s *site) docPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	body, err := renderMarkdown(src, p)
+	body, err := s.renderMarkdown(src, p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -113,14 +113,17 @@ var markdown = goldmark.New(
 var sanitizer = bluemonday.UGCPolicy()
 
 // renderMarkdown renders src, the markdown file at docPath, as HTML without
-// active content, with its relative image references under /raw/.
-func renderMarkdown(src []byte, docPath string) (template.HTML, error) {
+// active content, with its relative image references under /raw/ and each
+// relative link pointed at the page that serves its link target.
+func (s *site) renderMarkdown(src []byte, docPath string) (template.HTML, error) {
 	doc := markdown.Parser().Parse(text.NewReader(src))
 	dir := path.Dir(docPath)
 	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if img, ok := n.(*ast.Image); ok && entering {
 			img.Destination = rawImageURL(dir, img.Destination)
 		}
+		// HOLE(1): point each link at the URL from s.linkURL, and replace a
+		// link that leads nowhere with its text
 		return ast.WalkContinue, nil
 	})
 	if err != nil {

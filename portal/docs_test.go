@@ -14,9 +14,23 @@ import (
 
 var sampleDocs = os.DirFS("../testdata/docs")
 
+// docsRoot is a documentation root that holds the spec apis/pets.yaml and
+// serves docs as its content directory docs/.
+type docsRoot struct{ docs fs.FS }
+
+func (r docsRoot) Open(name string) (fs.File, error) {
+	if name == "docs" {
+		return r.docs.Open(".")
+	}
+	if rest, ok := strings.CutPrefix(name, "docs/"); ok {
+		return r.docs.Open(rest)
+	}
+	return fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}, "docs": {Mode: fs.ModeDir}}.Open(name)
+}
+
 func newDocsPortal(t *testing.T, docs fs.FS) http.Handler {
 	t.Helper()
-	h, err := portal.New(portal.Config{Specs: fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, SpecPath: "apis/pets.yaml", Docs: docs})
+	h, err := portal.New(portal.Config{Root: docsRoot{docs}, SpecPath: "apis/pets.yaml", DocsPath: "docs"})
 	if err != nil {
 		t.Fatal(err)
 	}
