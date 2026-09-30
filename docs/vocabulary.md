@@ -11,9 +11,9 @@ Terms of docportal, one per line.
 - operator: the person who starts docportal and gives it its configuration.
 - reader: the person who reads the documentation in a browser.
 - arguments: docportal's command-line arguments, without the program name: the flags and nothing else.
-- flags: -addr, -root-dir, -spec-path, -docs-path and -hide-try-it. Any other flag is rejected.
-- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_ROOT_DIR, DOCPORTAL_SPEC_PATH, DOCPORTAL_DOCS_PATH and DOCPORTAL_HIDE_TRY_IT. Tests pass their own lookup.
-- configuration: the address, the documentation root name, the spec path, the content directory path and the Try It setting, each taken from its flag, else from the environment, else from its default: :8080, ., openapi.yaml, empty and false.
+- flags: -addr, -root-dir, -spec-path, -docs-path, -hide-try-it and -chat-model. Any other flag is rejected.
+- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_ROOT_DIR, DOCPORTAL_SPEC_PATH, DOCPORTAL_DOCS_PATH, DOCPORTAL_HIDE_TRY_IT and DOCPORTAL_CHAT_MODEL. Tests pass their own lookup.
+- configuration: the address, the documentation root name, the spec path, the content directory path, the Try It setting and the chat model, each taken from its flag, else from the environment, else from its default: :8080, ., openapi.yaml, empty, false and empty.
 - startup: reading the configuration, opening the documentation root, adding the Try It setting to the portal configuration, and building the portal, in main.startup. A failure there stops docportal before it listens.
 - address: the network address docportal listens on, such as :8080.
 - documentation root: the local directory that holds the configured spec and the content directory.
@@ -32,7 +32,7 @@ Terms of docportal, one per line.
 - hidden: of a file or directory of the content directory, with a name that starts with a dot. The portal lists and serves nothing hidden and nothing inside a hidden directory.
 - path: in /docs/{path} and /raw/{path}, a slash-separated path relative to the content directory.
 - sample documents: testdata/docs, the fixture directory of the markdown file and raw file tests.
-- portal configuration: the documentation root handle, the spec path, the content directory path and the Try It setting, as portal.New takes them. Tests pass any fs.FS in the handle's place.
+- portal configuration: the documentation root handle, the spec path, the content directory path, the Try It setting and the chat's routes, as portal.New takes them. Tests pass any fs.FS in the handle's place.
 - portal: the HTTP handler that redirects / to the viewer page and serves the viewer page, the raw spec and the Elements assets, and with a content directory the document list, the document pages and the raw files.
 - router: the http.ServeMux that newRouter builds and portal.New returns as the portal. It sends each request to its handler by method and path.
 - HTTP server: net/http's server, which listens on the address and calls the portal for each request.
@@ -49,7 +49,10 @@ Terms of docportal, one per line.
 - leads nowhere: of a relative link, shown as its text alone, without the link, because no page serves its link target, the target leaves the documentation root, or the destination does not parse.
 - document sidebar: the column at the left of the document list and the document pages that links the document page of every markdown file that is not hidden, grouped by directory, with the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
 - active content: markup that runs in the reader's browser, such as a <script> element or a javascript: link.
-- navigation bar: the links at the top of every HTML page of the portal: to the viewer page, and to the document list when a content directory is configured.
+- navigation bar: the links at the top of every HTML page of the portal: to the viewer page, to the document list when a content directory is configured, and to the chat page when a chat model is named.
+- chat page: the live page at /chat where a reader asks questions about the API, and the chat model answers from the published spec and the markdown files through read-only tools. The portal serves it only when a chat model is named.
+- chat model: the Anthropic model that answers on the chat page, named by -chat-model or DOCPORTAL_CHAT_MODEL, and empty by default, which leaves the chat off.
+- library: portal.Library, the published documentation as the chat reads it: the published spec, its operations and parts, and the markdown files that the document list shows, each with its page's URL.
 - published spec: the configured spec without its unpublished parts and marker keys. The raw spec carries it, and the viewer page's title and the operation routes come from it.
 - raw spec: the response at /api/specs/{spec path}, as application/yaml: the configured spec without its unpublished parts and marker keys. A configured spec from which the rules remove nothing comes back byte for byte. Any other spec is written again from its parsed form, with every YAML document and the order of its keys, but not its layout.
 - unpublished part: a part of the configured spec that a marker key marks for the publication target main: a key whose value is a mapping with an x-doNotPublish value that names main, together with that mapping; a list element that is such a mapping; or the sibling <name> of a key x-doNotPublish-<name> whose value names main. A value names main when it is the scalar main or a list that holds main. The root mapping is never an unpublished part, and an alias counts as a copy of its anchor's node.

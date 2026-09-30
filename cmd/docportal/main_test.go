@@ -248,3 +248,40 @@ func TestStartupRejectsDocsPathOutsideRoot(t *testing.T) {
 		t.Errorf("err = %v, want a refusal naming the content directory path", err)
 	}
 }
+
+func TestParseConfigReadsChatModel(t *testing.T) {
+	env := func(k string) string { return map[string]string{"DOCPORTAL_CHAT_MODEL": "claude-opus-5-5"}[k] }
+	if cfg, err := parseConfig(nil, env); err != nil || cfg.ChatModel != "claude-opus-5-5" {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig([]string{"-chat-model", "claude-sonnet-5-5"}, env); err != nil || cfg.ChatModel != "claude-sonnet-5-5" {
+		t.Errorf("the flag over the environment: %+v, %v", cfg, err)
+	}
+}
+
+func TestStartupServesChat(t *testing.T) {
+	_, h, err := startup([]string{"-root-dir", "../../testdata", "-spec-path", "specs/petstore-3.1.yaml", "-docs-path", "docs", "-chat-model", "claude-opus-5-5"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(h, "/chat")
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Ask about the") {
+		t.Errorf("chat page: %d %q", page.Code, page.Body)
+	}
+	if nav := get(h, "/docs/").Body.String(); !strings.Contains(nav, `href="/chat"`) {
+		t.Errorf("the navigation bar has no Chat link: %q", nav)
+	}
+}
+
+func TestStartupWithoutChat(t *testing.T) {
+	_, h, err := startup([]string{"-root-dir", "../../testdata", "-spec-path", "specs/petstore-3.1.yaml", "-docs-path", "docs"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(h, "/chat"); rec.Code != http.StatusNotFound {
+		t.Errorf("/chat: %d", rec.Code)
+	}
+	if nav := get(h, "/docs/").Body.String(); strings.Contains(nav, `href="/chat"`) {
+		t.Error("the navigation bar links a chat that is off")
+	}
+}
