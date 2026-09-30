@@ -229,3 +229,22 @@ func TestStartupHidesTryIt(t *testing.T) {
 		t.Errorf("the viewer page shows the Try It console: %q", body)
 	}
 }
+
+func TestStartupRejectsDocsPathOutsideRoot(t *testing.T) {
+	dir := t.TempDir()
+	for _, sub := range []string{"root", "outside"} {
+		if err := os.Mkdir(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "outside", "a.md"), []byte("# A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../outside", filepath.Join(dir, "root", "docs")); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := startup([]string{"-root-dir", filepath.Join(dir, "root"), "-spec-path", "api.yaml", "-docs-path", "docs"}, noEnv)
+	if err == nil || !strings.Contains(err.Error(), "docs") {
+		t.Errorf("err = %v, want a refusal naming the content directory path", err)
+	}
+}

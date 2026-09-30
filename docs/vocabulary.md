@@ -26,9 +26,9 @@ Terms of docportal, one per line.
 - error page: the HTML page the portal shows instead of the viewer page for an invalid or missing spec, and instead of a document page for a path that names no markdown file, or a hidden one.
 - content directory: the directory at the content directory path, which holds the markdown files and their images. docportal runs without one.
 - content directory path: the content directory's path inside the documentation root, from -docs-path or DOCPORTAL_DOCS_PATH, or empty without a content directory.
-- content directory handle: the content directory as an fs.FS, which portal.New opens through the documentation root handle. With the handle from startup, it is an os.Root of its own, so no symlink leads out of the content directory.
-- markdown file: a file of the content directory named *.md or *.markdown.
-- image: a file of the content directory named *.png, *.jpg, *.jpeg, *.gif, *.webp or *.svg.
+- content directory handle: the content directory as an fs.FS, which portal.New opens through the documentation root handle. The portal follows no symlink in it.
+- markdown file: a regular file of the content directory named *.md or *.markdown, reached through no symlink.
+- image: a regular file of the content directory named *.png, *.jpg, *.jpeg, *.gif, *.webp or *.svg, reached through no symlink.
 - hidden: of a file or directory of the content directory, with a name that starts with a dot. The portal lists and serves nothing hidden and nothing inside a hidden directory.
 - path: in /docs/{path} and /raw/{path}, a slash-separated path relative to the content directory.
 - sample documents: testdata/docs, the fixture directory of the markdown file and raw file tests.

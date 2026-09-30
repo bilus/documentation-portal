@@ -207,3 +207,54 @@ func TestDocSidebar(t *testing.T) {
 		t.Errorf("the document list's sidebar: %q", list)
 	}
 }
+
+func TestContentDirFollowsNoSymlink(t *testing.T) {
+	spec := "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    delete:\n      operationId: secretDeleteAll\n      x-doNotPublish:\n        - main\n"
+	link := func(target string) *fstest.MapFile {
+		return &fstest.MapFile{Data: []byte(target), Mode: fs.ModeSymlink}
+	}
+	for _, tc := range []struct {
+		name, docsPath string
+		root           fstest.MapFS
+		gone           []string
+	}{
+		{"below the root", "docs", fstest.MapFS{
+			"api.yaml":       {Data: []byte(spec)},
+			"private.md":     {Data: []byte("# hunter3\n")},
+			"private.png":    {Data: []byte("hunter4")},
+			"docs/a.md":      {Data: []byte("# A\n")},
+			"docs/inside.md": link("../private.md"),
+			"docs/leak.png":  link("../private.png"),
+			"docs/spec.md":   link("../api.yaml"),
+			"docs/latest.md": link("a.md"),
+		}, []string{"/docs/inside.md", "/docs/spec.md", "/docs/latest.md", "/raw/leak.png"}},
+		{"at the root", ".", fstest.MapFS{
+			"api.yaml":    {Data: []byte(spec)},
+			"a.md":        {Data: []byte("# A\n")},
+			"notes.md":    link("api.yaml"),
+			"diagram.svg": link("api.yaml"),
+		}, []string{"/docs/notes.md", "/raw/diagram.svg"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, err := portal.New(portal.Config{Root: tc.root, SpecPath: "api.yaml", DocsPath: tc.docsPath})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range tc.gone {
+				rec := get(h, path)
+				if body := rec.Body.String(); rec.Code != http.StatusNotFound || strings.Contains(body, "hunter") || strings.Contains(body, "secretDeleteAll") {
+					t.Errorf("%s: %d %q", path, rec.Code, body)
+				}
+			}
+			list := get(h, "/docs/").Body.String()
+			for _, path := range tc.gone {
+				if name := path[strings.LastIndex(path, "/")+1:]; strings.Contains(list, name) {
+					t.Errorf("the document list shows %s", name)
+				}
+			}
+			if !strings.Contains(list, `href="/docs/a.md"`) {
+				t.Error("the document list lost a.md")
+			}
+		})
+	}
+}

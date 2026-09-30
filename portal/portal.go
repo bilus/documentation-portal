@@ -53,8 +53,11 @@ func checkConfig(cfg Config) (fs.FS, error) {
 	if err == nil {
 		info, err = fs.Stat(docs, ".")
 	}
-	if err != nil || !info.IsDir() {
-		return nil, fmt.Errorf("content directory path %q is not a directory inside the documentation root", cfg.DocsPath)
+	if err != nil {
+		return nil, fmt.Errorf("content directory path %q: %w", cfg.DocsPath, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("content directory path %q is not a directory", cfg.DocsPath)
 	}
 	return docs, nil
 }
