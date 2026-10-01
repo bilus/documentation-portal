@@ -47,7 +47,7 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 	if err == nil {
 		err = add(functiontool.New(functiontool.Config{
 			Name:        "read_document",
-			Description: "Returns the markdown of one guide.",
+			Description: "Returns the text of one guide's page, in markdown, with its links pointed at the portal's pages.",
 		}, func(_ agent.Context, a documentArg) (map[string]any, error) {
 			text, err := lib.ReadDocument(a.Path)
 			if err != nil {
