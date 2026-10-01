@@ -9,18 +9,22 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
 
 // site answers the requests for the configured spec and the content directory.
 type site struct {
-	root      fs.FS
-	specPath  string
-	docsPath  string
-	docs      fs.FS // the content directory, or nil
-	hideTryIt bool
-	chat      bool // whether the portal serves a chat page at /chat
+	root       fs.FS
+	specPath   string
+	docsPath   string
+	docs       fs.FS  // the content directory, or nil
+	tocPath    string // the toc file, or empty
+	tocMu      sync.Mutex
+	tocProblem string // the toc file's problem that the log named last, or empty
+	hideTryIt  bool
+	chat       bool // whether the portal serves a chat page at /chat
 }
 
 func (s *site) index(w http.ResponseWriter, r *http.Request) {

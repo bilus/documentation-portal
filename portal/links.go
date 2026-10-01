@@ -45,16 +45,26 @@ func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
 // target, a path inside the documentation root, or false when no document
 // page serves it.
 func (s *site) docAt(target string) (string, bool) {
-	target = path.Clean(target)
-	doc, ok := target, s.docsPath == "."
-	if !ok {
-		doc, ok = strings.CutPrefix(target, s.docsPath+"/")
-	}
+	doc, ok := s.contentPath(target)
 	if !ok || s.docs == nil {
 		return "", false
 	}
 	paths, err := markdownFiles(s.docs)
 	return doc, err == nil && slices.Contains(paths, doc)
+}
+
+// contentPath returns target, a path inside the documentation root, as a
+// path in the content directory, or false for a target outside it or
+// without a content directory.
+func (s *site) contentPath(target string) (string, bool) {
+	target = path.Clean(target)
+	switch s.docsPath {
+	case "":
+		return "", false
+	case ".":
+		return target, true
+	}
+	return strings.CutPrefix(target, s.docsPath+"/")
 }
 
 // specURL returns the viewer page URL for target, a path inside the
@@ -63,21 +73,31 @@ func (s *site) docAt(target string) (string, bool) {
 // spec, else at the overview. It reports false for any other target, and
 // while no regular file is at the spec path.
 func (s *site) specURL(target string) (string, bool) {
-	target = path.Clean(target)
-	pointer, inside := strings.CutPrefix(target, s.specPath+"/")
-	if !inside && target != s.specPath {
+	pointer, ok := s.specPart(target)
+	if !ok {
 		return "", false
 	}
 	if info, err := fs.Stat(s.root, s.specPath); err != nil || !info.Mode().IsRegular() {
 		return "", false
 	}
 	var fragment string
-	if inside {
+	if pointer != "" {
 		if sp, err := s.loadSpec(s.specPath); err == nil {
 			fragment, _ = operationRoute(sp.Raw, pointer)
 		}
 	}
 	return s.viewerURL(fragment), true
+}
+
+// specPart reports whether target, a path inside the documentation root,
+// names the configured spec or, in Stoplight's form, a part of it, and
+// returns the part's pointer, or "" for the spec itself.
+func (s *site) specPart(target string) (string, bool) {
+	target = path.Clean(target)
+	if pointer, inside := strings.CutPrefix(target, s.specPath+"/"); inside {
+		return pointer, true
+	}
+	return "", target == s.specPath
 }
 
 // viewerURL returns the viewer page's URL with fragment, an operation route
@@ -90,16 +110,22 @@ func (s *site) viewerURL(fragment string) string {
 // /operations/registerDevice for paths/~1devices/post, or false when spec has
 // no such operation.
 func operationRoute(spec []byte, pointer string) (string, bool) {
-	parts := strings.Split(pointer, "/")
-	if len(parts) != 3 || parts[0] != "paths" || !slices.Contains(methods, parts[2]) {
-		return "", false
-	}
-	p := unescapeToken(parts[1])
 	var doc yaml.Node
 	if yaml.Unmarshal(spec, &doc) != nil || len(doc.Content) == 0 {
 		return "", false
 	}
-	op := mappingValue(pathItem(doc.Content[0], p), parts[2])
+	return routeIn(doc.Content[0], pointer)
+}
+
+// routeIn returns the operation route of pointer in root, the root node of a
+// spec, or false when root is nil or has no such operation.
+func routeIn(root *yaml.Node, pointer string) (string, bool) {
+	parts := strings.Split(pointer, "/")
+	if root == nil || len(parts) != 3 || parts[0] != "paths" || !slices.Contains(methods, parts[2]) {
+		return "", false
+	}
+	p := unescapeToken(parts[1])
+	op := mappingValue(pathItem(root, p), parts[2])
 	if op == nil || op.Kind != yaml.MappingNode {
 		return "", false
 	}

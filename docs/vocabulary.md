@@ -11,9 +11,9 @@ Terms of docportal, one per line.
 - operator: the person who starts docportal and gives it its configuration.
 - reader: the person who reads the documentation in a browser.
 - arguments: docportal's command-line arguments, without the program name: the flags and nothing else.
-- flags: -addr, -root-dir, -spec-path, -docs-path, -hide-try-it and -chat-model. Any other flag is rejected.
-- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_ROOT_DIR, DOCPORTAL_SPEC_PATH, DOCPORTAL_DOCS_PATH, DOCPORTAL_HIDE_TRY_IT and DOCPORTAL_CHAT_MODEL. Tests pass their own lookup.
-- configuration: the address, the documentation root name, the spec path, the content directory path, the Try It setting and the chat model, each taken from its flag, else from the environment, else from its default: :8080, ., openapi.yaml, empty, false and empty.
+- flags: -addr, -root-dir, -spec-path, -docs-path, -toc-path, -hide-try-it and -chat-model. Any other flag is rejected.
+- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_ROOT_DIR, DOCPORTAL_SPEC_PATH, DOCPORTAL_DOCS_PATH, DOCPORTAL_TOC_PATH, DOCPORTAL_HIDE_TRY_IT and DOCPORTAL_CHAT_MODEL. Tests pass their own lookup.
+- configuration: the address, the documentation root name, the spec path, the content directory path, the toc path, the Try It setting and the chat model, each taken from its flag, else from the environment, else from its default: :8080, ., openapi.yaml, empty, empty, false and empty.
 - startup: reading the configuration, opening the documentation root, adding the Try It setting to the portal configuration, and building the portal, in main.startup. A failure there stops docportal before it listens.
 - address: the network address docportal listens on, such as :8080.
 - documentation root: the local directory that holds the configured spec and the content directory.
@@ -26,13 +26,15 @@ Terms of docportal, one per line.
 - error page: the HTML page the portal shows instead of the viewer page for an invalid or missing spec, and instead of a document page for a path that names no markdown file, or a hidden one.
 - content directory: the directory at the content directory path, which holds the markdown files and their images. docportal runs without one.
 - content directory path: the content directory's path inside the documentation root, from -docs-path or DOCPORTAL_DOCS_PATH, or empty without a content directory. No part of it may be a symlink.
+- toc path: the toc file's path inside the documentation root, from -toc-path or DOCPORTAL_TOC_PATH, or empty, which leaves the document sidebar as #13 draws it. A toc path needs a content directory path.
+- toc file: a JSON file in the form of Stoplight's toc.json: {"items": [...]}, each entry an item with a title and a uri, a group with a title and entries of its own, or a divider with a title. A uri resolves against the documentation root, or is an http or https URL.
 - content directory handle: the content directory as an fs.FS, which portal.New opens through the documentation root handle. The portal follows no symlink in it.
 - markdown file: a regular file of the content directory named *.md or *.markdown, reached through no symlink.
 - image: a regular file of the content directory named *.png, *.jpg, *.jpeg, *.gif, *.webp or *.svg, reached through no symlink.
 - hidden: of a file or directory of the content directory, with a name that starts with a dot. The portal lists and serves nothing hidden and nothing inside a hidden directory.
 - path: in /docs/{path} and /raw/{path}, a slash-separated path relative to the content directory.
 - sample documents: testdata/docs, the fixture directory of the markdown file and raw file tests.
-- portal configuration: the documentation root handle, the spec path, the content directory path, the Try It setting and the chat's routes, as portal.New takes them. Tests pass any fs.FS in the handle's place.
+- portal configuration: the documentation root handle, the spec path, the content directory path, the toc path, the Try It setting and the chat's routes, as portal.New takes them. Tests pass any fs.FS in the handle's place.
 - portal: the HTTP handler that redirects / to the viewer page and serves the viewer page, the raw spec and the Elements assets, and with a content directory the document list, the document pages and the raw files.
 - router: the http.ServeMux that newRouter builds and portal.New returns as the portal. It sends each request to its handler by method and path.
 - HTTP server: net/http's server, which listens on the address and calls the portal for each request.
@@ -47,7 +49,7 @@ Terms of docportal, one per line.
 - Stoplight operation link: a relative link to <spec path>/paths/<path>/<method>, with the path escaped as in a JSON pointer, as Stoplight writes a link to an operation, such as CONRAD-Delivery-API.oas2.yml/paths/~1devices/post. The part after <spec path>/ is its pointer: a JSON pointer into the spec without its leading /.
 - operation route: the part of a viewer page URL after the #, which opens one operation: /operations/{operationId}, or /paths/{slug}/{method} for an operation without an operationId. The slug is the operation's path with each /, {, } and space turned into -, the first run of dashes collapsed to one and a dash trimmed from each end, as Stoplight Elements makes it.
 - leads nowhere: of a relative link, shown as its text alone, without the link, because no page serves its link target, the target leaves the documentation root, or the destination does not parse.
-- document sidebar: the column at the left of the document list and the document pages that links the document page of every markdown file that is not hidden, grouped by directory, with the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
+- document sidebar: the column at the left of the document list and the document pages. With a toc path, it shows the toc file's entries; without one, or while the toc file is missing or invalid, it links the document page of every markdown file that is not hidden, grouped by directory. It has the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
 - active content: markup that runs in the reader's browser, such as a <script> element or a javascript: link.
 - navigation bar: the links at the top of every HTML page of the portal: to the viewer page, to the document list when a content directory is configured, and to the chat page when a chat model is named.
 - chat page: the live page at /chat where a reader asks questions about the API, and the chat model answers from the published spec and the markdown files through read-only tools. The portal serves it only when a chat model is named.

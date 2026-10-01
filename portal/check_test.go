@@ -89,3 +89,24 @@ func TestCheckConfigRefusesSymlinkedDocsPath(t *testing.T) {
 		t.Errorf("missing: err = %v, want the cause fs.ErrNotExist", err)
 	}
 }
+
+func TestCheckConfigChecksTocPath(t *testing.T) {
+	root := fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\n")}}
+	for _, p := range []string{"../toc.json", "/toc.json", ".", "nav/../toc.json", "nav//toc.json"} {
+		if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", TocPath: p}); err == nil || !strings.Contains(err.Error(), "toc path") {
+			t.Errorf("%q: err = %v, want one about the toc path", p, err)
+		}
+	}
+	// A missing toc file is no error at startup: the sidebar falls back.
+	root["docs/a.md"] = &fstest.MapFile{Data: []byte("# A\n")}
+	for _, p := range []string{"", "toc.json", "nav/toc.json"} {
+		if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs", TocPath: p}); err != nil {
+			t.Errorf("%q: %v", p, err)
+		}
+	}
+	// A toc file lays out the sidebar of the document pages, which need a
+	// content directory.
+	if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", TocPath: "toc.json"}); err == nil || !strings.Contains(err.Error(), "content directory") {
+		t.Errorf("a toc path without a content directory path: err = %v", err)
+	}
+}
