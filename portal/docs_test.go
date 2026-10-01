@@ -193,6 +193,47 @@ func TestDocPageSidebarFollowsToc(t *testing.T) {
 	}
 }
 
+func TestDocListSidebarFollowsToc(t *testing.T) {
+	root := fstest.MapFS{
+		"apis/pets.yaml": {Data: []byte(pets)},
+		"toc.json":       {Data: []byte(`{"items": [{"type": "item", "title": "Second", "uri": "docs/b.md"}, {"type": "item", "title": "First", "uri": "docs/a.md"}]}`)},
+		"docs/a.md":      {Data: []byte("# A\n")},
+		"docs/b.md":      {Data: []byte("# B\n")},
+	}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs", TocPath: "toc.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := get(h, "/docs/").Body.String()
+	if second, first := strings.Index(list, `title="Second"`), strings.Index(list, `title="First"`); second < 0 || first < second {
+		t.Errorf("the document list's sidebar is not the toc file's: Second at %d, First at %d", second, first)
+	}
+}
+
+func TestTocSidebarSetsGroupsApart(t *testing.T) {
+	root := fstest.MapFS{
+		"apis/pets.yaml": {Data: []byte(pets)},
+		"toc.json": {Data: []byte(`{"items": [{"type": "group", "title": "Guides", "items": [{"type": "item", "title": "Beta", "uri": "docs/b.md"}]},` +
+			` {"type": "item", "title": "Alpha", "uri": "docs/a.md"}, {"type": "divider", "title": "Reference"},` +
+			` {"type": "group", "title": "Users", "items": [{"type": "item", "title": "Gamma", "uri": "docs/c.md"}]}]}`)},
+		"docs/a.md": {Data: []byte("# A\n")},
+		"docs/b.md": {Data: []byte("# B\n")},
+		"docs/c.md": {Data: []byte("# C\n")},
+	}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs", TocPath: "toc.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(h, "/docs/a.md").Body.String()
+	beta, alpha := strings.Index(page, `title="Beta"`), strings.Index(page, `title="Alpha"`)
+	if beta < 0 || alpha < beta || !strings.Contains(page[beta:alpha], `<div class="sl-mt-6"></div>`) {
+		t.Errorf("no space between the group's last item and the top-level item after it:\n%s", page[max(beta, 0):max(alpha, beta, 0)])
+	}
+	if reference, users := strings.Index(page, ">Reference</div>"), strings.Index(page, ">Users</div>"); reference < 0 || users < reference {
+		t.Errorf("the divider's title before a group: Reference at %d, Users at %d", reference, users)
+	}
+}
+
 func TestPagesShareNavigation(t *testing.T) {
 	h := newDocsPortal(t, fstest.MapFS{"a.md": {Data: []byte("# A\n")}})
 	for _, path := range []string{"/specs/apis/pets.yaml", "/docs/", "/docs/a.md", "/docs/missing.md"} {

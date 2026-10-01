@@ -24,7 +24,7 @@
  (main.addChat)]
 > portal configuration
 [3. Build the portal
- or refuse a spec path outside the documentation root, a content directory path that names no directory in it, a toc path outside it, or missing Elements assets
+ or refuse a spec path outside the documentation root, a content directory path that names no directory in it, a toc path outside it or without a content directory path, or missing Elements assets
  (portal.New)]
 > address, portal
 {HTTP server}
