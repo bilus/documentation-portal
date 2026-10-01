@@ -30,7 +30,8 @@ type Route struct {
 
 // New builds the portal, or refuses a spec path outside the documentation
 // root, a content directory path that names no directory in it, a toc path
-// outside it, or missing Elements assets.
+// outside it or without a content directory path, or missing Elements
+// assets.
 func New(cfg Config) (http.Handler, error) {
 	docs, err := checkConfig(cfg)
 	if err != nil {
@@ -56,6 +57,9 @@ func checkConfig(cfg Config) (fs.FS, error) {
 	}
 	if cfg.TocPath != "" && (cfg.TocPath == "." || !fs.ValidPath(cfg.TocPath)) {
 		return nil, fmt.Errorf("toc path %q is not a file inside the documentation root", cfg.TocPath)
+	}
+	if cfg.TocPath != "" && cfg.DocsPath == "" {
+		return nil, fmt.Errorf("toc path %q needs a content directory path, whose document pages show the sidebar", cfg.TocPath)
 	}
 	if cfg.DocsPath == "" {
 		return nil, nil

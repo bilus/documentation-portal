@@ -3,6 +3,7 @@ package portal
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -182,6 +183,45 @@ func TestTocSidebar(t *testing.T) {
 	}
 }
 
+// countedFS counts the opens of each name of fsys. It provides Open alone,
+// so that every read of fsys opens a file.
+type countedFS struct {
+	fsys  fs.FS
+	opens map[string]int
+}
+
+func (c *countedFS) Open(name string) (fs.File, error) {
+	c.opens[name]++
+	return c.fsys.Open(name)
+}
+
+func TestTocSidebarReadsOnce(t *testing.T) {
+	files := fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")}}
+	var items []string
+	for i := range 20 {
+		files[fmt.Sprintf("docs/g%02d.md", i)] = &fstest.MapFile{Data: []byte("# G\n")}
+		items = append(items, fmt.Sprintf(`{"type": "item", "title": "G%d", "uri": "docs/g%02d.md"}`, i, i),
+			`{"type": "item", "title": "Pets", "uri": "api.yaml/paths/~1pets/get"}`)
+	}
+	files["toc.json"] = &fstest.MapFile{Data: []byte(`{"items": [` + strings.Join(items, ", ") + `]}`)}
+	sub, err := fs.Sub(files, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, docs := &countedFS{files, map[string]int{}}, &countedFS{sub, map[string]int{}}
+	s := &site{root: root, specPath: "api.yaml", docsPath: "docs", docs: docs, tocPath: "toc.json"}
+	if groups := s.sidebar("g00.md"); len(groups) != 1 || len(groups[0].Links) != 40 {
+		t.Fatalf("groups %+v", groups)
+	}
+	// One listing opens the directory twice: fs.WalkDir stats it, then reads it.
+	if n := docs.opens["."]; n > 2 {
+		t.Errorf("one sidebar opened the content directory %d times, want one listing, which opens it twice", n)
+	}
+	if n := root.opens["api.yaml"]; n > 2 {
+		t.Errorf("one sidebar opened the spec %d times, want at most twice, to check it and to read it", n)
+	}
+}
+
 func TestTocLink(t *testing.T) {
 	root := fstest.MapFS{
 		"api.yaml":             {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")},
@@ -189,12 +229,17 @@ func TestTocLink(t *testing.T) {
 		"docs/start.md":        {Data: []byte("# Start\n")},
 		"docs/.draft.md":       {Data: []byte("# Draft\n")},
 		"docs/guides/oauth.md": {Data: []byte("# OAuth\n")},
+		"docs/a#b.md":          {Data: []byte("# A\n")},
 	}
 	docs, err := fs.Sub(root, "docs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := &site{root: root, specPath: "api.yaml", docsPath: "docs", docs: docs}
+	p, err := s.newTocPages("guides/oauth.md")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for uri, want := range map[string]string{
 		"docs/start.md":             "/docs/start.md",
 		"/docs/start.md":            "/docs/start.md",
@@ -205,23 +250,32 @@ func TestTocLink(t *testing.T) {
 		"api.yaml/paths/~1pets/get": "/specs/api.yaml#/operations/listPets",
 		"https://example.com/a?b#c": "https://example.com/a?b#c",
 		"http://example.com":        "http://example.com",
+		"docs/a%23b.md":             "/docs/a%23b.md",
 	} {
-		got, ok := s.tocLink("T", uri, "guides/oauth.md")
+		got, ok := p.link("T", uri)
 		if wantLink := (sidebarLink{Title: "T", URL: want, Current: uri == "docs/guides/oauth.md"}); !ok || got != wantLink {
 			t.Errorf("%s: %+v, %v, want %+v", uri, got, ok, wantLink)
 		}
 	}
 	for _, uri := range []string{"docs/.draft.md", "docs/missing.md", "notes.md", "../secret.md", "docs/../../secret.md",
-		"mailto:team@example.com", "//example.com/a.md", "ftp://example.com/a", "https:/no-host", "javascript:alert(1)", "%zz", "docs/"} {
-		if got, ok := s.tocLink("T", uri, ""); ok {
+		"mailto:team@example.com", "//example.com/a.md", "ftp://example.com/a", "https:/no-host", "javascript:alert(1)", "%zz", "docs/",
+		"ftp:/docs/start.md", "https:/docs/start.md"} {
+		if got, ok := p.link("T", uri); ok {
 			t.Errorf("%s: %+v, want no link", uri, got)
 		}
+	}
+	if got, ok := p.link("", "docs/start.md"); ok {
+		t.Errorf("an empty title: %+v, want no link", got)
 	}
 }
 
 func TestTocGroups(t *testing.T) {
 	root := fstest.MapFS{"a.md": {}, "b.md": {}, "c.md": {}, "d.md": {}, "e.md": {}, "f.md": {}}
 	s := &site{root: root, specPath: "api.yaml", docsPath: ".", docs: root}
+	p, err := s.newTocPages("c.md")
+	if err != nil {
+		t.Fatal(err)
+	}
 	item := func(name string) tocEntry {
 		return tocEntry{Type: "item", Title: strings.ToUpper(name), URI: name + ".md"}
 	}
@@ -244,13 +298,21 @@ func TestTocGroups(t *testing.T) {
 		{Title: "G", Links: []sidebarLink{link("b"), link("c")}},
 		{Links: []sidebarLink{link("d")}},
 		{Title: "D", Links: []sidebarLink{link("e")}},
+		{Title: "Nothing after it"},
 		{Title: "H", Links: []sidebarLink{link("f")}},
 	}
-	if got := s.tocGroups(entries, "c.md"); !reflect.DeepEqual(got, want) {
+	if got := p.groups(entries); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
 	}
-	if got := s.tocGroups(nil, ""); got != nil {
+	if got := p.groups(nil); got != nil {
 		t.Errorf("no entries: %+v", got)
+	}
+	top, err := s.newTocPages("a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := top.groups([]tocEntry{item("a")}); len(got) != 1 || !got[0].Links[0].Current {
+		t.Errorf("a top-level item of the current page: %+v", got)
 	}
 }
 
@@ -261,6 +323,10 @@ func TestReadToc(t *testing.T) {
 		"nav/toc.json": {Data: []byte(toc)},
 		"empty.json":   {Data: []byte(`{"items": []}`)},
 		"nested.json":  {Data: []byte(`{"items": [{"type": "group", "title": "G", "items": [{"type": "item", "title": "A"}]}]}`)},
+		"group.json":   {Data: []byte(`{"items": [{"type": "group", "items": []}]}`)},
+		"divider.json": {Data: []byte(`{"items": [{"type": "divider"}]}`)},
+		"twice.json":   {Data: []byte(`{"items": []} {"items": []}`)},
+		"bom.json":     {Data: []byte("\ufeff" + toc)},
 		"linked":       {Data: []byte("nav"), Mode: fs.ModeSymlink},
 	}
 	want := []tocEntry{
@@ -270,12 +336,15 @@ func TestReadToc(t *testing.T) {
 	if got, err := readToc(root, "nav/toc.json"); err != nil || !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, %v\nwant %+v", got, err, want)
 	}
+	if got, err := readToc(root, "bom.json"); err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("with a byte order mark: %+v, %v", got, err)
+	}
 	if got, err := readToc(root, "empty.json"); err != nil || len(got) != 0 {
 		t.Errorf("no entries: %+v, %v", got, err)
 	}
-	for _, p := range []string{"nested.json", "linked/toc.json", "nav", "missing.json"} {
-		if got, err := readToc(root, p); err == nil {
-			t.Errorf("%s: %+v, want an error", p, got)
+	for _, p := range []string{"nested.json", "group.json", "divider.json", "twice.json", "linked/toc.json", "nav", "missing.json"} {
+		if got, err := readToc(root, p); err == nil || got != nil {
+			t.Errorf("%s: %+v, %v, want no entries and an error", p, got, err)
 		}
 	}
 }
@@ -285,22 +354,26 @@ func TestTocSidebarFallsBack(t *testing.T) {
 	prev := log.Writer()
 	log.SetOutput(&logged)
 	t.Cleanup(func() { log.SetOutput(prev) })
-	for name, toc := range map[string]*fstest.MapFile{
-		"missing":          nil,
-		"not JSON":         {Data: []byte("{")},
-		"no items":         {Data: []byte(`{"title": "Docs"}`)},
-		"unknown type":     {Data: []byte(`{"items": [{"type": "link", "title": "A", "uri": "docs/a.md"}]}`)},
-		"no title":         {Data: []byte(`{"items": [{"type": "item", "uri": "docs/a.md"}]}`)},
-		"item without uri": {Data: []byte(`{"items": [{"type": "item", "title": "A"}]}`)},
-		"symlink":          {Data: []byte("other.json"), Mode: fs.ModeSymlink},
+	for name, tc := range map[string]struct {
+		toc     *fstest.MapFile
+		problem string
+	}{
+		"missing":          {nil, "not exist"},
+		"not JSON":         {&fstest.MapFile{Data: []byte("{")}, "unexpected end of JSON input"},
+		"no items":         {&fstest.MapFile{Data: []byte(`{"title": "Docs"}`)}, "no items"},
+		"unknown type":     {&fstest.MapFile{Data: []byte(`{"items": [{"type": "link", "title": "A", "uri": "docs/a.md"}]}`)}, "unknown type"},
+		"no title":         {&fstest.MapFile{Data: []byte(`{"items": [{"type": "item", "uri": "docs/a.md"}]}`)}, "no title"},
+		"item without uri": {&fstest.MapFile{Data: []byte(`{"items": [{"type": "item", "title": "A"}]}`)}, "no uri"},
+		"symlink":          {&fstest.MapFile{Data: []byte("other.json"), Mode: fs.ModeSymlink}, "symlink"},
+		"no page served":   {&fstest.MapFile{Data: []byte(`{"items": [{"type": "item", "title": "Gone", "uri": "docs/gone.md"}]}`)}, "names no page"},
 	} {
 		logged.Reset()
 		root := fstest.MapFS{
 			"docs/a.md":  {Data: []byte("# A\n")},
 			"other.json": {Data: []byte(`{"items": [{"type": "item", "title": "A", "uri": "docs/a.md"}]}`)},
 		}
-		if toc != nil {
-			root["toc.json"] = toc
+		if tc.toc != nil {
+			root["toc.json"] = tc.toc
 		}
 		docs, err := fs.Sub(root, "docs")
 		if err != nil {
@@ -311,9 +384,61 @@ func TestTocSidebarFallsBack(t *testing.T) {
 		if got := s.sidebar("a.md"); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: got %+v", name, got)
 		}
-		if !strings.Contains(logged.String(), "toc.json") {
-			t.Errorf("%s: the log %q names no toc file", name, logged.String())
+		if line := logged.String(); !strings.Contains(line, "toc.json") || !strings.Contains(line, tc.problem) {
+			t.Errorf("%s: the log %q names no toc file or no %q", name, line, tc.problem)
 		}
+	}
+}
+
+func TestTocSidebarLogsAProblemOnce(t *testing.T) {
+	var logged bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	root := fstest.MapFS{"docs/a.md": {Data: []byte("# A\n")}}
+	docs, err := fs.Sub(root, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &site{root: root, docsPath: "docs", docs: docs, tocPath: "toc.json"}
+	for range 3 {
+		s.sidebar("a.md")
+	}
+	if n := strings.Count(logged.String(), "\n"); n != 1 {
+		t.Errorf("3 pages with a missing toc file logged %d lines, want 1:\n%s", n, logged.String())
+	}
+	// Fixed, then missing again: the problem comes back, and the log says so.
+	root["toc.json"] = &fstest.MapFile{Data: []byte(`{"items": [{"type": "item", "title": "A", "uri": "docs/a.md"}]}`)}
+	s.sidebar("a.md")
+	delete(root, "toc.json")
+	s.sidebar("a.md")
+	s.sidebar("a.md")
+	root["toc.json"] = &fstest.MapFile{Data: []byte("{")}
+	s.sidebar("a.md")
+	if n := strings.Count(logged.String(), "\n"); n != 3 {
+		t.Errorf("after a fix, the same problem and a new one, %d lines, want 3:\n%s", n, logged.String())
+	}
+}
+
+// failingFS fails every open.
+type failingFS struct{}
+
+func (failingFS) Open(name string) (fs.File, error) {
+	return nil, &fs.PathError{Op: "open", Path: name, Err: errors.New("disk on fire")}
+}
+
+func TestTocSidebarLogsAFailedListing(t *testing.T) {
+	var logged bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	root := fstest.MapFS{"toc.json": {Data: []byte(`{"items": [{"type": "item", "title": "A", "uri": "docs/a.md"}]}`)}}
+	s := &site{root: root, docsPath: "docs", docs: failingFS{}, tocPath: "toc.json"}
+	if got := s.sidebar("a.md"); got != nil {
+		t.Errorf("got %+v", got)
+	}
+	if !strings.Contains(logged.String(), "disk on fire") {
+		t.Errorf("the log %q names no failed listing", logged.String())
 	}
 }
 

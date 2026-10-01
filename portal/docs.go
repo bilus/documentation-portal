@@ -229,34 +229,50 @@ var imageTypes = map[string]string{
 	".svg":  "image/svg+xml",
 }
 
-// sidebarGroup is one group of the document sidebar: the markdown files of
-// one directory, under the directory's path.
+// sidebarGroup is one group of the document sidebar, under its title: the
+// markdown files of one directory, or the links of a group of the toc file.
 type sidebarGroup struct {
-	Title string // empty for the top of the content directory
+	Title string // empty for no heading
 	Links []sidebarLink
 }
 
-// sidebarLink links the document page of one markdown file.
+// sidebarLink links a page from the document sidebar: a document page, the
+// viewer page, or another site.
 type sidebarLink struct {
 	Title   string
 	URL     string
 	Current bool
 }
 
+// noteTocProblem logs err, the toc file's problem, unless the log already
+// named the same problem last, and forgets the last problem when err is nil.
+func (s *site) noteTocProblem(err error) {
+	problem := ""
+	if err != nil {
+		problem = err.Error()
+	}
+	s.tocMu.Lock()
+	defer s.tocMu.Unlock()
+	if problem != "" && problem != s.tocProblem {
+		log.Printf("toc file %s: %s", s.tocPath, problem)
+	}
+	s.tocProblem = problem
+}
+
 // sidebar returns the document sidebar, with the file at current marked: the
 // entries of the toc file when the configuration names one, else the
-// markdown files that are not hidden, grouped by directory. A toc file that
-// is missing or invalid gives the markdown files, and a line in the log.
+// markdown files that are not hidden, grouped by directory. A problem with
+// the toc file gives the markdown files, and a line in the log.
 func (s *site) sidebar(current string) []sidebarGroup {
 	if s.docs == nil {
 		return nil
 	}
 	if s.tocPath != "" {
 		groups, err := s.tocSidebar(current)
+		s.noteTocProblem(err)
 		if err == nil {
 			return groups
 		}
-		log.Printf("toc file %s: %v", s.tocPath, err)
 	}
 	paths, err := markdownFiles(s.docs)
 	if err != nil {

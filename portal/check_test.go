@@ -98,9 +98,15 @@ func TestCheckConfigChecksTocPath(t *testing.T) {
 		}
 	}
 	// A missing toc file is no error at startup: the sidebar falls back.
+	root["docs/a.md"] = &fstest.MapFile{Data: []byte("# A\n")}
 	for _, p := range []string{"", "toc.json", "nav/toc.json"} {
-		if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", TocPath: p}); err != nil {
+		if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs", TocPath: p}); err != nil {
 			t.Errorf("%q: %v", p, err)
 		}
+	}
+	// A toc file lays out the sidebar of the document pages, which need a
+	// content directory.
+	if _, err := checkConfig(Config{Root: root, SpecPath: "api.yaml", TocPath: "toc.json"}); err == nil || !strings.Contains(err.Error(), "content directory") {
+		t.Errorf("a toc path without a content directory path: err = %v", err)
 	}
 }

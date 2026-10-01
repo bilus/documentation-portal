@@ -26,7 +26,7 @@ Terms of docportal, one per line.
 - error page: the HTML page the portal shows instead of the viewer page for an invalid or missing spec, and instead of a document page for a path that names no markdown file, or a hidden one.
 - content directory: the directory at the content directory path, which holds the markdown files and their images. docportal runs without one.
 - content directory path: the content directory's path inside the documentation root, from -docs-path or DOCPORTAL_DOCS_PATH, or empty without a content directory. No part of it may be a symlink.
-- toc path: the toc file's path inside the documentation root, from -toc-path or DOCPORTAL_TOC_PATH, or empty, which leaves the document sidebar as #13 draws it.
+- toc path: the toc file's path inside the documentation root, from -toc-path or DOCPORTAL_TOC_PATH, or empty, which leaves the document sidebar as #13 draws it. A toc path needs a content directory path.
 - toc file: a JSON file in the form of Stoplight's toc.json: {"items": [...]}, each entry an item with a title and a uri, a group with a title and entries of its own, or a divider with a title. A uri resolves against the documentation root, or is an http or https URL.
 - content directory handle: the content directory as an fs.FS, which portal.New opens through the documentation root handle. The portal follows no symlink in it.
 - markdown file: a regular file of the content directory named *.md or *.markdown, reached through no symlink.
