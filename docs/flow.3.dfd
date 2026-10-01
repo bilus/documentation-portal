@@ -15,8 +15,8 @@
  (portal.loadAssets)]
 > portal configuration, content directory handle, Elements assets
 [3.3. Build the router
- that sends each request to the viewer page, the raw spec, the Elements assets
- and, with a content directory, the document list, a document page or a raw file
+ that sends each request to the viewer page, the raw spec, the Elements assets,
+ with a content directory the document list, a document page or a raw file, and with a chat its routes
  (portal.newRouter)]
 > portal
 {HTTP server}

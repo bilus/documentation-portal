@@ -20,6 +20,7 @@ type site struct {
 	docsPath  string
 	docs      fs.FS // the content directory, or nil
 	hideTryIt bool
+	chat      bool // whether the portal serves a chat page at /chat
 }
 
 func (s *site) index(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +66,9 @@ func (s *site) nav() []navLink {
 	links := []navLink{{Label: "API", URL: (&url.URL{Path: "/specs/" + s.specPath}).String()}}
 	if s.docs != nil {
 		links = append(links, navLink{Label: "Documents", URL: "/docs/"})
+	}
+	if s.chat {
+		links = append(links, navLink{Label: "Chat", URL: "/chat"})
 	}
 	return links
 }

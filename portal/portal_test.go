@@ -160,3 +160,17 @@ func TestElementsAssets(t *testing.T) {
 		}
 	}
 }
+
+func TestNewRefusesBadChatRoutes(t *testing.T) {
+	ok := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for _, r := range []portal.Route{
+		{Pattern: "GET /chat", Handler: nil},
+		{Pattern: "GET /chat/{", Handler: ok},
+		{Pattern: "GET /specs/{path...}", Handler: ok},
+	} {
+		cfg := portal.Config{Root: fstest.MapFS{"api.yaml": {Data: []byte(pets)}}, SpecPath: "api.yaml", Chat: []portal.Route{r}}
+		if _, err := portal.New(cfg); err == nil {
+			t.Errorf("%s with handler %v: no error", r.Pattern, r.Handler)
+		}
+	}
+}

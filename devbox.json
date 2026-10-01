@@ -15,5 +15,8 @@
         "make test"
       ]
     }
+  },
+  "env": {
+    "GOPRIVATE": "github.com/bilus/live-templ"
   }
 }
