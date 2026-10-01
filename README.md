@@ -1,8 +1,8 @@
 # documentation-portal
 
-`docportal` serves the documentation of one OpenAPI 3.0 or 3.1 spec, rendered
-with [Stoplight Elements](https://github.com/stoplightio/elements), and the
-markdown files of an optional content directory.
+`docportal` serves the documentation of OpenAPI 3.0 and 3.1 specs, rendered
+with [Stoplight Elements](https://github.com/stoplightio/elements), and of
+markdown files, each as a section of its navigation bar.
 
 Everything runs through [devbox](https://www.jetify.com/devbox). The first
 `make` target that needs them downloads the Elements assets, checked against a
@@ -30,6 +30,14 @@ variable: `-addr` to `DOCPORTAL_ADDR` (default `:8080`), `-config` to
 `DOCPORTAL_HIDE_TRY_IT` (default `false`). A program that mounts the portal
 passes the sections in `portal.Config`, or reads them with `portal.ReadConfig`.
 
+The URLs of a section carry its slug: its title in lower case, with each run
+of characters other than letters and digits as one dash, such as `store-api`
+for Store API. A spec section's viewer page is at `/specs/{slug}`, and its raw
+spec at `/api/specs/{slug}`; `/` opens the first section's page. docportal
+does not start without sections, with a section that has no title, input or
+known type, with two sections of one slug, with a path outside the
+documentation root, or with a toc on a spec section.
+
 The viewer page shows the Try It console of Stoplight Elements, which sends
 requests from the reader's browser to the servers of the spec, so those
 servers must allow the portal's origin through CORS. `-hide-try-it` hides the
@@ -40,17 +48,18 @@ renders one as HTML without scripts, and `/raw/{path}` serves its PNG, JPEG,
 GIF, WebP and SVG images. A relative link in a markdown file resolves against
 the documentation root, as on Stoplight, and then against the file's own
 directory, and it shows as plain text when no page serves its target. A link
-to the spec opens the viewer page, and a link to one of its operations in
-Stoplight's form, such as `openapi.yaml/paths/~1pets/get`, opens the viewer at
-that operation. The portal reads nothing outside the documentation root,
-follows no symlink in the content directory, and under `/specs/` and
-`/api/specs/` serves no file of the root except the spec.
+to a spec opens its section's viewer page, and a link to one of its
+operations in Stoplight's form, such as `openapi.yaml/paths/~1pets/get`, opens
+the viewer at that operation. Of two spec sections with one spec, links open
+the first. The portal reads nothing outside the documentation root, follows
+no symlink in the content directory, and under `/specs/` and `/api/specs/`
+serves no file of the root except the specs of the spec sections.
 
 A docs section's `toc` names a Stoplight `toc.json` inside the
 documentation root, such as `toc.json`. The document sidebar then shows its
 entries in its order and under its titles: an entry for a markdown file links
-its document page, one for the spec or one of its operations links the viewer
-page, and an http or https URL stays as it is. The sidebar leaves out an entry
+its document page, one for a spec or one of its operations links its
+section's viewer page, and an http or https URL stays as it is. The sidebar leaves out an entry
 that no page serves. A missing or invalid toc file brings back the list of
 markdown files, with a line in the log.
 

@@ -77,8 +77,8 @@ func newRouter(cfg Config, sections []*section, assets fs.FS) (http.Handler, err
 	s := newSite(cfg, sections)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
-	mux.HandleFunc("GET /specs/{path...}", s.viewerPage)
-	mux.HandleFunc("GET /api/specs/{path...}", s.rawSpec)
+	mux.HandleFunc("GET /specs/{slug}", s.viewerPage)
+	mux.HandleFunc("GET /api/specs/{slug}", s.rawSpec)
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
 	if s.docs != nil {
 		mux.HandleFunc("GET /docs/{$}", s.docList)

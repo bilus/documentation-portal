@@ -8,17 +8,17 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
 )
 
-// site answers the requests for the configured spec and the content directory.
+// site answers the requests for the sections.
 type site struct {
 	root       fs.FS
 	sections   []*section
-	specPath   string // the first spec section's, until stage 1 routes by slug
 	docsPath   string // the first docs section's, until stage 2 routes by slug
 	docs       fs.FS  // the content directory, or nil
 	tocPath    string // the toc file, or empty
@@ -29,15 +29,12 @@ type site struct {
 }
 
 // newSite returns the site of cfg's documentation root and sections. Until
-// stages 1 and 2 route by slug, the first spec section and the first docs
-// section stand for the spec path and the content directory.
+// stage 2 routes by slug, the first docs section stands for the content
+// directory.
 func newSite(cfg Config, sections []*section) *site {
 	s := &site{root: cfg.Root, sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
 	for _, sec := range sections {
-		switch {
-		case sec.Type == SpecSection && s.specPath == "":
-			s.specPath = sec.Input
-		case sec.Type == DocsSection && s.docs == nil:
+		if sec.Type == DocsSection && s.docs == nil {
 			s.docsPath, s.docs, s.tocPath = sec.Input, sec.docs, sec.Toc
 		}
 	}
@@ -46,8 +43,39 @@ func newSite(cfg Config, sections []*section) *site {
 
 // specFor returns the spec section whose slug is slug, or false.
 func (s *site) specFor(slug string) (*section, bool) {
-	// HOLE(1): find the spec section
+	for _, sec := range s.sections {
+		if sec.Type == SpecSection && sec.slug == slug {
+			return sec, true
+		}
+	}
 	return nil, false
+}
+
+// firstSpec returns the first spec section, or false without one. Until
+// stage 3 reads every section, the library reads this one alone.
+func (s *site) firstSpec() (*section, bool) {
+	for _, sec := range s.sections {
+		if sec.Type == SpecSection {
+			return sec, true
+		}
+	}
+	return nil, false
+}
+
+// pageURL returns the URL of the section's page: a spec section's viewer
+// page, or a docs section's document list.
+func (sec *section) pageURL() string {
+	if sec.Type == SpecSection {
+		return sec.viewerURL("")
+	}
+	// Until stage 2 routes by slug, the first docs section's list is at /docs/.
+	return "/docs/"
+}
+
+// viewerURL returns the URL of the spec section's viewer page with fragment,
+// an operation route or "".
+func (sec *section) viewerURL(fragment string) string {
+	return (&url.URL{Path: "/specs/" + sec.slug, Fragment: fragment}).String()
 }
 
 // docsFor returns the docs section whose slug is slug, or false.
@@ -56,23 +84,36 @@ func (s *site) docsFor(slug string) (*section, bool) {
 	return nil, false
 }
 
+// index redirects to the first section's page.
 func (s *site) index(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, (&url.URL{Path: "/specs/" + s.specPath}).String(), http.StatusFound)
+	if len(s.sections) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, s.sections[0].pageURL(), http.StatusFound)
 }
 
+// viewerPage writes the viewer page of the spec section with the request's
+// slug, or an error page for a slug of no spec section and for a missing or
+// invalid spec.
 func (s *site) viewerPage(w http.ResponseWriter, r *http.Request) {
-	path := r.PathValue("path")
-	sp, err := s.loadSpec(path)
+	slug := r.PathValue("slug")
+	sec, ok := s.specFor(slug)
+	if !ok {
+		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec section has the slug " + slug + ".", Nav: s.nav()})
+		return
+	}
+	sp, err := s.loadSpec(sec.Input)
 	var invalid invalidSpecError
 	switch {
 	case errors.Is(err, errNoSpec):
-		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec at " + path + ".", Nav: s.nav()})
+		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec at " + sec.Input + ".", Nav: s.nav()})
 	case errors.As(err, &invalid):
-		render(w, http.StatusUnprocessableEntity, "error.html", page{Title: "Cannot show " + path, Message: invalid.reason, Nav: s.nav()})
+		render(w, http.StatusUnprocessableEntity, "error.html", page{Title: "Cannot show " + sec.Input, Message: invalid.reason, Nav: s.nav()})
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
-		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: (&url.URL{Path: "/api/specs/" + path}).String(), HideTryIt: s.hideTryIt, Nav: s.nav()})
+		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: (&url.URL{Path: "/api/specs/" + sec.slug}).String(), HideTryIt: s.hideTryIt, Nav: s.nav()})
 	}
 }
 
@@ -93,12 +134,13 @@ type navLink struct {
 	URL   string
 }
 
-// nav returns the links of the navigation bar: the viewer page, and the
-// document list when a content directory is configured.
+// nav returns the links of the navigation bar: each section's page under its
+// title, in the order of the portal configuration, and the chat page when the
+// portal serves one.
 func (s *site) nav() []navLink {
-	links := []navLink{{Label: "API", URL: (&url.URL{Path: "/specs/" + s.specPath}).String()}}
-	if s.docs != nil {
-		links = append(links, navLink{Label: "Documents", URL: "/docs/"})
+	links := make([]navLink, 0, len(s.sections)+1)
+	for _, sec := range s.sections {
+		links = append(links, navLink{Label: sec.Title, URL: sec.pageURL()})
 	}
 	if s.chat {
 		links = append(links, navLink{Label: "Chat", URL: "/chat"})
@@ -123,15 +165,23 @@ func render(w http.ResponseWriter, status int, name string, p page) {
 	buf.WriteTo(w)
 }
 
+// rawSpec writes the raw spec of the spec section with the request's slug,
+// or an error for a slug of no spec section and for a missing or invalid
+// spec.
 func (s *site) rawSpec(w http.ResponseWriter, r *http.Request) {
-	path := r.PathValue("path")
-	sp, err := s.loadSpec(path)
+	slug := r.PathValue("slug")
+	sec, ok := s.specFor(slug)
+	if !ok {
+		http.Error(w, "no spec section has the slug "+slug, http.StatusNotFound)
+		return
+	}
+	sp, err := s.loadSpec(sec.Input)
 	var invalid invalidSpecError
 	switch {
 	case errors.Is(err, errNoSpec):
-		http.Error(w, "no spec at "+path, http.StatusNotFound)
+		http.Error(w, "no spec at "+sec.Input, http.StatusNotFound)
 	case errors.As(err, &invalid):
-		http.Error(w, path+": "+invalid.reason, http.StatusUnprocessableEntity)
+		http.Error(w, sec.Input+": "+invalid.reason, http.StatusUnprocessableEntity)
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
@@ -146,19 +196,19 @@ type spec struct {
 	Raw   []byte // without its unpublished parts and marker keys
 }
 
-// errNoSpec means the request names no spec: a missing file, or any path
-// other than the configured spec.
+// errNoSpec means the request names no spec: a missing file, or a path that
+// no spec section names.
 var errNoSpec = errors.New("no such spec")
 
 type invalidSpecError struct{ reason string }
 
 func (e invalidSpecError) Error() string { return e.reason }
 
-// loadSpec reads the configured spec, if path names it, leaves out its
-// unpublished parts, and checks that it is an OpenAPI 3.0 or 3.1 document with
-// a title.
+// loadSpec reads the configured spec at path, if a spec section names it,
+// leaves out its unpublished parts, and checks that it is an OpenAPI 3.0 or
+// 3.1 document with a title.
 func (s *site) loadSpec(path string) (*spec, error) {
-	if path != s.specPath {
+	if !slices.ContainsFunc(s.sections, func(sec *section) bool { return sec.Type == SpecSection && sec.Input == path }) {
 		return nil, errNoSpec
 	}
 	raw, err := fs.ReadFile(s.root, path)

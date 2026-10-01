@@ -68,42 +68,49 @@ func (s *site) contentPath(target string) (string, bool) {
 }
 
 // specURL returns the viewer page URL for target, a path inside the
-// documentation root that names the configured spec or, in Stoplight's form,
-// a part of it: at the operation route for an operation of the published
+// documentation root that names the spec of a spec section or, in
+// Stoplight's form, a part of it: the viewer page of the section that
+// specPart finds, at the operation route for an operation of the published
 // spec, else at the overview. It reports false for any other target, and
-// while no regular file is at the spec path.
+// while no regular file is at the section's spec path.
 func (s *site) specURL(target string) (string, bool) {
-	pointer, ok := s.specPart(target)
+	sec, pointer, ok := s.specPart(target)
 	if !ok {
 		return "", false
 	}
-	if info, err := fs.Stat(s.root, s.specPath); err != nil || !info.Mode().IsRegular() {
+	if info, err := fs.Stat(s.root, sec.Input); err != nil || !info.Mode().IsRegular() {
 		return "", false
 	}
 	var fragment string
 	if pointer != "" {
-		if sp, err := s.loadSpec(s.specPath); err == nil {
+		if sp, err := s.loadSpec(sec.Input); err == nil {
 			fragment, _ = operationRoute(sp.Raw, pointer)
 		}
 	}
-	return s.viewerURL(fragment), true
+	return sec.viewerURL(fragment), true
 }
 
-// specPart reports whether target, a path inside the documentation root,
-// names the configured spec or, in Stoplight's form, a part of it, and
-// returns the part's pointer, or "" for the spec itself.
-func (s *site) specPart(target string) (string, bool) {
+// specPart returns the spec section whose spec target names, as the spec
+// itself or, in Stoplight's form, a part of it, with the part's pointer, or
+// "" for the spec itself. target is a path inside the documentation root. Of
+// several spec sections, the one with the longest spec path wins, and of
+// those with one spec path the first: no file is both a spec and a directory
+// above another.
+func (s *site) specPart(target string) (*section, string, bool) {
 	target = path.Clean(target)
-	if pointer, inside := strings.CutPrefix(target, s.specPath+"/"); inside {
-		return pointer, true
+	var found *section
+	for _, sec := range s.sections {
+		if sec.Type != SpecSection || target != sec.Input && !strings.HasPrefix(target, sec.Input+"/") {
+			continue
+		}
+		if found == nil || len(sec.Input) > len(found.Input) {
+			found = sec
+		}
 	}
-	return "", target == s.specPath
-}
-
-// viewerURL returns the viewer page's URL with fragment, an operation route
-// or "".
-func (s *site) viewerURL(fragment string) string {
-	return (&url.URL{Path: "/specs/" + s.specPath, Fragment: fragment}).String()
+	if found == nil {
+		return nil, "", false
+	}
+	return found, strings.TrimPrefix(target[len(found.Input):], "/"), true
 }
 
 // operationRoute returns the operation route of pointer in spec, such as

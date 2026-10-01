@@ -42,7 +42,7 @@ func TestViewerRendersSampleBundles(t *testing.T) {
 			}
 			srv := httptest.NewServer(h)
 			defer srv.Close()
-			page := srv.URL + "/specs/" + tc.file
+			page := srv.URL + "/specs/api"
 
 			overview := pageText(t, browser, page, "Show a pet")
 			for _, want := range []string{"Petstore", tc.version, tc.description} {

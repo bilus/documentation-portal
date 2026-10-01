@@ -236,16 +236,16 @@ func TestTocSidebarSetsGroupsApart(t *testing.T) {
 
 func TestPagesShareNavigation(t *testing.T) {
 	h := newDocsPortal(t, fstest.MapFS{"a.md": {Data: []byte("# A\n")}})
-	for _, path := range []string{"/specs/apis/pets.yaml", "/docs/", "/docs/a.md", "/docs/missing.md"} {
+	for _, path := range []string{"/specs/api", "/docs/", "/docs/a.md", "/docs/missing.md"} {
 		body := get(h, path).Body.String()
-		for _, link := range []string{`href="/specs/apis/pets.yaml"`, `href="/docs/"`} {
+		for _, link := range []string{`href="/specs/api"`, `href="/docs/"`} {
 			if !strings.Contains(body, link) {
 				t.Errorf("%s does not link %s", path, link)
 			}
 		}
 	}
 
-	body := get(newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml"), "/specs/apis/pets.yaml").Body.String()
+	body := get(newPortal(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, "apis/pets.yaml"), "/specs/api").Body.String()
 	if strings.Contains(body, `href="/docs/"`) {
 		t.Error("the viewer page links the document list without a content directory")
 	}

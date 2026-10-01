@@ -60,8 +60,8 @@ func TestLibraryOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []portal.Operation{
-		{Method: "get", Path: "/pets", OperationID: "listPets", Summary: "List the pets", Pointer: "paths/~1pets/get", URL: "/specs/api.yaml#/operations/listPets"},
-		{Method: "post", Path: "/pets", Summary: "Add a pet", Pointer: "paths/~1pets/post", URL: "/specs/api.yaml#/paths/pets/post"},
+		{Method: "get", Path: "/pets", OperationID: "listPets", Summary: "List the pets", Pointer: "paths/~1pets/get", URL: "/specs/api#/operations/listPets"},
+		{Method: "post", Path: "/pets", Summary: "Add a pet", Pointer: "paths/~1pets/post", URL: "/specs/api#/paths/pets/post"},
 	}
 	if len(ops) != len(want) || ops[0] != want[0] || ops[1] != want[1] {
 		t.Errorf("operations: %+v, want %+v", ops, want)
@@ -108,7 +108,7 @@ func TestLibraryReadsGuidesAsTheirPagesShowThem(t *testing.T) {
 			t.Errorf("search %q: %+v, %v", hidden, matches, err)
 		}
 	}
-	if want := "# Setup\n\nRead [the reference](/specs/api.yaml) first."; text != want {
+	if want := "# Setup\n\nRead [the reference](/specs/api) first."; text != want {
 		t.Errorf("text %q, want %q", text, want)
 	}
 	docs, err := lib.Documents()

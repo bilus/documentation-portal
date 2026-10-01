@@ -41,15 +41,15 @@ func TestStartupServesSpec(t *testing.T) {
 		t.Errorf("addr = %q, want :8080", addr)
 	}
 
-	page := get(h, "/specs/specs/petstore-3.1.yaml")
+	page := get(h, "/specs/api")
 	if page.Code != http.StatusOK || !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("viewer page: %d %s", page.Code, page.Header().Get("Content-Type"))
 	}
-	if want := `apiDescriptionUrl="/api/specs/specs/petstore-3.1.yaml"`; !strings.Contains(page.Body.String(), want) {
+	if want := `apiDescriptionUrl="/api/specs/api"`; !strings.Contains(page.Body.String(), want) {
 		t.Errorf("viewer page does not contain %s", want)
 	}
 
-	raw := get(h, "/api/specs/specs/petstore-3.1.yaml")
+	raw := get(h, "/api/specs/api")
 	want, err := os.ReadFile("../../testdata/specs/petstore-3.1.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -252,7 +252,7 @@ func TestStartupShowsTryIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := get(h, "/specs/specs/petstore-3.1.yaml").Body.String(); strings.Contains(body, "hideTryIt") {
+	if body := get(h, "/specs/api").Body.String(); strings.Contains(body, "hideTryIt") {
 		t.Errorf("the viewer page hides the Try It console by default: %q", body)
 	}
 }
@@ -262,7 +262,7 @@ func TestStartupHidesTryIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := get(h, "/specs/specs/petstore-3.1.yaml").Body.String(); !strings.Contains(body, `hideTryIt="true"`) {
+	if body := get(h, "/specs/api").Body.String(); !strings.Contains(body, `hideTryIt="true"`) {
 		t.Errorf("the viewer page shows the Try It console: %q", body)
 	}
 }

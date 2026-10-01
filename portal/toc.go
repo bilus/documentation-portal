@@ -101,15 +101,19 @@ func checkEntries(entries []tocEntry) error {
 
 // tocPages resolves the uris of a toc file against the pages that the
 // portal serves, for the sidebar of one page. It lists the markdown files
-// once, and checks, reads and parses the spec at most once.
+// once, and checks, reads and parses each spec at most once.
 type tocPages struct {
-	s           *site
-	current     string          // the markdown file of the page that shows the sidebar
-	docs        map[string]bool // the markdown files that the document list shows
-	specChecked bool            // whether specServed holds
-	specServed  bool            // whether a regular file is at the spec path
-	specLoaded  bool            // whether specRoot holds
-	specRoot    *yaml.Node      // the published spec's root, or nil when it does not load
+	s       *site
+	current string                // the markdown file of the page that shows the sidebar
+	docs    map[string]bool       // the markdown files that the document list shows
+	specs   map[*section]*tocSpec // the spec sections that the uris named so far
+}
+
+// tocSpec is what tocPages found out about the spec of a spec section.
+type tocSpec struct {
+	served bool       // whether a regular file is at the spec path
+	loaded bool       // whether root holds
+	root   *yaml.Node // the published spec's root, or nil when it does not load
 }
 
 // newTocPages lists the markdown files of the content directory, for the
@@ -125,7 +129,7 @@ func (s *site) newTocPages(current string) (*tocPages, error) {
 			docs[p] = true
 		}
 	}
-	return &tocPages{s: s, current: current, docs: docs}, nil
+	return &tocPages{s: s, current: current, docs: docs, specs: map[*section]*tocSpec{}}, nil
 }
 
 // groups lays out entries as the sidebar's groups: the top-level items
@@ -212,30 +216,31 @@ func (p *tocPages) link(title, uri string) (sidebarLink, bool) {
 }
 
 // specURL returns the viewer page URL for target as site.specURL does, with
-// the spec checked, read and parsed at most once.
+// each spec checked, read and parsed at most once.
 func (p *tocPages) specURL(target string) (string, bool) {
-	pointer, ok := p.s.specPart(target)
+	sec, pointer, ok := p.s.specPart(target)
 	if !ok {
 		return "", false
 	}
-	if !p.specChecked {
-		p.specChecked = true
-		info, err := fs.Stat(p.s.root, p.s.specPath)
-		p.specServed = err == nil && info.Mode().IsRegular()
+	spec, checked := p.specs[sec]
+	if !checked {
+		info, err := fs.Stat(p.s.root, sec.Input)
+		spec = &tocSpec{served: err == nil && info.Mode().IsRegular()}
+		p.specs[sec] = spec
 	}
-	if !p.specServed {
+	if !spec.served {
 		return "", false
 	}
 	if pointer == "" {
-		return p.s.viewerURL(""), true
+		return sec.viewerURL(""), true
 	}
-	if !p.specLoaded {
-		p.specLoaded = true
+	if !spec.loaded {
+		spec.loaded = true
 		var doc yaml.Node
-		if sp, err := p.s.loadSpec(p.s.specPath); err == nil && yaml.Unmarshal(sp.Raw, &doc) == nil && len(doc.Content) > 0 {
-			p.specRoot = doc.Content[0]
+		if sp, err := p.s.loadSpec(sec.Input); err == nil && yaml.Unmarshal(sp.Raw, &doc) == nil && len(doc.Content) > 0 {
+			spec.root = doc.Content[0]
 		}
 	}
-	fragment, _ := routeIn(p.specRoot, pointer)
-	return p.s.viewerURL(fragment), true
+	fragment, _ := routeIn(spec.root, pointer)
+	return sec.viewerURL(fragment), true
 }
