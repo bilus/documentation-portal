@@ -44,13 +44,13 @@ func newChat(t *testing.T, m model.LLM, limits Limits) *Chat {
 func TestAskLooksUpTheAnswer(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "the Pets API", Call: &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}},
-		{Match: `"where":"docs/a.md:3"`, Reply: "Call GET /pets, as [Getting started](/docs/a.md) shows."},
+		{Match: `"url":"/docs/documents/a.md","where":"docs/a.md:3"`, Reply: "Call GET /pets, as [Getting started](/docs/documents/a.md) shows."},
 	})
 	answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "client", "conv", "How do I list pets?")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(answer, "GET /pets") || !m.Exhausted() {
+	if !strings.Contains(answer, "GET /pets") || !strings.Contains(answer, "(/docs/documents/a.md)") || !m.Exhausted() {
 		t.Errorf("answer %q, script exhausted: %v", answer, m.Exhausted())
 	}
 }
