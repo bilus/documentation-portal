@@ -44,8 +44,9 @@ The Anthropic SDK reads its credentials from `ANTHROPIC_API_KEY`.
 
     ANTHROPIC_API_KEY=... devbox run make run ARGS='-root-dir testdata -spec-path specs/petstore-3.1.yaml -docs-path docs -chat-model claude-opus-5-5'
 
-Each client address may ask 20 questions an hour, a conversation holds 20
-questions, and one answer may make 12 lookups. Behind a proxy, every reader
+Each client may ask 20 questions an hour, a conversation holds 20 questions
+and 512 KiB of messages and lookups, and one answer may make 12 lookups. A
+client is an IPv4 address or an IPv6 /64 network. Behind a proxy, every reader
 shares the proxy's address. The page uses live-templ, a private module that Go
 fetches with git, so devbox sets `GOPRIVATE` for it. After changing
 `chat/page.templ`, run `devbox run make generate`.

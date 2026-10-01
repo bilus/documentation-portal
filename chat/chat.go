@@ -4,6 +4,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,6 +30,7 @@ type Limits struct {
 	Questions      int           // per client in Window; 0 means 20
 	Window         time.Duration // 0 means an hour
 	Turns          int           // questions in one conversation; 0 means 20
+	History        int           // bytes of messages and lookups in one conversation; 0 means 512 KiB
 	Idle           time.Duration // a conversation unused this long is dropped; 0 means an hour
 }
 
@@ -51,6 +53,7 @@ func (l Limits) withDefaults() Limits {
 		Questions:      or(l.Questions, 20),
 		Window:         orDuration(l.Window, time.Hour),
 		Turns:          or(l.Turns, 20),
+		History:        or(l.History, 512<<10),
 		Idle:           orDuration(l.Idle, time.Hour),
 	}
 }
@@ -93,6 +96,7 @@ type Chat struct {
 
 type conversation struct {
 	turns    int
+	size     int // bytes of its history
 	lastUsed time.Time
 }
 
@@ -145,9 +149,11 @@ func (c *Chat) Ask(ctx context.Context, client, conv, question string) (string, 
 	case utf8.RuneCountInString(question) > c.limits.QuestionLength:
 		return "", ErrTooLong
 	}
-	if err := c.admit(ctx, client, conv); err != nil {
+	cv, err := c.admit(ctx, client, conv)
+	if err != nil {
 		return "", err
 	}
+	c.grow(cv, len(question))
 	calls := 0
 	var answer strings.Builder
 	msg := genai.NewContentFromText(question, genai.RoleUser)
@@ -161,12 +167,20 @@ func (c *Chat) Ask(ctx context.Context, client, conv, question string) (string, 
 		if ev.Content == nil {
 			continue
 		}
+		c.grow(cv, size(ev.Content))
+		answered := false
 		for _, p := range ev.Content.Parts {
-			if p.FunctionCall != nil {
+			switch {
+			case p.FunctionCall != nil:
 				calls++
+			case p.FunctionResponse != nil:
+				answered = true
 			}
 		}
-		if calls > c.limits.ToolCalls {
+		// The run stops after the tools answer the calls over the limit: a
+		// call without its result in the history would make the
+		// conversation's next request invalid.
+		if calls > c.limits.ToolCalls && answered {
 			return "", ErrTooManyTools
 		}
 		if ev.IsFinalResponse() {
@@ -183,21 +197,45 @@ func (c *Chat) Ask(ctx context.Context, client, conv, question string) (string, 
 	return answer.String(), nil
 }
 
-// admit counts the question against client's rate and conversation's length,
-// and drops the conversations nobody used for Idle.
-func (c *Chat) admit(ctx context.Context, client, conv string) error {
+// admit counts the question against client's rate and the conversation's
+// length, and returns the conversation.
+func (c *Chat) admit(ctx context.Context, client, conv string) (*conversation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
-	recent := c.asked[client][:0]
-	for _, t := range c.asked[client] {
-		if now.Sub(t) < c.limits.Window {
-			recent = append(recent, t)
-		}
+	c.sweep(ctx, now)
+	if len(c.asked[client]) >= c.limits.Questions {
+		return nil, ErrRateLimited
 	}
-	if len(recent) >= c.limits.Questions {
-		c.asked[client] = recent
-		return ErrRateLimited
+	cv := c.convs[conv]
+	if cv == nil {
+		cv = &conversation{}
+		c.convs[conv] = cv
+	}
+	if cv.turns >= c.limits.Turns || cv.size >= c.limits.History {
+		return nil, ErrTurns
+	}
+	cv.turns++
+	cv.lastUsed = now
+	c.asked[client] = append(c.asked[client], now)
+	return cv, nil
+}
+
+// sweep forgets the questions older than Window, and drops the conversations
+// that nobody used for Idle, with their sessions. The caller holds c.mu.
+func (c *Chat) sweep(ctx context.Context, now time.Time) {
+	for client, times := range c.asked {
+		recent := times[:0:0]
+		for _, t := range times {
+			if now.Sub(t) < c.limits.Window {
+				recent = append(recent, t)
+			}
+		}
+		if len(recent) == 0 {
+			delete(c.asked, client)
+		} else {
+			c.asked[client] = recent
+		}
 	}
 	for id, cv := range c.convs {
 		if now.Sub(cv.lastUsed) >= c.limits.Idle {
@@ -206,16 +244,28 @@ func (c *Chat) admit(ctx context.Context, client, conv string) error {
 			_ = c.sessions.Delete(ctx, &session.DeleteRequest{AppName: appName, UserID: userID, SessionID: id})
 		}
 	}
-	cv := c.convs[conv]
-	if cv == nil {
-		cv = &conversation{}
-		c.convs[conv] = cv
+}
+
+// grow adds n bytes to the history of cv.
+func (c *Chat) grow(cv *conversation, n int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cv.size += n
+}
+
+// size returns the bytes that content adds to a conversation's history.
+func size(content *genai.Content) int {
+	n := 0
+	for _, p := range content.Parts {
+		n += len(p.Text) + len(p.ThoughtSignature)
+		if p.FunctionCall != nil {
+			args, _ := json.Marshal(p.FunctionCall.Args)
+			n += len(args)
+		}
+		if p.FunctionResponse != nil {
+			response, _ := json.Marshal(p.FunctionResponse.Response)
+			n += len(response)
+		}
 	}
-	if cv.turns >= c.limits.Turns {
-		return ErrTurns
-	}
-	cv.turns++
-	cv.lastUsed = now
-	c.asked[client] = append(recent, now)
-	return nil
+	return n
 }

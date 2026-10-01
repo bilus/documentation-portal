@@ -94,6 +94,8 @@ func (l *llm) GenerateContent(ctx context.Context, req *model.LLMRequest, stream
 			case anthropic.ThinkingBlock:
 				// The API wants each thinking block back as it came.
 				parts = append(parts, &genai.Part{Thought: true, Text: b.Thinking, ThoughtSignature: []byte(b.Signature)})
+			case anthropic.RedactedThinkingBlock:
+				parts = append(parts, &genai.Part{Thought: true, ThoughtSignature: []byte(redacted + b.Data)})
 			case anthropic.TextBlock:
 				parts = append(parts, genai.NewPartFromText(b.Text))
 			case anthropic.ToolUseBlock:
@@ -116,6 +118,10 @@ func (l *llm) GenerateContent(ctx context.Context, req *model.LLMRequest, stream
 		}, nil)
 	}
 }
+
+// redacted starts the signature of a thought part that holds a redacted
+// thinking block's data. A real signature is base64, which has no colon.
+const redacted = "redacted:"
 
 // ErrRefused means the model declined to answer.
 var ErrRefused = fmt.Errorf("anthropic: the model declined the request")
@@ -150,7 +156,11 @@ func blocks(c *genai.Content) []anthropic.ContentBlockParamUnion {
 	for _, p := range c.Parts {
 		switch {
 		case p.Thought:
-			out = append(out, anthropic.NewThinkingBlock(string(p.ThoughtSignature), p.Text))
+			if data, ok := strings.CutPrefix(string(p.ThoughtSignature), redacted); ok {
+				out = append(out, anthropic.NewRedactedThinkingBlock(data))
+			} else {
+				out = append(out, anthropic.NewThinkingBlock(string(p.ThoughtSignature), p.Text))
+			}
 		case p.FunctionCall != nil:
 			out = append(out, anthropic.NewToolUseBlock(p.FunctionCall.ID, p.FunctionCall.Args, p.FunctionCall.Name))
 		case p.FunctionResponse != nil:

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/session"
 
 	"github.com/bilus/documentation-portal/anthropicmodel"
 	"github.com/bilus/documentation-portal/internal/fakemodel"
@@ -98,6 +99,130 @@ func TestAskStopsAfterTooManyLookups(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Call: search}, {Call: search}, {Reply: "never"}})
 	if _, err := newChat(t, m, Limits{ToolCalls: 1}).Ask(t.Context(), "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
 		t.Errorf("err = %v, want ErrTooManyTools", err)
+	}
+}
+
+func TestAskAllowsTheLastLookup(t *testing.T) {
+	search := &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Call: search}, {Call: search}, {Reply: "Call GET /pets."}})
+	if answer, err := newChat(t, m, Limits{ToolCalls: 2}).Ask(t.Context(), "a", "c", "pets?"); err != nil || answer != "Call GET /pets." {
+		t.Errorf("answer %q, err %v", answer, err)
+	}
+}
+
+// strict fails the test on a request whose history holds a tool call without
+// its result, which the Anthropic API rejects.
+type strict struct {
+	model.LLM
+	t *testing.T
+}
+
+func (s strict) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
+	answered := map[string]bool{}
+	for _, c := range req.Contents {
+		for _, p := range c.Parts {
+			if p.FunctionResponse != nil {
+				answered[p.FunctionResponse.ID] = true
+			}
+		}
+	}
+	for _, c := range req.Contents {
+		for _, p := range c.Parts {
+			if p.FunctionCall != nil && !answered[p.FunctionCall.ID] {
+				s.t.Errorf("the history holds tool call %s without its result", p.FunctionCall.ID)
+			}
+		}
+	}
+	return s.LLM.GenerateContent(ctx, req, stream)
+}
+
+func TestAskContinuesAfterTooManyLookups(t *testing.T) {
+	search := &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Call: search}, {Call: search}, {Match: "And cats?", Reply: "No cats."}})
+	c := newChat(t, strict{m, t}, Limits{ToolCalls: 1})
+	if _, err := c.Ask(t.Context(), "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
+		t.Fatalf("err = %v, want ErrTooManyTools", err)
+	}
+	if answer, err := c.Ask(t.Context(), "a", "c", "And cats?"); err != nil || answer != "No cats." {
+		t.Errorf("the next question: answer %q, err %v", answer, err)
+	}
+}
+
+func TestAskLeavesThoughtsOut(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Thought: "The guide says GET /pets.", Reply: "Call GET /pets."}})
+	if answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "a", "c", "pets?"); err != nil || answer != "Call GET /pets." {
+		t.Errorf("answer %q, err %v", answer, err)
+	}
+}
+
+func TestAskCountsOnlyAdmittedQuestions(t *testing.T) {
+	var now time.Time
+	c := newChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "1"}, {Reply: "2"}, {Reply: "3"}, {Reply: "4"}}),
+		Limits{Questions: 3, Window: time.Hour, Turns: 2, Idle: 24 * time.Hour})
+	c.now = func() time.Time { return now }
+	// The refused question at +65m must not count: at +67m the client has
+	// asked twice in the hour.
+	for _, step := range []struct {
+		minutes int
+		conv    string
+		want    error
+	}{{0, "c1", nil}, {10, "c1", nil}, {65, "c1", ErrTurns}, {66, "c2", nil}, {67, "c2", nil}} {
+		now = time.Date(2026, 9, 30, 12, step.minutes, 0, 0, time.UTC)
+		if _, err := c.Ask(t.Context(), "a", step.conv, "q"); !errors.Is(err, step.want) {
+			t.Errorf("at +%dm in %s: err %v, want %v", step.minutes, step.conv, err, step.want)
+		}
+	}
+}
+
+func TestAskForgetsClientsAfterTheWindow(t *testing.T) {
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	c := newChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "1"}, {Reply: "2"}, {Reply: "3"}}), Limits{Window: time.Hour})
+	c.now = func() time.Time { return now }
+	for _, client := range []string{"a", "b"} {
+		if _, err := c.Ask(t.Context(), client, "c-"+client, "q"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now = now.Add(time.Hour)
+	if _, err := c.Ask(t.Context(), "z", "c-z", "q"); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.asked) != 1 {
+		t.Errorf("clients remembered after the window: %v", c.asked)
+	}
+}
+
+func TestIdleConversationsLoseTheirSessions(t *testing.T) {
+	now := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	c := newChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "1"}, {Reply: "2"}}), Limits{Idle: time.Hour})
+	c.now = func() time.Time { return now }
+	session1 := func() error {
+		_, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "c1"})
+		return err
+	}
+	if _, err := c.Ask(t.Context(), "a", "c1", "q"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session1(); err != nil {
+		t.Fatalf("c1's session: %v", err)
+	}
+	now = now.Add(time.Hour)
+	if _, err := c.Ask(t.Context(), "a", "c2", "q"); err != nil {
+		t.Fatal(err)
+	}
+	if session1() == nil {
+		t.Error("c1's session outlived its conversation")
+	}
+}
+
+func TestAskEndsAConversationThatGrewTooLong(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Reply: strings.Repeat("x", 600)}, {Reply: "never"}})
+	c := newChat(t, m, Limits{History: 500})
+	if _, err := c.Ask(t.Context(), "a", "c", "q1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Ask(t.Context(), "a", "c", "q2"); !errors.Is(err, ErrTurns) {
+		t.Errorf("err = %v, want ErrTurns", err)
 	}
 }
 
