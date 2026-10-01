@@ -209,3 +209,16 @@ func TestOpenSectionsChecksEverySection(t *testing.T) {
 		t.Errorf("docs without a spec: %v", err)
 	}
 }
+
+func TestSlugOfKeepsDigitsOfAnyScript(t *testing.T) {
+	if got := slugOf("Version ٣"); got != "version-٣" {
+		t.Errorf(`slugOf("Version ٣") = %q, want "version-٣"`, got)
+	}
+}
+
+func TestOpenSectionsRefusesTwoTrailingSlashes(t *testing.T) {
+	root := fstest.MapFS{"docs/a.md": {Data: []byte("# A\n")}}
+	if _, err := openSections(Config{Root: root, Sections: []Section{docsSection("docs//", "")}}); err == nil || !strings.Contains(err.Error(), "docs/") {
+		t.Errorf("docs//: err = %v, want a refusal", err)
+	}
+}

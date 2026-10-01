@@ -79,10 +79,11 @@ type Document struct {
 
 // Documents lists the markdown files that the document lists show, each
 // once: a file that two docs sections hold belongs to the first, whose page
-// links to it open.
+// links to it open. A docs section that does not load has no documents; when
+// none loads, Documents returns the first one's error.
 func (l *Library) Documents() ([]Document, error) {
-	pages, err := l.pages()
-	if err != nil {
+	pages, loaded, err := l.pages()
+	if loaded == 0 && err != nil {
 		return nil, err
 	}
 	docs := make([]Document, 0, len(pages))
@@ -97,7 +98,10 @@ func (l *Library) Documents() ([]Document, error) {
 // error for any path that no document page serves. The text holds only what
 // the page shows: no HTML comments, raw HTML or unused link definitions.
 func (l *Library) ReadDocument(target string) (string, error) {
-	sec, doc, ok := l.s.docAt(target)
+	if !fs.ValidPath(target) {
+		return "", errNoDoc
+	}
+	sec, doc, ok := l.s.docAt(nil, target)
 	if !ok {
 		return "", errNoDoc
 	}
@@ -117,37 +121,57 @@ type docText struct {
 
 // pages returns the text of the document page of each markdown file that a
 // document list shows, each once, under its path from the documentation
-// root: a file that two docs sections hold belongs to the first.
-func (l *Library) pages() ([]docText, error) {
-	var pages []docText
+// root: a file that two docs sections hold belongs to the first. A docs
+// section that does not load drops out alone: pages returns the number of
+// docs sections that loaded, and the first error of one that did not.
+func (l *Library) pages() (pages []docText, loaded int, err error) {
 	seen := map[string]bool{}
 	for _, sec := range l.s.sections {
 		if sec.Type != DocsSection {
 			continue
 		}
-		paths, err := markdownFiles(sec.docs)
+		got, secErr := l.sectionPages(sec, seen)
+		if secErr != nil {
+			if err == nil {
+				err = fmt.Errorf("section %q: %w", sec.Title, secErr)
+			}
+			continue
+		}
+		for _, pg := range got {
+			seen[pg.Path] = true
+		}
+		pages = append(pages, got...)
+		loaded++
+	}
+	return pages, loaded, err
+}
+
+// sectionPages returns the text of the document page of each markdown file
+// of the docs section sec that seen does not hold, under its path from the
+// documentation root, or an error and no pages.
+func (l *Library) sectionPages(sec *section, seen map[string]bool) ([]docText, error) {
+	paths, err := markdownFiles(sec.docs)
+	if err != nil {
+		return nil, err
+	}
+	var pages []docText
+	for _, p := range paths {
+		rooted := path.Join(sec.Input, p)
+		if seen[rooted] {
+			continue
+		}
+		src, err := fs.ReadFile(sec.docs, p)
 		if err != nil {
 			return nil, err
 		}
-		for _, p := range paths {
-			rooted := path.Join(sec.Input, p)
-			if seen[rooted] {
-				continue
-			}
-			seen[rooted] = true
-			src, err := fs.ReadFile(sec.docs, p)
-			if err != nil {
-				return nil, err
-			}
-			text, title, err := l.render(sec, src, p)
-			if err != nil {
-				return nil, err
-			}
-			if title == "" {
-				title = rooted
-			}
-			pages = append(pages, docText{Document{Path: rooted, Title: title, URL: sec.docURL(p, "", "")}, text})
+		text, title, err := l.render(sec, src, p)
+		if err != nil {
+			return nil, err
 		}
+		if title == "" {
+			title = rooted
+		}
+		pages = append(pages, docText{Document{Path: rooted, Title: title, URL: sec.docURL(p, "", "")}, text})
 	}
 	return pages, nil
 }
@@ -176,15 +200,22 @@ type Operation struct {
 
 // Operations lists the operations of the published spec of each spec
 // section, in the order of the sections and of each spec's paths. A spec that
-// two spec sections name counts once, for the first, and a spec that does
-// not load has no operations: its viewer page shows why.
+// two spec sections name counts once, for the first. A spec that does not
+// load has no operations, and its viewer page shows why; when none loads,
+// Operations returns the first one's error.
 func (l *Library) Operations() ([]Operation, error) {
 	var ops []Operation
+	var first error
+	loaded := 0
 	for _, sec := range l.specSections() {
 		root, err := l.specRoot(sec)
 		if err != nil {
+			if first == nil {
+				first = fmt.Errorf("section %q: %w", sec.Title, err)
+			}
 			continue
 		}
+		loaded++
 		paths := mappingValue(root, "paths")
 		if paths == nil || paths.Kind != yaml.MappingNode {
 			continue
@@ -208,6 +239,9 @@ func (l *Library) Operations() ([]Operation, error) {
 				})
 			}
 		}
+	}
+	if loaded == 0 && first != nil {
+		return nil, first
 	}
 	return ops, nil
 }
@@ -297,19 +331,17 @@ type Match struct {
 }
 
 // Search returns up to limit matches of query, ignoring case: in the text of
-// the document pages, then in the published specs, in the order of the spec
-// sections. When both hold more matches than fit, the pages take half of
-// limit, rounded up, and the specs the rest. A spec that does not load has no
-// matches.
+// the document pages, then in the published specs, which take turns in the
+// order of the spec sections. When both hold more matches than fit, the pages
+// take half of limit, rounded up, and the specs the rest. A section that does
+// not load has no matches; when no section loads, Search returns the first
+// error.
 func (l *Library) Search(query string, limit int) ([]Match, error) {
 	q := strings.ToLower(query)
 	if q == "" || limit <= 0 {
 		return nil, nil
 	}
-	pages, err := l.pages()
-	if err != nil {
-		return nil, err
-	}
+	pages, docsLoaded, docsErr := l.pages()
 	var inDocs []Match
 	for _, pg := range pages {
 		for i, line := range strings.Split(pg.text, "\n") {
@@ -318,21 +350,47 @@ func (l *Library) Search(query string, limit int) ([]Match, error) {
 			}
 		}
 	}
-	var inSpec []Match
+	var bySpec [][]Match
+	var specErr error
 	for _, sec := range l.specSections() {
 		root, err := l.specRoot(sec)
 		if err != nil {
+			if specErr == nil {
+				specErr = fmt.Errorf("section %q: %w", sec.Title, err)
+			}
 			continue
 		}
-		if len(inSpec) >= limit {
-			break
-		}
+		var found []Match
 		walk(root, "", func(pointer, text string) bool {
 			if strings.Contains(strings.ToLower(text), q) {
-				inSpec = append(inSpec, Match{Spec: sec.slug, Where: pointer, Text: clip(text), URL: sec.viewerURL("")})
+				found = append(found, Match{Spec: sec.slug, Where: pointer, Text: clip(text), URL: sec.viewerURL("")})
 			}
-			return len(inSpec) < limit
+			return len(found) < limit
 		})
+		bySpec = append(bySpec, found)
+	}
+	if docsLoaded == 0 && len(bySpec) == 0 {
+		if docsErr != nil {
+			return nil, docsErr
+		}
+		if specErr != nil {
+			return nil, specErr
+		}
+	}
+	// The specs take turns, so that each spec with a match shows while the
+	// limit allows.
+	var inSpec []Match
+	for i := 0; len(inSpec) < limit; i++ {
+		taken := false
+		for _, found := range bySpec {
+			if i < len(found) && len(inSpec) < limit {
+				inSpec = append(inSpec, found[i])
+				taken = true
+			}
+		}
+		if !taken {
+			break
+		}
 	}
 	n := min(len(inDocs), max(limit-len(inSpec), (limit+1)/2))
 	return append(inDocs[:n], inSpec[:min(len(inSpec), limit-n)]...), nil

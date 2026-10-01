@@ -389,3 +389,13 @@ func TestDocsSectionTitles(t *testing.T) {
 		t.Errorf("the document page: %q", page)
 	}
 }
+
+func TestUnknownSlugPagesShowTheNavigationBar(t *testing.T) {
+	h := newDocsPortal(t, fstest.MapFS{"a.md": {Data: []byte("# A\n")}})
+	for _, path := range []string{"/specs/other", "/docs/other/a.md"} {
+		rec := get(h, path)
+		if body := rec.Body.String(); rec.Code != http.StatusNotFound || !strings.Contains(body, `<a href="/specs/api">API</a>`) || !strings.Contains(body, `<a href="/docs/documents/">Documents</a>`) {
+			t.Errorf("%s: %d %q", path, rec.Code, body)
+		}
+	}
+}
