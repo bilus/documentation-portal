@@ -34,6 +34,14 @@ that operation. The portal reads nothing outside the documentation root,
 follows no symlink in the content directory, and under `/specs/` and
 `/api/specs/` serves no file of the root except the spec.
 
+`-toc-path` (`DOCPORTAL_TOC_PATH`) names a Stoplight `toc.json` inside the
+documentation root, such as `toc.json`. The document sidebar then shows its
+entries in its order and under its titles: an entry for a markdown file links
+its document page, one for the spec or one of its operations links the viewer
+page, and an http or https URL stays as it is. The sidebar leaves out an entry
+that no page serves. A missing or invalid toc file brings back the list of
+markdown files, with a line in the log.
+
 ## Chat
 
 With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
