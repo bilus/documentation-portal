@@ -34,24 +34,34 @@ func (s *site) linkURL(sec *section, docPath string, dest []byte) ([]byte, bool)
 		if page, ok := s.specURL(target); ok {
 			return []byte(page), true
 		}
-		if docs, doc, ok := s.docAt(target); ok {
+		if docs, doc, ok := s.docAt(sec, target); ok {
 			return []byte(docs.docURL(doc, u.RawQuery, u.Fragment)), true
 		}
 	}
 	return nil, false
 }
 
-// docAt returns the first docs section, in the order of the portal
-// configuration, whose content directory holds the markdown file at target,
-// a path inside the documentation root, with the file's path in that
-// directory, or false when no document page serves it.
-func (s *site) docAt(target string) (*section, string, bool) {
-	for _, sec := range s.sections {
+// docAt returns the docs section whose content directory holds the markdown
+// file at target, a path inside the documentation root, with the file's path
+// in that directory: prefer when it holds the file, else the first docs
+// section in the order of the portal configuration. It reports false when no
+// document page serves the file. prefer may be nil.
+func (s *site) docAt(prefer *section, target string) (*section, string, bool) {
+	holds := func(sec *section) (string, bool) {
 		doc, ok := sec.contentPath(target)
 		if !ok {
-			continue
+			return "", false
 		}
-		if paths, err := markdownFiles(sec.docs); err == nil && slices.Contains(paths, doc) {
+		paths, err := markdownFiles(sec.docs)
+		return doc, err == nil && slices.Contains(paths, doc)
+	}
+	if prefer != nil {
+		if doc, ok := holds(prefer); ok {
+			return prefer, doc, true
+		}
+	}
+	for _, sec := range s.sections {
+		if doc, ok := holds(sec); ok {
 			return sec, doc, true
 		}
 	}

@@ -49,8 +49,9 @@ scripts, and `/raw/{slug}/{path}` serves its PNG, JPEG, GIF, WebP and SVG
 images. A relative link in a markdown file resolves against the
 documentation root, as on Stoplight, and then against the file's own
 directory, and it shows as plain text when no page serves its target. A link
-to a markdown file opens its document page in the first docs section whose
-content directory holds it, so content directories may nest. A link to a
+to a markdown file opens its document page in the section of the page that
+links it, when that section holds it, and else in the first docs section that
+holds it, so content directories may nest. A link to a
 spec opens its section's viewer page, and a link to one of its operations in
 Stoplight's form, such as `openapi.yaml/paths/~1pets/get`, opens the viewer at
 that operation. Of two spec sections with one spec, links open the first. The

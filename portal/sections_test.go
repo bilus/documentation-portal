@@ -304,3 +304,31 @@ func TestLibraryReadsEverySection(t *testing.T) {
 		t.Errorf("matches: %+v, want one in guides/a.md and one in the Store spec", matches)
 	}
 }
+
+func TestNestedSectionsKeepTheirOwnPages(t *testing.T) {
+	root := fstest.MapFS{
+		"guides/a.md":            {Data: []byte("# A\n\n[inner](deep/inner.md)\n")},
+		"guides/deep/inner.md":   {Data: []byte("# Inner\n\n[sibling](sibling.md)\n\n[up](../a.md)\n")},
+		"guides/deep/sibling.md": {Data: []byte("# Sibling\n")},
+		"deep.json":              {Data: []byte(`{"items": [{"type": "item", "title": "Inner", "uri": "guides/deep/inner.md"}, {"type": "item", "title": "A", "uri": "guides/a.md"}]}`)},
+	}
+	h := newSections(t, root,
+		portal.Section{Title: "Guides", Type: portal.DocsSection, Input: "guides"},
+		portal.Section{Title: "Deep", Type: portal.DocsSection, Input: "guides/deep", Toc: "deep.json"},
+	)
+	page := get(h, "/docs/deep/inner.md").Body.String()
+	if hrefs := linkHrefs(page); hrefs["sibling"] != "/docs/deep/sibling.md" || hrefs["up"] != "/docs/guides/a.md" {
+		t.Errorf("links on Deep's page: %q", hrefs)
+	}
+	for _, want := range []string{
+		`href="/docs/deep/inner.md"><div title="Inner" class="sl-flex sl-items-center sl-h-md sl-pr-4 sl-pl-4 sl-bg-primary-tint`,
+		`href="/docs/guides/a.md"><div title="A"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Deep's sidebar lacks %s", want)
+		}
+	}
+	if href := linkHrefs(get(h, "/docs/guides/a.md").Body.String())["inner"]; href != "/docs/guides/deep/inner.md" {
+		t.Errorf("inner on Guides' page: href %q, want Guides' own page", href)
+	}
+}

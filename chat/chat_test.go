@@ -347,3 +347,13 @@ func TestChatNamesEveryAPI(t *testing.T) {
 		t.Errorf("the chat page's heading names not every API: %q", rec.Body)
 	}
 }
+
+func TestReadSpecNamesItsSpec(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{
+		{Match: "Show me listPets.", Call: &fakemodel.Call{Name: "read_spec", Args: map[string]any{"spec": "api", "pointer": "paths/~1pets/get"}}},
+		{Match: `"spec":"api","truncated":false`, Reply: "Here it is."},
+	})
+	if answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "client", "conv", "Show me listPets."); err != nil || !m.Exhausted() {
+		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
+	}
+}

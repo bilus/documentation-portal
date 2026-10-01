@@ -31,10 +31,14 @@ const (
 )
 
 // ReadConfig reads the sections from the configuration file at name, a path
-// inside root, into the portal configuration of root. It refuses a file that
-// is missing or not one YAML document, and a key it does not know. New checks
-// the sections.
+// inside root, into the portal configuration of root. It refuses no root, a
+// file that is missing, that is not YAML or that holds more than one YAML
+// document, and a key it does not know. An empty file gives no sections. New
+// checks the sections.
 func ReadConfig(root fs.FS, name string) (Config, error) {
+	if root == nil {
+		return Config{}, errors.New("no documentation root")
+	}
 	data, err := fs.ReadFile(root, name)
 	if err != nil {
 		return Config{}, fmt.Errorf("read configuration file: %w", err)

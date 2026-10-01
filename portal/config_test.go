@@ -73,3 +73,9 @@ func TestReadConfigRefusesMissingFile(t *testing.T) {
 		t.Errorf("err = %v, want fs.ErrNotExist naming the file", err)
 	}
 }
+
+func TestReadConfigRefusesNilRoot(t *testing.T) {
+	if cfg, err := portal.ReadConfig(nil, "environment.yaml"); err == nil || !strings.Contains(err.Error(), "documentation root") {
+		t.Errorf("%+v, %v, want an error about the documentation root", cfg, err)
+	}
+}

@@ -557,7 +557,7 @@ func TestSpecURLEdges(t *testing.T) {
 	if got, ok := s.specURL("./api.yaml"); !ok || got != "/specs/api" {
 		t.Errorf("specURL(./api.yaml): %q %v", got, ok)
 	}
-	if _, got, ok := s.docAt("./guide/../a.md"); !ok || got != "a.md" {
+	if _, got, ok := s.docAt(nil, "./guide/../a.md"); !ok || got != "a.md" {
 		t.Errorf("docAt(./guide/../a.md): %q %v", got, ok)
 	}
 }
@@ -754,5 +754,72 @@ func TestTocProblemsPerSection(t *testing.T) {
 	}
 	if n := strings.Count(logged.String(), "\n"); n != 2 {
 		t.Errorf("two sections with missing toc files, each shown twice, logged %d lines, want one each:\n%s", n, logged.String())
+	}
+}
+
+// pastAFailedListing returns a site with three docs sections: Outer at docs,
+// whose listing fails, Inner at docs/sub, which holds a.md, and Other at
+// other, whose toc file links docs/sub/a.md.
+func pastAFailedListing(t *testing.T) *site {
+	t.Helper()
+	root := fstest.MapFS{
+		"docs/sub/a.md": {Data: []byte("# A\n")},
+		"other/b.md":    {Data: []byte("# B\n")},
+		"toc.json":      {Data: []byte(`{"items": [{"type": "item", "title": "A", "uri": "docs/sub/a.md"}]}`)},
+	}
+	inner, err := fs.Sub(root, "docs/sub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := fs.Sub(root, "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &site{root: root, sections: []*section{
+		{Section: Section{Title: "Outer", Type: DocsSection, Input: "docs"}, slug: "outer", docs: failingFS{}},
+		{Section: Section{Title: "Inner", Type: DocsSection, Input: "docs/sub"}, slug: "inner", docs: inner},
+		{Section: Section{Title: "Other", Type: DocsSection, Input: "other", Toc: "toc.json"}, slug: "other", docs: other},
+	}}
+}
+
+func TestLinksPastAFailedListing(t *testing.T) {
+	s := pastAFailedListing(t)
+	if got, ok := s.linkURL(s.sections[2], "b.md", []byte("docs/sub/a.md")); !ok || string(got) != "/docs/inner/a.md" {
+		t.Errorf("a link: %q, %v, want Inner's page", got, ok)
+	}
+	p, err := s.newTocPages(s.sections[2], "b.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := p.link("A", "docs/sub/a.md"); !ok || got.URL != "/docs/inner/a.md" {
+		t.Errorf("a toc entry: %+v, %v, want Inner's page", got, ok)
+	}
+}
+
+func TestTocSidebarListsOtherSectionsOnce(t *testing.T) {
+	files := fstest.MapFS{"guides/a.md": {Data: []byte("# A\n")}}
+	var items []string
+	for i := range 10 {
+		files[fmt.Sprintf("ops/o%d.md", i)] = &fstest.MapFile{Data: []byte("# O\n")}
+		items = append(items, fmt.Sprintf(`{"type": "item", "title": "O%d", "uri": "ops/o%d.md"}`, i, i))
+	}
+	files["toc.json"] = &fstest.MapFile{Data: []byte(`{"items": [` + strings.Join(items, ", ") + `]}`)}
+	guides, err := fs.Sub(files, "guides")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := fs.Sub(files, "ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops := &countedFS{sub, map[string]int{}}
+	sec := &section{Section: Section{Title: "Guides", Type: DocsSection, Input: "guides", Toc: "toc.json"}, slug: "guides", docs: guides}
+	s := &site{root: files, sections: []*section{sec, {Section: Section{Title: "Ops", Type: DocsSection, Input: "ops"}, slug: "ops", docs: ops}}}
+	if groups := s.sidebar(sec, "a.md"); len(groups) != 1 || len(groups[0].Links) != 10 {
+		t.Fatalf("groups %+v", groups)
+	}
+	// One listing opens the directory twice: fs.WalkDir stats it, then reads it.
+	if n := ops.opens["."]; n > 2 {
+		t.Errorf("one sidebar listed Ops %d times over, want once", n)
 	}
 }

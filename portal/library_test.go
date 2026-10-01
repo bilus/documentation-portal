@@ -3,6 +3,7 @@ package portal_test
 import (
 	"io/fs"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -299,5 +300,102 @@ func TestLibraryTitles(t *testing.T) {
 	}
 	if got := docsOnly.Titles(); len(got) != 0 {
 		t.Errorf("without a spec section: %q", got)
+	}
+}
+
+func TestLibraryReadDocumentTakesCleanPaths(t *testing.T) {
+	lib := newLibrary(t)
+	for _, path := range []string{"docs//a.md", "docs/a.md/", "./docs/a.md", "docs/../docs/a.md", "/docs/a.md", "docs/./a.md"} {
+		if text, err := lib.ReadDocument(path); err == nil {
+			t.Errorf("%q: %q, want an error, as for a page that no URL serves", path, text)
+		}
+	}
+	if _, err := lib.ReadDocument("docs/a.md"); err != nil {
+		t.Errorf("docs/a.md: %v", err)
+	}
+}
+
+func TestLibrarySearchTakesEverySpec(t *testing.T) {
+	spec := func(title string, n int) *fstest.MapFile {
+		yaml := "openapi: 3.0.3\ninfo:\n  title: " + title + "\n  version: 1.0.0\npaths:\n"
+		for i := range n {
+			yaml += "  /needle" + strconv.Itoa(i) + ":\n    get:\n      operationId: op" + strconv.Itoa(i) + "\n"
+		}
+		return &fstest.MapFile{Data: []byte(yaml)}
+	}
+	lib, err := portal.NewLibrary(portal.Config{Root: fstest.MapFS{"pets.yaml": spec("Pets", 10), "store.yaml": spec("Store", 10), "users.yaml": spec("Users", 1)}, Sections: []portal.Section{
+		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
+		{Title: "Users", Type: portal.SpecSection, Input: "users.yaml"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	matches, err := lib.Search("needle", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var specs []string
+	for _, m := range matches {
+		specs = append(specs, m.Spec)
+	}
+	if want := []string{"pets", "store", "users"}; !slices.Equal(specs, want) {
+		t.Errorf("matches in the specs %q, want one in each, in order: %+v", specs, matches)
+	}
+}
+
+func TestLibraryLeavesOutWhatDoesNotLoad(t *testing.T) {
+	petsOps := "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n"
+	root := fstest.MapFS{
+		"pets.yaml":   {Data: []byte(petsOps)},
+		"broken.yaml": {Data: []byte("openapi: [3\n")},
+		"a/x.md":      {Data: []byte("# X\n\nPets.\n")},
+		"b/y.md":      {Data: []byte("# Y\n\nPets.\n")},
+	}
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+		{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"},
+		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "A", Type: portal.DocsSection, Input: "a"},
+		{Title: "B", Type: portal.DocsSection, Input: "b"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(root, "b/y.md") // b's content directory goes while the portal runs
+	if docs, err := lib.Documents(); err != nil || len(docs) != 1 || docs[0].Path != "a/x.md" {
+		t.Errorf("documents: %+v, %v, want a/x.md alone", docs, err)
+	}
+	if ops, err := lib.Operations(); err != nil || len(ops) != 1 || ops[0].Spec != "pets" {
+		t.Errorf("operations: %+v, %v, want listPets alone", ops, err)
+	}
+	matches, err := lib.Search("pets", 10)
+	var inDocs, inSpec bool
+	for _, m := range matches {
+		inDocs = inDocs || m.Where == "a/x.md:3"
+		inSpec = inSpec || m.Spec == "pets"
+	}
+	if err != nil || !inDocs || !inSpec {
+		t.Errorf("matches: %+v, %v, want a/x.md and the Pets spec", matches, err)
+	}
+
+	only, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ops, err := only.Operations(); err == nil || !strings.Contains(err.Error(), "Broken") {
+		t.Errorf("operations of a broken spec alone: %+v, %v, want an error naming its section", ops, err)
+	}
+	if matches, err := only.Search("pets", 10); err == nil {
+		t.Errorf("search of a broken spec alone: %+v, want an error", matches)
+	}
+
+	root["b/y.md"] = &fstest.MapFile{Data: []byte("# Y\n")}
+	docsOnly, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{{Title: "B", Type: portal.DocsSection, Input: "b"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(root, "b/y.md")
+	if docs, err := docsOnly.Documents(); err == nil || !strings.Contains(err.Error(), `"B"`) {
+		t.Errorf("documents of a vanished docs section alone: %+v, %v, want an error naming its section", docs, err)
 	}
 }

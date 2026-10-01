@@ -224,13 +224,14 @@ func (p *tocPages) link(title, uri string) (sidebarLink, bool) {
 }
 
 // docAt returns the docs section and the path of the markdown file at target
-// as site.docAt does, with the markdown files of each docs section listed at
-// most once. A section whose listing fails serves no entry.
+// as site.docAt does with the section of the page that shows the sidebar
+// preferred, and with the markdown files of each docs section listed at most
+// once. A section whose listing fails serves no entry.
 func (p *tocPages) docAt(target string) (*section, string, bool) {
-	for _, sec := range p.s.sections {
+	holds := func(sec *section) (string, bool) {
 		doc, ok := sec.contentPath(target)
 		if !ok {
-			continue
+			return "", false
 		}
 		docs, listed := p.docs[sec]
 		if !listed {
@@ -241,7 +242,13 @@ func (p *tocPages) docAt(target string) (*section, string, bool) {
 			docs = setOf(paths)
 			p.docs[sec] = docs
 		}
-		if docs[doc] {
+		return doc, docs[doc]
+	}
+	if doc, ok := holds(p.sec); ok {
+		return p.sec, doc, true
+	}
+	for _, sec := range p.s.sections {
+		if doc, ok := holds(sec); ok {
 			return sec, doc, true
 		}
 	}
