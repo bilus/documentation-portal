@@ -15,7 +15,7 @@ import (
 )
 
 func TestOperationLinkOpensOperation(t *testing.T) {
-	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), SpecPath: "specs/petstore-3.1.yaml", DocsPath: "docs"})
+	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), Sections: sections("specs/petstore-3.1.yaml", "docs", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestOperationLinkOpensOperation(t *testing.T) {
 	defer srv.Close()
 
 	browser := newBrowser(t)
-	pageText(t, browser, srv.URL+"/docs/README.md", "Sample documents")
+	pageText(t, browser, srv.URL+"/docs/documents/README.md", "Sample documents")
 	ctx, cancel := context.WithTimeout(browser, 30*time.Second)
 	defer cancel()
 	err = chromedp.Run(ctx,

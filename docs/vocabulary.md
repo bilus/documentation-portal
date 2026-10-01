@@ -11,55 +11,63 @@ Terms of docportal, one per line.
 - operator: the person who starts docportal and gives it its configuration.
 - reader: the person who reads the documentation in a browser.
 - arguments: docportal's command-line arguments, without the program name: the flags and nothing else.
-- flags: -addr, -root-dir, -spec-path, -docs-path, -toc-path, -hide-try-it and -chat-model. Any other flag is rejected.
-- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_ROOT_DIR, DOCPORTAL_SPEC_PATH, DOCPORTAL_DOCS_PATH, DOCPORTAL_TOC_PATH, DOCPORTAL_HIDE_TRY_IT and DOCPORTAL_CHAT_MODEL. Tests pass their own lookup.
-- configuration: the address, the documentation root name, the spec path, the content directory path, the toc path, the Try It setting and the chat model, each taken from its flag, else from the environment, else from its default: :8080, ., openapi.yaml, empty, empty, false and empty.
-- startup: reading the configuration, opening the documentation root, adding the Try It setting to the portal configuration, and building the portal, in main.startup. A failure there stops docportal before it listens.
+- flags: -addr, -config, -hide-try-it and -chat-model. Any other flag is rejected.
+- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_CONFIG, DOCPORTAL_HIDE_TRY_IT and DOCPORTAL_CHAT_MODEL. Tests pass their own lookup.
+- configuration: the address, the configuration file name, the Try It setting and the chat model, each taken from its flag, else from the environment, else from its default: :8080, environment.yaml, false and empty.
+- startup: reading the configuration, opening the documentation root, reading the portal configuration from the configuration file, adding the Try It setting and the chat's routes to it, and building the portal, in main.startup. A failure there stops docportal before it listens.
 - address: the network address docportal listens on, such as :8080.
-- documentation root: the local directory that holds the configured spec and the content directory.
-- documentation root name: the documentation root's path on the local file system, as the operator gives it.
-- documentation root handle: the documentation root opened with os.OpenRoot, as an fs.FS. Every read of the spec, a markdown file or an image goes through it, and os.OpenRoot keeps each read inside the root, symlinks included.
-- spec path: the path, relative to the documentation root, of the API spec to serve.
-- configured spec: the file at the spec path. Under /specs/ and /api/specs/, the portal serves no other file of the documentation root.
-- missing spec: a request under /specs/ or /api/specs/ that names no configured spec: a path other than the spec path, or a spec path with no file behind it. It gets a 404 that names the path.
-- invalid spec: a configured spec that is not an API spec: not YAML, not OpenAPI 3.0 or 3.1, or without a title. It gets an error page naming the file and the reason, and /api/specs/{spec path} answers with an error naming the file and the reason, both with status 422.
+- documentation root: the directory that holds the configuration file and the files of its sections. docportal's is a local directory; a program that mounts the portal may pass any fs.FS.
+- configuration file: a YAML file of the documentation root that lists the sections under sections:, each with title, type, input and, for a docs section, toc. docportal reads the one that -config or DOCPORTAL_CONFIG names, environment.yaml by default.
+- configuration file name: the configuration file's path on the local file system, as the operator gives it.
+- configuration file path: the configuration file's path inside the documentation root: the last element of the configuration file name.
+- section: a spec or a content directory of the documentation root, shown under its title in the navigation bar: a spec section or a docs section. Its input, and a docs section's toc path, are paths inside the documentation root, and a leading ./ and a trailing / are cleaned.
+- section slug: a section's title in lower case, with each run of characters other than letters and digits as one dash and no dash at either end, such as getting-started for Getting Started. It names the section in its URLs, and no two sections share one.
+- spec section: a section of type spec, whose input is a spec path.
+- docs section: a section of type docs, whose input is a content directory path, with an optional toc path.
+- sample configuration: testdata/environment.yaml, the configuration file of docportal's tests, with a spec section for testdata/specs/petstore-3.1.yaml and a docs section for testdata/docs.
+- documentation root name: the documentation root's path on the local file system: the directory of the configuration file name.
+- documentation root handle: the documentation root opened with os.OpenRoot, as an fs.FS. Every read of the configuration file, a spec, a markdown file or an image goes through it, and os.OpenRoot keeps each read inside the root, symlinks included.
+- spec path: a spec section's input: the path, relative to the documentation root, of an API spec to serve.
+- configured spec: the file at a spec section's spec path. Under /specs/ and /api/specs/, the portal serves no other file of the documentation root.
+- missing spec: a request under /specs/ or /api/specs/ that names no configured spec: a slug of no spec section, or a spec section whose spec path has no file behind it. It gets a 404 that names the slug or the spec path.
+- invalid spec: a configured spec that is not an API spec: not YAML, not OpenAPI 3.0 or 3.1, or without a title. It gets an error page naming the file and the reason, and /api/specs/{section slug} answers with an error naming the file and the reason, both with status 422.
 - error page: the HTML page the portal shows instead of the viewer page for an invalid or missing spec, and instead of a document page for a path that names no markdown file, or a hidden one.
-- content directory: the directory at the content directory path, which holds the markdown files and their images. docportal runs without one.
-- content directory path: the content directory's path inside the documentation root, from -docs-path or DOCPORTAL_DOCS_PATH, or empty without a content directory. No part of it may be a symlink.
-- toc path: the toc file's path inside the documentation root, from -toc-path or DOCPORTAL_TOC_PATH, or empty, which leaves the document sidebar as #13 draws it. A toc path needs a content directory path.
+- content directory: the directory of a docs section, at its content directory path, which holds markdown files and their images.
+- content directory path: a docs section's input: its content directory's path inside the documentation root. No part of it may be a symlink.
+- toc path: a docs section's toc: its toc file's path inside the documentation root, or empty, which leaves the section's document sidebar as #13 draws it. A spec section has none.
 - toc file: a JSON file in the form of Stoplight's toc.json: {"items": [...]}, each entry an item with a title and a uri, a group with a title and entries of its own, or a divider with a title. A uri resolves against the documentation root, or is an http or https URL.
-- content directory handle: the content directory as an fs.FS, which portal.New opens through the documentation root handle. The portal follows no symlink in it.
-- markdown file: a regular file of the content directory named *.md or *.markdown, reached through no symlink.
-- image: a regular file of the content directory named *.png, *.jpg, *.jpeg, *.gif, *.webp or *.svg, reached through no symlink.
-- hidden: of a file or directory of the content directory, with a name that starts with a dot. The portal lists and serves nothing hidden and nothing inside a hidden directory.
-- path: in /docs/{path} and /raw/{path}, a slash-separated path relative to the content directory.
+- content directory handle: a content directory as an fs.FS, which portal.New opens through the documentation root handle. The portal follows no symlink in it.
+- markdown file: a regular file of a content directory named *.md or *.markdown, reached through no symlink.
+- image: a regular file of a content directory named *.png, *.jpg, *.jpeg, *.gif, *.webp or *.svg, reached through no symlink.
+- hidden: of a file or directory of a content directory, with a name that starts with a dot. The portal lists and serves nothing hidden and nothing inside a hidden directory.
+- path: in /docs/{section slug}/{path} and /raw/{section slug}/{path}, a slash-separated path relative to the section's content directory.
 - sample documents: testdata/docs, the fixture directory of the markdown file and raw file tests.
-- portal configuration: the documentation root handle, the spec path, the content directory path, the toc path, the Try It setting and the chat's routes, as portal.New takes them. Tests pass any fs.FS in the handle's place.
-- portal: the HTTP handler that redirects / to the viewer page and serves the viewer page, the raw spec and the Elements assets, and with a content directory the document list, the document pages and the raw files.
+- portal configuration: portal.Config: the documentation root handle, the sections, the Try It setting and the chat's routes, as portal.New takes them. A program that mounts the portal builds it in Go, or reads its sections from a configuration file with portal.ReadConfig. Tests pass any fs.FS in the handle's place.
+- portal: the HTTP handler that redirects / to the first section's page, and serves each spec section's viewer page and raw spec, each docs section's document list, document pages and raw files, and the Elements assets.
 - router: the http.ServeMux that newRouter builds and portal.New returns as the portal. It sends each request to its handler by method and path.
 - HTTP server: net/http's server, which listens on the address and calls the portal for each request.
-- viewer page: the HTML page at /specs/{spec path} that embeds Stoplight Elements pointed at the raw spec, with the Try It console unless the Try It setting hides it.
+- viewer page: the HTML page at /specs/{section slug} that embeds Stoplight Elements pointed at a spec section's raw spec, with the Try It console unless the Try It setting hides it.
 - Try It console: the part of the viewer page where Stoplight Elements sends requests from the reader's browser to the servers listed in the raw spec.
 - Try It setting: whether the viewer page hides the Try It console. It is true with -hide-try-it or a true DOCPORTAL_HIDE_TRY_IT, and false by default.
-- document list: the HTML page at /docs/ that links the document page of every markdown file that is not hidden, each titled with its path, in byte order of the paths.
-- document page: the HTML page at /docs/{path} that shows one markdown file rendered as HTML without active content, with each relative link pointed at the page that serves its link target, or shown as text when the link leads nowhere.
+- document list: the HTML page at /docs/{section slug}/, under the section's title, that links the document page of every markdown file of the section that is not hidden, each titled with its path, in byte order of the paths.
+- document page: the HTML page at /docs/{section slug}/{path} that shows one markdown file of a docs section rendered as HTML without active content, with each relative link pointed at the page that serves its link target, or shown as text when the link leads nowhere.
 - relative link: a markdown link, inline or by reference, whose destination has a path but no scheme and no host, such as docs/guide-oauth.md or /docs/guide-oauth.md. An <a> element in raw HTML is not one.
-- link target: the path named by a relative link, taken against the documentation root or, when no page serves that and the link has no leading /, against the markdown file's directory. It may leave the documentation root. A document page serves the link target of a markdown file of the content directory, and the viewer page serves the configured spec and its parts.
+- link target: the path named by a relative link, taken against the documentation root or, when no page serves that and the link has no leading /, against the markdown file's directory. It may leave the documentation root. A markdown file is served as a link target by the document page of the docs section that shows the link, when its content directory holds the file, else by that of the first docs section that holds it, and the viewer page of the first spec section whose spec path names a configured spec serves the spec and its parts.
 - Stoplight: a hosted documentation platform, the target of the guides in conrad-api-docs. It resolves a relative link against its project root, the top directory of the repository.
 - Stoplight operation link: a relative link to <spec path>/paths/<path>/<method>, with the path escaped as in a JSON pointer, as Stoplight writes a link to an operation, such as CONRAD-Delivery-API.oas2.yml/paths/~1devices/post. The part after <spec path>/ is its pointer: a JSON pointer into the spec without its leading /.
 - operation route: the part of a viewer page URL after the #, which opens one operation: /operations/{operationId}, or /paths/{slug}/{method} for an operation without an operationId. The slug is the operation's path with each /, {, } and space turned into -, the first run of dashes collapsed to one and a dash trimmed from each end, as Stoplight Elements makes it.
 - leads nowhere: of a relative link, shown as its text alone, without the link, because no page serves its link target, the target leaves the documentation root, or the destination does not parse.
-- document sidebar: the column at the left of the document list and the document pages. With a toc path, it shows the toc file's entries; without one, or while the toc file is missing or invalid, it links the document page of every markdown file that is not hidden, grouped by directory. It has the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
+- document sidebar: the column at the left of a docs section's document list and document pages, under the section's title. With the section's toc path, it shows the toc file's entries; without one, or while the toc file is missing or invalid, it links the document page of every markdown file of the section that is not hidden, grouped by directory. It has the markup and the classes of the sidebar that Stoplight Elements draws on the viewer page.
 - active content: markup that runs in the reader's browser, such as a <script> element or a javascript: link.
-- navigation bar: the links at the top of every HTML page of the portal: to the viewer page, to the document list when a content directory is configured, and to the chat page when a chat model is named.
-- chat page: the live page at /chat where a reader asks questions about the API, and the chat model answers from the published spec and the markdown files through read-only tools. The portal serves it only when a chat model is named.
+- navigation bar: the links at the top of every HTML page of the portal: to each section's page under its title, in the order of the portal configuration, and to the chat page when a chat model is named.
+- chat page: the live page at /chat where a reader asks questions about the APIs of the spec sections, each named in its heading, and the chat model answers from the published specs and the markdown files of every section through read-only tools. The portal serves it only when a chat model is named.
 - chat model: the Anthropic model that answers on the chat page, named by -chat-model or DOCPORTAL_CHAT_MODEL, and empty by default, which leaves the chat off.
-- library: portal.Library, the published documentation as the chat reads it: the published spec, its operations and parts, and the text of the document page of each markdown file that the document list shows, each with its page's URL.
+- library: portal.Library, the published documentation as the chat reads it: the published spec of each spec section, its operations and parts, and the text of the document page of each markdown file that a document list shows, each with its page's URL.
 - published spec: the configured spec without its unpublished parts and marker keys. The raw spec carries it, and the viewer page's title and the operation routes come from it.
-- raw spec: the response at /api/specs/{spec path}, as application/yaml: the configured spec without its unpublished parts and marker keys. A configured spec from which the rules remove nothing comes back byte for byte. Any other spec is written again from its parsed form, with every YAML document and the order of its keys, but not its layout.
+- raw spec: the response at /api/specs/{section slug}, as application/yaml: the configured spec without its unpublished parts and marker keys. A configured spec from which the rules remove nothing comes back byte for byte. Any other spec is written again from its parsed form, with every YAML document and the order of its keys, but not its layout.
 - unpublished part: a part of the configured spec that a marker key marks for the publication target main: a key whose value is a mapping with an x-doNotPublish value that names main, together with that mapping; a list element that is such a mapping; or the sibling <name> of a key x-doNotPublish-<name> whose value names main. A value names main when it is the scalar main or a list that holds main. The root mapping is never an unpublished part, and an alias counts as a copy of its anchor's node.
 - marker key: an x-doNotPublish key or a key x-doNotPublish-<name>. Its value names one or more publication targets.
 - publication target: a name in the value of a marker key, such as main or beta, for one publication of the documentation. The portal publishes for main alone.
-- raw file: the response at /raw/{path}: an image that is not hidden, unchanged, with the image type of its extension, X-Content-Type-Options: nosniff, so that the browser reads it as that type only, and Content-Security-Policy: sandbox, so that no script in it runs.
+- raw file: the response at /raw/{section slug}/{path}: an image that is not hidden, unchanged, with the image type of its extension, X-Content-Type-Options: nosniff, so that the browser reads it as that type only, and Content-Security-Policy: sandbox, so that no script in it runs.
 - Stoplight Elements: the web component that renders an API spec as documentation in the reader's browser.
 - Elements assets: the Stoplight Elements script, stylesheet and license, downloaded by `make setup` and embedded in docportal.

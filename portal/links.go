@@ -12,10 +12,10 @@ import (
 )
 
 // linkURL returns the URL of the page that serves the link target of dest, a
-// link in the markdown file at docPath, or false when the link leads nowhere.
-// It returns dest unchanged when dest has a scheme, a host or no path, and
-// false when dest does not parse.
-func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
+// link in the markdown file at docPath of the docs section sec, or false when
+// the link leads nowhere. It returns dest unchanged when dest has a scheme, a
+// host or no path, and false when dest does not parse.
+func (s *site) linkURL(sec *section, docPath string, dest []byte) ([]byte, bool) {
 	u, err := url.Parse(string(dest))
 	if err != nil {
 		return nil, false
@@ -25,7 +25,7 @@ func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
 	}
 	targets := []string{strings.TrimPrefix(path.Clean(u.Path), "/")}
 	if !strings.HasPrefix(u.Path, "/") {
-		targets = append(targets, path.Join(s.docsPath, path.Dir(docPath), u.Path))
+		targets = append(targets, path.Join(sec.Input, path.Dir(docPath), u.Path))
 	}
 	for _, target := range targets {
 		if target == ".." || strings.HasPrefix(target, "../") {
@@ -34,76 +34,98 @@ func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
 		if page, ok := s.specURL(target); ok {
 			return []byte(page), true
 		}
-		if doc, ok := s.docAt(target); ok {
-			return []byte((&url.URL{Path: "/docs/" + doc, RawQuery: u.RawQuery, Fragment: u.Fragment}).String()), true
+		if docs, doc, ok := s.docAt(sec, target); ok {
+			return []byte(docs.docURL(doc, u.RawQuery, u.Fragment)), true
 		}
 	}
 	return nil, false
 }
 
-// docAt returns the path in the content directory of the markdown file at
-// target, a path inside the documentation root, or false when no document
-// page serves it.
-func (s *site) docAt(target string) (string, bool) {
-	doc, ok := s.contentPath(target)
-	if !ok || s.docs == nil {
-		return "", false
+// docAt returns the docs section whose content directory holds the markdown
+// file at target, a path inside the documentation root, with the file's path
+// in that directory: prefer when it holds the file, else the first docs
+// section in the order of the portal configuration. It reports false when no
+// document page serves the file. prefer may be nil.
+func (s *site) docAt(prefer *section, target string) (*section, string, bool) {
+	holds := func(sec *section) (string, bool) {
+		doc, ok := sec.contentPath(target)
+		if !ok {
+			return "", false
+		}
+		paths, err := markdownFiles(sec.docs)
+		return doc, err == nil && slices.Contains(paths, doc)
 	}
-	paths, err := markdownFiles(s.docs)
-	return doc, err == nil && slices.Contains(paths, doc)
+	if prefer != nil {
+		if doc, ok := holds(prefer); ok {
+			return prefer, doc, true
+		}
+	}
+	for _, sec := range s.sections {
+		if doc, ok := holds(sec); ok {
+			return sec, doc, true
+		}
+	}
+	return nil, "", false
 }
 
 // contentPath returns target, a path inside the documentation root, as a
-// path in the content directory, or false for a target outside it or
-// without a content directory.
-func (s *site) contentPath(target string) (string, bool) {
-	target = path.Clean(target)
-	switch s.docsPath {
-	case "":
+// path in the section's content directory, or false for a target outside it
+// and for a spec section.
+func (sec *section) contentPath(target string) (string, bool) {
+	if sec.Type != DocsSection {
 		return "", false
-	case ".":
+	}
+	target = path.Clean(target)
+	if sec.Input == "." {
 		return target, true
 	}
-	return strings.CutPrefix(target, s.docsPath+"/")
+	return strings.CutPrefix(target, sec.Input+"/")
 }
 
 // specURL returns the viewer page URL for target, a path inside the
-// documentation root that names the configured spec or, in Stoplight's form,
-// a part of it: at the operation route for an operation of the published
+// documentation root that names the spec of a spec section or, in
+// Stoplight's form, a part of it: the viewer page of the section that
+// specPart finds, at the operation route for an operation of the published
 // spec, else at the overview. It reports false for any other target, and
-// while no regular file is at the spec path.
+// while no regular file is at the section's spec path.
 func (s *site) specURL(target string) (string, bool) {
-	pointer, ok := s.specPart(target)
+	sec, pointer, ok := s.specPart(target)
 	if !ok {
 		return "", false
 	}
-	if info, err := fs.Stat(s.root, s.specPath); err != nil || !info.Mode().IsRegular() {
+	if info, err := fs.Stat(s.root, sec.Input); err != nil || !info.Mode().IsRegular() {
 		return "", false
 	}
 	var fragment string
 	if pointer != "" {
-		if sp, err := s.loadSpec(s.specPath); err == nil {
+		if sp, err := s.loadSpec(sec.Input); err == nil {
 			fragment, _ = operationRoute(sp.Raw, pointer)
 		}
 	}
-	return s.viewerURL(fragment), true
+	return sec.viewerURL(fragment), true
 }
 
-// specPart reports whether target, a path inside the documentation root,
-// names the configured spec or, in Stoplight's form, a part of it, and
-// returns the part's pointer, or "" for the spec itself.
-func (s *site) specPart(target string) (string, bool) {
+// specPart returns the spec section whose spec target names, as the spec
+// itself or, in Stoplight's form, a part of it, with the part's pointer, or
+// "" for the spec itself. target is a path inside the documentation root. Of
+// several spec sections, the one with the longest spec path wins, and of
+// those with one spec path the first: no file is both a spec and a directory
+// above another.
+func (s *site) specPart(target string) (*section, string, bool) {
 	target = path.Clean(target)
-	if pointer, inside := strings.CutPrefix(target, s.specPath+"/"); inside {
-		return pointer, true
+	var found *section
+	for _, sec := range s.sections {
+		if sec.Type != SpecSection || target != sec.Input && !strings.HasPrefix(target, sec.Input+"/") {
+			continue
+		}
+		if found == nil || len(sec.Input) > len(found.Input) {
+			found = sec
+		}
 	}
-	return "", target == s.specPath
-}
-
-// viewerURL returns the viewer page's URL with fragment, an operation route
-// or "".
-func (s *site) viewerURL(fragment string) string {
-	return (&url.URL{Path: "/specs/" + s.specPath, Fragment: fragment}).String()
+	if found == nil {
+		return nil, "", false
+	}
+	return found, strings.TrimPrefix(target[len(found.Input):], "/"), true
 }
 
 // operationRoute returns the operation route of pointer in spec, such as

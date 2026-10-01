@@ -17,14 +17,14 @@ import (
 )
 
 func TestChatAnswersAQuestion(t *testing.T) {
-	cfg := portal.Config{Root: os.DirFS("../testdata"), SpecPath: "specs/petstore-3.1.yaml", DocsPath: "docs"}
+	cfg := portal.Config{Root: os.DirFS("../testdata"), Sections: sections("specs/petstore-3.1.yaml", "docs", "")}
 	lib, err := portal.NewLibrary(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "How do I get one pet?", Call: &fakemodel.Call{Name: "list_operations", Args: map[string]any{}}},
-		{Match: "showPetById", Reply: "Call [Info for a specific pet](/specs/specs/petstore-3.1.yaml#/operations/showPetById)."},
+		{Match: "showPetById", Reply: "Call [Info for a specific pet](/specs/api#/operations/showPetById)."},
 	})
 	c, err := chat.New(chat.Config{Model: m, Library: lib})
 	if err != nil {
@@ -56,7 +56,7 @@ func TestChatAnswersAQuestion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the chat did not answer: %v", err)
 	}
-	if href != "/specs/specs/petstore-3.1.yaml#/operations/showPetById" || target != "_blank" {
+	if href != "/specs/api#/operations/showPetById" || target != "_blank" {
 		t.Errorf("the answer's link: href %q, target %q", href, target)
 	}
 	if label == "" {

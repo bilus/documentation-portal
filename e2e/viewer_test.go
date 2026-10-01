@@ -18,6 +18,17 @@ import (
 	"github.com/bilus/documentation-portal/portal"
 )
 
+// sections returns a spec section titled API for specPath and, unless
+// docsPath is empty, a docs section titled Documents for docsPath with the toc
+// path tocPath.
+func sections(specPath, docsPath, tocPath string) []portal.Section {
+	s := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: specPath}}
+	if docsPath != "" {
+		s = append(s, portal.Section{Title: "Documents", Type: portal.DocsSection, Input: docsPath, Toc: tocPath})
+	}
+	return s
+}
+
 func TestViewerRendersSampleBundles(t *testing.T) {
 	browser := newBrowser(t)
 	for _, tc := range []struct{ file, version, description string }{
@@ -25,13 +36,13 @@ func TestViewerRendersSampleBundles(t *testing.T) {
 		{"petstore-3.1.yaml", "v2.0.0", "written for OpenAPI 3.1"},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
-			h, err := portal.New(portal.Config{Root: os.DirFS("../testdata/specs"), SpecPath: tc.file})
+			h, err := portal.New(portal.Config{Root: os.DirFS("../testdata/specs"), Sections: sections(tc.file, "", "")})
 			if err != nil {
 				t.Fatal(err)
 			}
 			srv := httptest.NewServer(h)
 			defer srv.Close()
-			page := srv.URL + "/specs/" + tc.file
+			page := srv.URL + "/specs/api"
 
 			overview := pageText(t, browser, page, "Show a pet")
 			for _, want := range []string{"Petstore", tc.version, tc.description} {

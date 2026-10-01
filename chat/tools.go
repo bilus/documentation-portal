@@ -23,6 +23,7 @@ type (
 		Path string `json:"path" jsonschema:"the path of a markdown file, as list_documents gives it"`
 	}
 	pointerArg struct {
+		Spec    string `json:"spec" jsonschema:"the spec that holds the part, as list_operations or search gives it"`
 		Pointer string `json:"pointer" jsonschema:"a JSON pointer into the spec without its leading slash, such as paths/~1pets/get or components/schemas/Pet"`
 	}
 	queryArg struct {
@@ -60,7 +61,7 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 	if err == nil {
 		err = add(functiontool.New(functiontool.Config{
 			Name:        "list_operations",
-			Description: "Lists the API's operations: each one's method, path, operationId, summary, pointer and page url.",
+			Description: "Lists the operations of every API reference: each one's spec, method, path, operationId, summary, pointer and page url.",
 		}, func(agent.Context, noArgs) (map[string]any, error) {
 			ops, err := lib.Operations()
 			return map[string]any{"operations": ops}, err
@@ -69,20 +70,20 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 	if err == nil {
 		err = add(functiontool.New(functiontool.Config{
 			Name:        "read_spec",
-			Description: "Returns one part of the API reference, the OpenAPI spec, as YAML: an operation, a schema, or any other part named by a JSON pointer. Follow a $ref such as #/components/schemas/Pet by reading components/schemas/Pet.",
+			Description: "Returns one part of an API reference, an OpenAPI spec, as YAML: an operation, a schema, or any other part named by its spec and a JSON pointer. Follow a $ref such as #/components/schemas/Pet by reading components/schemas/Pet of the same spec.",
 		}, func(_ agent.Context, a pointerArg) (map[string]any, error) {
-			part, err := lib.SpecPart(a.Pointer)
+			part, err := lib.SpecPart(a.Spec, a.Pointer)
 			if err != nil {
 				return nil, err
 			}
 			part, cut := capped(part, maxSpecPart)
-			return map[string]any{"pointer": a.Pointer, "yaml": part, "truncated": cut}, nil
+			return map[string]any{"spec": a.Spec, "pointer": a.Pointer, "yaml": part, "truncated": cut}, nil
 		}))
 	}
 	if err == nil {
 		err = add(functiontool.New(functiontool.Config{
 			Name:        "search",
-			Description: "Finds a word or phrase in the guides and the API reference: each match's place (a guide's path and line, or a JSON pointer into the spec), text and page url.",
+			Description: "Finds a word or phrase in the guides and the API references: each match's place (a guide's path and line, or a spec and a JSON pointer into it), text and page url.",
 		}, func(_ agent.Context, a queryArg) (map[string]any, error) {
 			matches, err := lib.Search(a.Query, maxMatches)
 			return map[string]any{"matches": matches}, err

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -23,7 +25,7 @@ func library(t *testing.T) *portal.Library {
 		"api.yaml":  {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n      summary: List the pets\n")},
 		"docs/a.md": {Data: []byte("# Getting started\n\nList the pets with GET /pets.\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs"})
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}, {Title: "Documents", Type: portal.DocsSection, Input: "docs"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,13 +44,13 @@ func newChat(t *testing.T, m model.LLM, limits Limits) *Chat {
 func TestAskLooksUpTheAnswer(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "the Pets API", Call: &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}},
-		{Match: `"where":"a.md:3"`, Reply: "Call GET /pets, as [Getting started](/docs/a.md) shows."},
+		{Match: `"url":"/docs/documents/a.md","where":"docs/a.md:3"`, Reply: "Call GET /pets, as [Getting started](/docs/documents/a.md) shows."},
 	})
 	answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "client", "conv", "How do I list pets?")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(answer, "GET /pets") || !m.Exhausted() {
+	if !strings.Contains(answer, "GET /pets") || !strings.Contains(answer, "(/docs/documents/a.md)") || !m.Exhausted() {
 		t.Errorf("answer %q, script exhausted: %v", answer, m.Exhausted())
 	}
 }
@@ -284,5 +286,74 @@ func (declining) GenerateContent(context.Context, *model.LLMRequest, bool) iter.
 func TestAskReportsARefusal(t *testing.T) {
 	if _, err := newChat(t, declining{}, Limits{}).Ask(t.Context(), "a", "c", "Tell me a secret"); !errors.Is(err, ErrDeclined) {
 		t.Errorf("err = %v, want ErrDeclined", err)
+	}
+}
+
+func TestChatToolsNameTheSpec(t *testing.T) {
+	root := fstest.MapFS{
+		"pets.yaml":  {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")},
+		"store.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Store\n  version: 1.0.0\npaths:\n  /orders:\n    get:\n      operationId: listOrders\n      summary: List the orders\n")},
+	}
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := fakemodel.New("opus", []fakemodel.Exchange{
+		{Match: "How do I list orders?", Call: &fakemodel.Call{Name: "list_operations", Args: map[string]any{}}},
+		{Match: `"spec":"store"`, Call: &fakemodel.Call{Name: "read_spec", Args: map[string]any{"spec": "store", "pointer": "paths/~1orders/get"}}},
+		{Match: "operationId: listOrders", Reply: "Call [List the orders](/specs/store#/operations/listOrders)."},
+	})
+	c, err := New(Config{Model: m, Library: lib})
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := c.Ask(t.Context(), "client", "conv", "How do I list orders?")
+	if err != nil || !strings.Contains(answer, "/specs/store#/operations/listOrders") || !m.Exhausted() {
+		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
+	}
+}
+
+func TestChatNamesEveryAPI(t *testing.T) {
+	spec := func(title, version string) *fstest.MapFile {
+		return &fstest.MapFile{Data: []byte("openapi: 3.0.3\ninfo:\n  title: " + title + "\n  version: " + version + "\npaths: {}\n")}
+	}
+	root := fstest.MapFS{"pets.yaml": spec("Pets", "1.0.0"), "store.yaml": spec("Store", "1.0.0"), "pets-v2.yaml": spec("Pets", "2.0.0")}
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
+		{Title: "Pets v2", Type: portal.SpecSection, Input: "pets-v2.yaml"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Match: "questions from customers about the Pets and Store APIs.", Reply: "Ask me about either."}})
+	c, err := New(Config{Model: m, Library: lib})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer, err := c.Ask(t.Context(), "client", "conv", "What can you help with?"); err != nil || !m.Exhausted() {
+		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
+	}
+	mux := http.NewServeMux()
+	for _, r := range c.Routes() {
+		mux.Handle(r.Pattern, r.Handler)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/chat", nil))
+	if !strings.Contains(rec.Body.String(), "Ask about the Pets and Store APIs") {
+		t.Errorf("the chat page's heading names not every API: %q", rec.Body)
+	}
+}
+
+func TestReadSpecNamesItsSpec(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{
+		{Match: "Show me listPets.", Call: &fakemodel.Call{Name: "read_spec", Args: map[string]any{"spec": "api", "pointer": "paths/~1pets/get"}}},
+		{Match: `"spec":"api","truncated":false`, Reply: "Here it is."},
+	})
+	if answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "client", "conv", "Show me listPets."); err != nil || !m.Exhausted() {
+		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
 	}
 }

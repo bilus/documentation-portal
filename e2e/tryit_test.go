@@ -14,12 +14,12 @@ import (
 func TestViewerTryIt(t *testing.T) {
 	browser := newBrowser(t)
 	for _, hide := range []bool{false, true} {
-		h, err := portal.New(portal.Config{Root: os.DirFS("../testdata/specs"), SpecPath: "petstore-3.1.yaml", HideTryIt: hide})
+		h, err := portal.New(portal.Config{Root: os.DirFS("../testdata/specs"), Sections: sections("petstore-3.1.yaml", "", ""), HideTryIt: hide})
 		if err != nil {
 			t.Fatal(err)
 		}
 		srv := httptest.NewServer(h)
-		page := srv.URL + "/specs/petstore-3.1.yaml#/operations/showPetById"
+		page := srv.URL + "/specs/api#/operations/showPetById"
 		if hide {
 			if text := pageText(t, browser, page, "microchipId"); strings.Contains(text, "Send API Request") {
 				t.Error("the Try It console shows with HideTryIt")
