@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -12,8 +13,8 @@ import (
 )
 
 // Library reads what the portal publishes, for a program that answers
-// questions about it: the published spec and the listed markdown files, each
-// with the URL of its page.
+// questions about it: the published specs of the spec sections and the listed
+// markdown files of the docs sections, each with the URL of its page.
 type Library struct{ s *site }
 
 // NewLibrary returns the published documentation of cfg, or the error that
@@ -35,8 +36,11 @@ type SectionLink struct {
 // Sections returns a link to the page of each section, in the order of the
 // portal configuration.
 func (l *Library) Sections() []SectionLink {
-	// HOLE(3): link each section's page
-	return nil
+	links := make([]SectionLink, 0, len(l.s.sections))
+	for _, sec := range l.s.sections {
+		links = append(links, SectionLink{Title: sec.Title, URL: sec.pageURL()})
+	}
+	return links
 }
 
 // Title returns the title of the first spec section's published spec, or ""
@@ -53,34 +57,16 @@ func (l *Library) Title() string {
 	return sp.Title
 }
 
-// SpecURL returns the first spec section's viewer page URL, or "" without a
-// spec section.
-func (l *Library) SpecURL() string {
-	sec, ok := l.s.firstSpec()
-	if !ok {
-		return ""
-	}
-	return sec.viewerURL("")
-}
-
-// DocumentsURL returns the first docs section's document list URL, or ""
-// without a docs section.
-func (l *Library) DocumentsURL() string {
-	sec, ok := l.s.firstDocs()
-	if !ok {
-		return ""
-	}
-	return sec.pageURL()
-}
-
-// Document is a markdown file that the document list shows.
+// Document is a markdown file that a document list shows.
 type Document struct {
-	Path  string `json:"path"`  // in the content directory
+	Path  string `json:"path"`  // from the documentation root
 	Title string `json:"title"` // its first level-one heading, or its path
 	URL   string `json:"url"`   // its document page
 }
 
-// Documents lists the markdown files that the document list shows.
+// Documents lists the markdown files that the document lists show, each
+// once: a file that two docs sections hold belongs to the first, whose page
+// links to it open.
 func (l *Library) Documents() ([]Document, error) {
 	pages, err := l.pages()
 	if err != nil {
@@ -94,19 +80,19 @@ func (l *Library) Documents() ([]Document, error) {
 }
 
 // ReadDocument returns the text of the document page of the markdown file at
-// path, in markdown's notation, or an error for any path that no document
-// page serves. The text holds only what the page shows: no HTML comments, raw
-// HTML or unused link definitions.
-func (l *Library) ReadDocument(path string) (string, error) {
-	sec, ok := l.s.firstDocs()
+// target, a path from the documentation root, in markdown's notation, or an
+// error for any path that no document page serves. The text holds only what
+// the page shows: no HTML comments, raw HTML or unused link definitions.
+func (l *Library) ReadDocument(target string) (string, error) {
+	sec, doc, ok := l.s.docAt(target)
 	if !ok {
 		return "", errNoDoc
 	}
-	src, err := sec.readDoc(path)
+	src, err := sec.readDoc(doc)
 	if err != nil {
 		return "", err
 	}
-	text, _, err := l.render(sec, src, path)
+	text, _, err := l.render(sec, src, doc)
 	return text, err
 }
 
@@ -116,31 +102,39 @@ type docText struct {
 	text string
 }
 
-// pages returns the text of the document page of each markdown file that the
-// document list shows.
+// pages returns the text of the document page of each markdown file that a
+// document list shows, each once, under its path from the documentation
+// root: a file that two docs sections hold belongs to the first.
 func (l *Library) pages() ([]docText, error) {
-	sec, ok := l.s.firstDocs()
-	if !ok {
-		return nil, nil
-	}
-	paths, err := markdownFiles(sec.docs)
-	if err != nil {
-		return nil, err
-	}
-	pages := make([]docText, 0, len(paths))
-	for _, p := range paths {
-		src, err := fs.ReadFile(sec.docs, p)
+	var pages []docText
+	seen := map[string]bool{}
+	for _, sec := range l.s.sections {
+		if sec.Type != DocsSection {
+			continue
+		}
+		paths, err := markdownFiles(sec.docs)
 		if err != nil {
 			return nil, err
 		}
-		text, title, err := l.render(sec, src, p)
-		if err != nil {
-			return nil, err
+		for _, p := range paths {
+			rooted := path.Join(sec.Input, p)
+			if seen[rooted] {
+				continue
+			}
+			seen[rooted] = true
+			src, err := fs.ReadFile(sec.docs, p)
+			if err != nil {
+				return nil, err
+			}
+			text, title, err := l.render(sec, src, p)
+			if err != nil {
+				return nil, err
+			}
+			if title == "" {
+				title = rooted
+			}
+			pages = append(pages, docText{Document{Path: rooted, Title: title, URL: sec.docURL(p, "", "")}, text})
 		}
-		if title == "" {
-			title = p
-		}
-		pages = append(pages, docText{Document{Path: p, Title: title, URL: sec.docURL(p, "", "")}, text})
 	}
 	return pages, nil
 }
@@ -156,7 +150,7 @@ func (l *Library) render(sec *section, src []byte, p string) (text, title string
 	return text, title, nil
 }
 
-// Operation is an operation of the published spec.
+// Operation is an operation of a published spec.
 type Operation struct {
 	Spec        string `json:"spec,omitempty"` // the slug of its spec section
 	Method      string `json:"method"`
@@ -167,37 +161,56 @@ type Operation struct {
 	URL         string `json:"url"`     // the viewer page at the operation
 }
 
-// Operations lists the operations of the published spec, in the order of its
-// paths.
+// Operations lists the operations of the published spec of each spec
+// section, in the order of the sections and of each spec's paths. A spec that
+// two spec sections name counts once, for the first, and a spec that does
+// not load has no operations: its viewer page shows why.
 func (l *Library) Operations() ([]Operation, error) {
-	sec, root, err := l.spec()
-	if err != nil {
-		return nil, err
-	}
-	paths := mappingValue(root, "paths")
-	if paths == nil || paths.Kind != yaml.MappingNode {
-		return nil, nil
-	}
 	var ops []Operation
-	for i := 0; i+1 < len(paths.Content); i += 2 {
-		p := paths.Content[i].Value
-		item := pathItem(root, p)
-		for _, method := range methods {
-			op := mappingValue(item, method)
-			if op == nil || op.Kind != yaml.MappingNode {
-				continue
+	for _, sec := range l.specSections() {
+		root, err := l.specRoot(sec)
+		if err != nil {
+			continue
+		}
+		paths := mappingValue(root, "paths")
+		if paths == nil || paths.Kind != yaml.MappingNode {
+			continue
+		}
+		for i := 0; i+1 < len(paths.Content); i += 2 {
+			p := paths.Content[i].Value
+			item := pathItem(root, p)
+			for _, method := range methods {
+				op := mappingValue(item, method)
+				if op == nil || op.Kind != yaml.MappingNode {
+					continue
+				}
+				ops = append(ops, Operation{
+					Spec:        sec.slug,
+					Method:      method,
+					Path:        p,
+					OperationID: scalarValue(op, "operationId"),
+					Summary:     scalarValue(op, "summary"),
+					Pointer:     "paths/" + escapeToken(p) + "/" + method,
+					URL:         sec.viewerURL(route(op, p, method)),
+				})
 			}
-			ops = append(ops, Operation{
-				Method:      method,
-				Path:        p,
-				OperationID: scalarValue(op, "operationId"),
-				Summary:     scalarValue(op, "summary"),
-				Pointer:     "paths/" + escapeToken(p) + "/" + method,
-				URL:         sec.viewerURL(route(op, p, method)),
-			})
 		}
 	}
 	return ops, nil
+}
+
+// specSections returns the spec sections without the later of two that name
+// one spec.
+func (l *Library) specSections() []*section {
+	var specs []*section
+	seen := map[string]bool{}
+	for _, sec := range l.s.sections {
+		if sec.Type == SpecSection && !seen[sec.Input] {
+			seen[sec.Input] = true
+			specs = append(specs, sec)
+		}
+	}
+	return specs
 }
 
 // SpecPart returns the part at pointer, such as paths/~1pets/get or
@@ -206,15 +219,17 @@ func (l *Library) Operations() ([]Operation, error) {
 // a mapping that holds an internal $ref, as Operations' pointer does for a
 // path item that is a $ref.
 func (l *Library) SpecPart(spec, pointer string) (string, error) {
-	// HOLE(3): read the spec section that spec names. Until then, the first
-	// spec section's.
-	_, root, err := l.spec()
+	sec, ok := l.s.specFor(spec)
+	if !ok {
+		return "", fmt.Errorf("no spec section has the slug %q", spec)
+	}
+	root, err := l.specRoot(sec)
 	if err != nil {
 		return "", err
 	}
 	node := partAt(root, pointer)
 	if pointer == "" || node == nil {
-		return "", fmt.Errorf("no part of the spec at %q", pointer)
+		return "", fmt.Errorf("no part of the spec %q at %q", spec, pointer)
 	}
 	out, err := yaml.Marshal(node)
 	return string(out), err
@@ -259,18 +274,20 @@ func child(root, n *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-// Match is a line of a markdown file, or a key or value of the published
-// spec, that holds a query.
+// Match is a line of a markdown file, or a key or value of a published spec,
+// that holds a query.
 type Match struct {
 	Spec  string `json:"spec,omitempty"` // the slug of the spec section of a match in a spec
-	Where string `json:"where"`          // path:line of a markdown file, or a pointer into the spec
+	Where string `json:"where"`          // path:line of a markdown file from the documentation root, or a pointer into the spec
 	Text  string `json:"text"`
 	URL   string `json:"url"` // the page that shows it
 }
 
 // Search returns up to limit matches of query, ignoring case: in the text of
-// the document pages, then in the published spec. When both hold more matches
-// than fit, the pages take half of limit, rounded up, and the spec the rest.
+// the document pages, then in the published specs, in the order of the spec
+// sections. When both hold more matches than fit, the pages take half of
+// limit, rounded up, and the specs the rest. A spec that does not load has no
+// matches.
 func (l *Library) Search(query string, limit int) ([]Match, error) {
 	q := strings.ToLower(query)
 	if q == "" || limit <= 0 {
@@ -288,15 +305,18 @@ func (l *Library) Search(query string, limit int) ([]Match, error) {
 			}
 		}
 	}
-	sec, root, err := l.spec()
-	if err != nil {
-		return nil, err
-	}
 	var inSpec []Match
-	if root != nil {
+	for _, sec := range l.specSections() {
+		root, err := l.specRoot(sec)
+		if err != nil {
+			continue
+		}
+		if len(inSpec) >= limit {
+			break
+		}
 		walk(root, "", func(pointer, text string) bool {
 			if strings.Contains(strings.ToLower(text), q) {
-				inSpec = append(inSpec, Match{Where: pointer, Text: clip(text), URL: sec.viewerURL("")})
+				inSpec = append(inSpec, Match{Spec: sec.slug, Where: pointer, Text: clip(text), URL: sec.viewerURL("")})
 			}
 			return len(inSpec) < limit
 		})
@@ -344,28 +364,24 @@ func clip(s string) string {
 	return string([]rune(s)[:200]) + "..."
 }
 
-// spec returns the first spec section and the root node of its published
-// spec, with each alias replaced by a copy of its anchor's node, as when the
-// publication rules removed a part, or neither without a spec section.
-func (l *Library) spec() (*section, *yaml.Node, error) {
-	sec, ok := l.s.firstSpec()
-	if !ok {
-		return nil, nil, nil
-	}
+// specRoot returns the root node of the published spec of the spec section
+// sec, with each alias replaced by a copy of its anchor's node, as when the
+// publication rules removed a part.
+func (l *Library) specRoot(sec *section) (*yaml.Node, error) {
 	sp, err := l.s.loadSpec(sec.Input)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(sp.Raw, &doc); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	budget := maxCopies
 	if err := expandAliases(&doc, &budget); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if len(doc.Content) == 0 {
-		return nil, nil, errors.New("the spec is empty")
+		return nil, errors.New("the spec is empty")
 	}
-	return sec, doc.Content[0], nil
+	return doc.Content[0], nil
 }

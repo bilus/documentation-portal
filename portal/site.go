@@ -37,8 +37,7 @@ func (s *site) specFor(slug string) (*section, bool) {
 	return nil, false
 }
 
-// firstSpec returns the first spec section, or false without one. Until
-// stage 3 reads every section, the library reads this one alone.
+// firstSpec returns the first spec section, or false without one.
 func (s *site) firstSpec() (*section, bool) {
 	for _, sec := range s.sections {
 		if sec.Type == SpecSection {
@@ -73,17 +72,6 @@ func (sec *section) viewerURL(fragment string) string {
 func (s *site) docsFor(slug string) (*section, bool) {
 	for _, sec := range s.sections {
 		if sec.Type == DocsSection && sec.slug == slug {
-			return sec, true
-		}
-	}
-	return nil, false
-}
-
-// firstDocs returns the first docs section, or false without one. Until
-// stage 3 reads every section, the library reads this one alone.
-func (s *site) firstDocs() (*section, bool) {
-	for _, sec := range s.sections {
-		if sec.Type == DocsSection {
 			return sec, true
 		}
 	}

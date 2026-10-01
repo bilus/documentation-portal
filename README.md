@@ -71,8 +71,9 @@ log.
 
 With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
 `claude-opus-5-5`, the portal serves a chat page at `/chat`, where readers ask
-questions about the API. The model answers from the published spec and the
-markdown files alone, through read-only tools, and links the pages it used.
+questions about the API. The model answers from the published specs and the
+markdown files of every section alone, through read-only tools, and links the
+pages it used. The page's heading names the API of the first spec section.
 Only the portal's own pages become links in an answer; any other URL shows as
 text. The Anthropic SDK reads its credentials from `ANTHROPIC_API_KEY`.
 
