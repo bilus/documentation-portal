@@ -40,18 +40,29 @@ func (l *Library) Sections() []SectionLink {
 	return nil
 }
 
-// Title returns the published spec's title, or "" while the spec cannot be
-// read.
+// Title returns the title of the first spec section's published spec, or ""
+// without a spec section and while the spec cannot be read.
 func (l *Library) Title() string {
-	sp, err := l.s.loadSpec(l.s.specPath)
+	sec, ok := l.s.firstSpec()
+	if !ok {
+		return ""
+	}
+	sp, err := l.s.loadSpec(sec.Input)
 	if err != nil {
 		return ""
 	}
 	return sp.Title
 }
 
-// SpecURL returns the viewer page's URL.
-func (l *Library) SpecURL() string { return l.s.viewerURL("") }
+// SpecURL returns the first spec section's viewer page URL, or "" without a
+// spec section.
+func (l *Library) SpecURL() string {
+	sec, ok := l.s.firstSpec()
+	if !ok {
+		return ""
+	}
+	return sec.viewerURL("")
+}
 
 // DocumentsURL returns the document list's URL, or "" without a content
 // directory.
@@ -154,7 +165,7 @@ type Operation struct {
 // Operations lists the operations of the published spec, in the order of its
 // paths.
 func (l *Library) Operations() ([]Operation, error) {
-	root, err := l.spec()
+	sec, root, err := l.spec()
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +188,7 @@ func (l *Library) Operations() ([]Operation, error) {
 				OperationID: scalarValue(op, "operationId"),
 				Summary:     scalarValue(op, "summary"),
 				Pointer:     "paths/" + escapeToken(p) + "/" + method,
-				URL:         l.s.viewerURL(route(op, p, method)),
+				URL:         sec.viewerURL(route(op, p, method)),
 			})
 		}
 	}
@@ -192,7 +203,7 @@ func (l *Library) Operations() ([]Operation, error) {
 func (l *Library) SpecPart(spec, pointer string) (string, error) {
 	// HOLE(3): read the spec section that spec names. Until then, the first
 	// spec section's.
-	root, err := l.spec()
+	_, root, err := l.spec()
 	if err != nil {
 		return "", err
 	}
@@ -272,17 +283,19 @@ func (l *Library) Search(query string, limit int) ([]Match, error) {
 			}
 		}
 	}
-	root, err := l.spec()
+	sec, root, err := l.spec()
 	if err != nil {
 		return nil, err
 	}
 	var inSpec []Match
-	walk(root, "", func(pointer, text string) bool {
-		if strings.Contains(strings.ToLower(text), q) {
-			inSpec = append(inSpec, Match{Where: pointer, Text: clip(text), URL: l.s.viewerURL("")})
-		}
-		return len(inSpec) < limit
-	})
+	if root != nil {
+		walk(root, "", func(pointer, text string) bool {
+			if strings.Contains(strings.ToLower(text), q) {
+				inSpec = append(inSpec, Match{Where: pointer, Text: clip(text), URL: sec.viewerURL("")})
+			}
+			return len(inSpec) < limit
+		})
+	}
 	n := min(len(inDocs), max(limit-len(inSpec), (limit+1)/2))
 	return append(inDocs[:n], inSpec[:min(len(inSpec), limit-n)]...), nil
 }
@@ -326,24 +339,28 @@ func clip(s string) string {
 	return string([]rune(s)[:200]) + "..."
 }
 
-// spec returns the root node of the published spec, with each alias replaced
-// by a copy of its anchor's node, as when the publication rules removed a
-// part.
-func (l *Library) spec() (*yaml.Node, error) {
-	sp, err := l.s.loadSpec(l.s.specPath)
+// spec returns the first spec section and the root node of its published
+// spec, with each alias replaced by a copy of its anchor's node, as when the
+// publication rules removed a part, or neither without a spec section.
+func (l *Library) spec() (*section, *yaml.Node, error) {
+	sec, ok := l.s.firstSpec()
+	if !ok {
+		return nil, nil, nil
+	}
+	sp, err := l.s.loadSpec(sec.Input)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(sp.Raw, &doc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	budget := maxCopies
 	if err := expandAliases(&doc, &budget); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(doc.Content) == 0 {
-		return nil, errors.New("the spec is empty")
+		return nil, nil, errors.New("the spec is empty")
 	}
-	return doc.Content[0], nil
+	return sec, doc.Content[0], nil
 }

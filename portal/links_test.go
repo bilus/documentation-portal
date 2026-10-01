@@ -102,13 +102,13 @@ func TestSpecLinks(t *testing.T) {
 	body := get(h, "/docs/links.md").Body.String()
 	hrefs := linkHrefs(body)
 	for text, want := range map[string]string{
-		"spec":              "/specs/apis/pets.yaml",
-		"slash":             "/specs/apis/pets.yaml",
-		"operation":         "/specs/apis/pets.yaml#/operations/showPetById",
-		"no operationId":    "/specs/apis/pets.yaml#/paths/pets/post",
-		"unpublished":       "/specs/apis/pets.yaml",
-		"missing operation": "/specs/apis/pets.yaml",
-		"schema":            "/specs/apis/pets.yaml",
+		"spec":              "/specs/api",
+		"slash":             "/specs/api",
+		"operation":         "/specs/api#/operations/showPetById",
+		"no operationId":    "/specs/api#/paths/pets/post",
+		"unpublished":       "/specs/api",
+		"missing operation": "/specs/api",
+		"schema":            "/specs/api",
 	} {
 		if hrefs[text] != want {
 			t.Errorf("%s: href %q, want %q", text, hrefs[text], want)
@@ -209,7 +209,7 @@ func TestDocLinkEscapes(t *testing.T) {
 		"parens":         "/docs/a%281%29.md",
 		"ampersand":      "/docs/r&amp;d.md",
 		"accent":         "/docs/guide_oauth.md#caf%C3%A9",
-		"up to the spec": "/specs/apis/pets.yaml",
+		"up to the spec": "/specs/api",
 	} {
 		if hrefs[text] != want {
 			t.Errorf("%s: href %q, want %q", text, hrefs[text], want)

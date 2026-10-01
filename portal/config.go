@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
@@ -69,63 +71,103 @@ type section struct {
 // one slug, an input or a toc path outside the root, a docs input that names
 // no directory reached through no symlink, and a toc on a spec section.
 func openSections(cfg Config) ([]*section, error) {
-	// HOLE(1): check every section and open each content directory. Until
-	// then, the checks of the old checkConfig apply to the first spec section
-	// and the first docs section, and a toc on a spec section stands for a toc
-	// path without a content directory path.
 	if cfg.Root == nil {
 		return nil, errors.New("no documentation root")
 	}
-	var sections []*section
-	var spec, docs *section
-	for _, s := range cfg.Sections {
-		sec := &section{Section: s, slug: slugOf(s.Title)}
-		switch {
-		case s.Type == SpecSection && spec == nil:
-			spec = sec
-		case s.Type == DocsSection && docs == nil:
-			docs = sec
+	if len(cfg.Sections) == 0 {
+		return nil, errors.New("no sections")
+	}
+	sections := make([]*section, 0, len(cfg.Sections))
+	titles := map[string]string{} // the title of the section with each slug
+	for i, s := range cfg.Sections {
+		if s.Title == "" {
+			return nil, fmt.Errorf("section %d has no title", i+1)
 		}
+		sec, err := openSection(cfg.Root, s)
+		if err != nil {
+			return nil, fmt.Errorf("section %q: %w", s.Title, err)
+		}
+		if other, taken := titles[sec.slug]; taken {
+			return nil, fmt.Errorf("sections %q and %q share the slug %q", other, s.Title, sec.slug)
+		}
+		titles[sec.slug] = s.Title
 		sections = append(sections, sec)
 	}
-	var specPath, docsPath, tocPath string
-	if spec != nil {
-		specPath, tocPath = spec.Input, spec.Toc
+	return sections, nil
+}
+
+// openSection checks s, a section with a title, with its paths cleaned, and
+// opens its content directory when it is a docs section.
+func openSection(root fs.FS, s Section) (*section, error) {
+	sec := &section{Section: s, slug: slugOf(s.Title)}
+	sec.Input, sec.Toc = cleanPath(s.Input), cleanPath(s.Toc)
+	switch {
+	case sec.slug == "":
+		return nil, errors.New("the title gives an empty slug")
+	case sec.Input == "":
+		return nil, fmt.Errorf("input %q names no path inside the documentation root", s.Input)
+	case s.Toc != "" && (sec.Toc == "" || sec.Toc == "." || !fs.ValidPath(sec.Toc)):
+		return nil, fmt.Errorf("toc path %q is not a file inside the documentation root", s.Toc)
 	}
-	if docs != nil {
-		docsPath, tocPath = docs.Input, docs.Toc
+	switch s.Type {
+	case SpecSection:
+		if sec.Toc != "" {
+			return nil, fmt.Errorf("toc path %q needs a content directory, whose document pages show the sidebar", sec.Toc)
+		}
+		if sec.Input == "." || !fs.ValidPath(sec.Input) {
+			return nil, fmt.Errorf("spec path %q is not a file inside the documentation root", sec.Input)
+		}
+	case DocsSection:
+		docs, err := openDocs(root, sec.Input)
+		if err != nil {
+			return nil, err
+		}
+		sec.docs = docs
+	default:
+		return nil, fmt.Errorf("the type %q is neither %q nor %q", s.Type, SpecSection, DocsSection)
 	}
-	if specPath == "." || !fs.ValidPath(specPath) {
-		return nil, fmt.Errorf("spec path %q is not a file inside the documentation root", specPath)
-	}
-	if tocPath != "" && (tocPath == "." || !fs.ValidPath(tocPath)) {
-		return nil, fmt.Errorf("toc path %q is not a file inside the documentation root", tocPath)
-	}
-	if tocPath != "" && docsPath == "" {
-		return nil, fmt.Errorf("toc path %q needs a content directory path, whose document pages show the sidebar", tocPath)
-	}
-	if docs == nil {
-		return sections, nil
-	}
-	sub, err := fs.Sub(cfg.Root, docsPath)
+	return sec, nil
+}
+
+// cleanPath returns p without a leading ./ and a trailing /, so that ./docs/
+// names docs.
+func cleanPath(p string) string {
+	return strings.TrimSuffix(strings.TrimPrefix(p, "./"), "/")
+}
+
+// openDocs opens the content directory at p in root, or refuses a path
+// outside root and one that names no directory reached through no symlink.
+func openDocs(root fs.FS, p string) (fs.FS, error) {
+	docs, err := fs.Sub(root, p)
 	var info fs.FileInfo
 	if err == nil {
-		info, err = fs.Stat(sub, ".")
+		info, err = fs.Stat(docs, ".")
 	}
 	if err != nil {
-		return nil, fmt.Errorf("content directory path %q: %w", docsPath, err)
+		return nil, fmt.Errorf("content directory path %q: %w", p, err)
 	}
-	if !info.IsDir() || !directory(cfg.Root, docsPath) {
-		return nil, fmt.Errorf("content directory path %q is not a directory reached through no symlink", docsPath)
+	if !info.IsDir() || !directory(root, p) {
+		return nil, fmt.Errorf("content directory path %q is not a directory reached through no symlink", p)
 	}
-	docs.docs = sub
-	return sections, nil
+	return docs, nil
 }
 
 // slugOf returns the section slug of title: title in lower case, with each
 // run of characters other than letters and digits as one dash, and no dash
 // at either end.
 func slugOf(title string) string {
-	// HOLE(1): make the slug
-	return title
+	var slug strings.Builder
+	dash := false // whether a run of other characters precedes the next letter or digit
+	for _, r := range strings.ToLower(title) {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			dash = true
+			continue
+		}
+		if dash && slug.Len() > 0 {
+			slug.WriteByte('-')
+		}
+		dash = false
+		slug.WriteRune(r)
+	}
+	return slug.String()
 }

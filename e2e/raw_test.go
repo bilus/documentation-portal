@@ -67,7 +67,7 @@ func TestDocSidebarMatchesElements(t *testing.T) {
 	defer srv.Close()
 
 	browser := newBrowser(t)
-	pageText(t, browser, srv.URL+"/specs/specs/petstore-3.1.yaml#/operations/showPetById", "microchipId")
+	pageText(t, browser, srv.URL+"/specs/api#/operations/showPetById", "microchipId")
 	var elements, docs string
 	if err := chromedp.Run(browser, chromedp.Evaluate(sidebarStyle, &elements)); err != nil {
 		t.Fatal(err)

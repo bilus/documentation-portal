@@ -15,6 +15,27 @@ import (
 	"testing/fstest"
 )
 
+// apiSection returns a spec section titled API, with the slug api, for input.
+func apiSection(input string) *section {
+	return &section{Section: Section{Title: "API", Type: SpecSection, Input: input}, slug: "api"}
+}
+
+func TestSpecFor(t *testing.T) {
+	s := &site{sections: []*section{
+		{Section: Section{Title: "Guides", Type: DocsSection, Input: "docs"}, slug: "guides"},
+		apiSection("api.yaml"),
+		{Section: Section{Title: "API", Type: SpecSection, Input: "other.yaml"}, slug: "api"},
+	}}
+	if sec, ok := s.specFor("api"); !ok || sec != s.sections[1] {
+		t.Errorf("api: %+v, %v, want the first spec section with the slug", sec, ok)
+	}
+	for _, slug := range []string{"guides", "API", "", "api.yaml"} {
+		if sec, ok := s.specFor(slug); ok {
+			t.Errorf("%q: %+v, want no spec section", slug, sec)
+		}
+	}
+}
+
 func TestLoadSpec(t *testing.T) {
 	specs := fstest.MapFS{
 		"v30.yaml":      {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths: {}\n")},
@@ -28,7 +49,7 @@ func TestLoadSpec(t *testing.T) {
 	}
 
 	for _, path := range []string{"v30.yaml", "v31.yaml"} {
-		sp, err := (&site{root: specs, specPath: path}).loadSpec(path)
+		sp, err := (&site{root: specs, sections: []*section{apiSection(path)}}).loadSpec(path)
 		if err != nil || sp.Title != "Pets" || string(sp.Raw) != string(specs[path].Data) {
 			t.Errorf("%s: %+v, %v", path, sp, err)
 		}
@@ -41,17 +62,17 @@ func TestLoadSpec(t *testing.T) {
 		"untitled.yaml": "title",
 		"float.yaml":    "OpenAPI",
 	} {
-		_, err := (&site{root: specs, specPath: path}).loadSpec(path)
+		_, err := (&site{root: specs, sections: []*section{apiSection(path)}}).loadSpec(path)
 		var invalid invalidSpecError
 		if !errors.As(err, &invalid) || !strings.Contains(invalid.reason, reason) {
 			t.Errorf("%s: err = %v, want an invalid spec mentioning %s", path, err, reason)
 		}
 	}
 
-	if _, err := (&site{root: specs, specPath: "gone.yaml"}).loadSpec("gone.yaml"); !errors.Is(err, errNoSpec) {
+	if _, err := (&site{root: specs, sections: []*section{apiSection("gone.yaml")}}).loadSpec("gone.yaml"); !errors.Is(err, errNoSpec) {
 		t.Errorf("missing file: err = %v", err)
 	}
-	if _, err := (&site{root: specs, specPath: "v30.yaml"}).loadSpec("v31.yaml"); !errors.Is(err, errNoSpec) {
+	if _, err := (&site{root: specs, sections: []*section{apiSection("v30.yaml")}}).loadSpec("v31.yaml"); !errors.Is(err, errNoSpec) {
 		t.Errorf("a spec other than the configured one: err = %v", err)
 	}
 }
@@ -79,7 +100,7 @@ func TestMarkdownFiles(t *testing.T) {
 
 func TestDocListWithoutDocs(t *testing.T) {
 	rec := httptest.NewRecorder()
-	(&site{root: fstest.MapFS{}, specPath: "api.yaml"}).docList(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
+	(&site{root: fstest.MapFS{}, sections: []*section{apiSection("api.yaml")}}).docList(rec, httptest.NewRequest(http.MethodGet, "/docs/", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("got %d, want 404", rec.Code)
 	}
@@ -89,7 +110,7 @@ func TestDocPageWithoutDocs(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/docs/a.md", nil)
 	req.SetPathValue("path", "a.md")
-	(&site{root: fstest.MapFS{}, specPath: "api.yaml"}).docPage(rec, req)
+	(&site{root: fstest.MapFS{}, sections: []*section{apiSection("api.yaml")}}).docPage(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("got %d, want 404", rec.Code)
 	}
@@ -115,7 +136,7 @@ func TestRawFileWithoutDocs(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/raw/a.png", nil)
 	req.SetPathValue("path", "a.png")
-	(&site{root: fstest.MapFS{}, specPath: "api.yaml"}).rawFile(rec, req)
+	(&site{root: fstest.MapFS{}, sections: []*section{apiSection("api.yaml")}}).rawFile(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("got %d, want 404", rec.Code)
 	}
@@ -172,11 +193,11 @@ func TestTocSidebar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &site{root: root, specPath: "api.yaml", docsPath: "docs", docs: docs, tocPath: "toc.json"}
+	s := &site{root: root, sections: []*section{apiSection("api.yaml")}, docsPath: "docs", docs: docs, tocPath: "toc.json"}
 	want := []sidebarGroup{
-		{Links: []sidebarLink{{Title: "Getting started", URL: "/docs/start.md"}, {Title: "API reference", URL: "/specs/api.yaml"}, {Title: "Status", URL: "https://status.example.com/"}}},
+		{Links: []sidebarLink{{Title: "Getting started", URL: "/docs/start.md"}, {Title: "API reference", URL: "/specs/api"}, {Title: "Status", URL: "https://status.example.com/"}}},
 		{Title: "Guides", Links: []sidebarLink{{Title: "OAuth", URL: "/docs/guides/oauth.md#scopes", Current: true}, {Title: "Devices", URL: "/docs/guides/devices.md"}}},
-		{Title: "Reference", Links: []sidebarLink{{Title: "Pets", URL: "/specs/api.yaml#/operations/listPets"}}},
+		{Title: "Reference", Links: []sidebarLink{{Title: "Pets", URL: "/specs/api#/operations/listPets"}}},
 	}
 	if got := s.sidebar("guides/oauth.md"); !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v\nwant %+v", got, want)
@@ -209,7 +230,7 @@ func TestTocSidebarReadsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	root, docs := &countedFS{files, map[string]int{}}, &countedFS{sub, map[string]int{}}
-	s := &site{root: root, specPath: "api.yaml", docsPath: "docs", docs: docs, tocPath: "toc.json"}
+	s := &site{root: root, sections: []*section{apiSection("api.yaml")}, docsPath: "docs", docs: docs, tocPath: "toc.json"}
 	if groups := s.sidebar("g00.md"); len(groups) != 1 || len(groups[0].Links) != 40 {
 		t.Fatalf("groups %+v", groups)
 	}
@@ -235,7 +256,7 @@ func TestTocLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &site{root: root, specPath: "api.yaml", docsPath: "docs", docs: docs}
+	s := &site{root: root, sections: []*section{apiSection("api.yaml")}, docsPath: "docs", docs: docs}
 	p, err := s.newTocPages("guides/oauth.md")
 	if err != nil {
 		t.Fatal(err)
@@ -246,8 +267,8 @@ func TestTocLink(t *testing.T) {
 		"docs/./start.md":           "/docs/start.md",
 		"docs/start.md?x=1#a":       "/docs/start.md?x=1#a",
 		"docs/guides/oauth.md":      "/docs/guides/oauth.md",
-		"api.yaml":                  "/specs/api.yaml",
-		"api.yaml/paths/~1pets/get": "/specs/api.yaml#/operations/listPets",
+		"api.yaml":                  "/specs/api",
+		"api.yaml/paths/~1pets/get": "/specs/api#/operations/listPets",
 		"https://example.com/a?b#c": "https://example.com/a?b#c",
 		"http://example.com":        "http://example.com",
 		"docs/a%23b.md":             "/docs/a%23b.md",
@@ -271,7 +292,7 @@ func TestTocLink(t *testing.T) {
 
 func TestTocGroups(t *testing.T) {
 	root := fstest.MapFS{"a.md": {}, "b.md": {}, "c.md": {}, "d.md": {}, "e.md": {}, "f.md": {}}
-	s := &site{root: root, specPath: "api.yaml", docsPath: ".", docs: root}
+	s := &site{root: root, sections: []*section{apiSection("api.yaml")}, docsPath: ".", docs: root}
 	p, err := s.newTocPages("c.md")
 	if err != nil {
 		t.Fatal(err)
@@ -450,7 +471,7 @@ func TestLinkURL(t *testing.T) {
 		"guide/intro.md": {Data: []byte("# Intro\n")},
 		"my guide.md":    {Data: []byte("# Mine\n")},
 	}
-	s := &site{root: root, specPath: "api.yaml", docsPath: ".", docs: root}
+	s := &site{root: root, sections: []*section{apiSection("api.yaml")}, docsPath: ".", docs: root}
 	for _, tc := range []struct{ doc, dest, want string }{
 		{"a.md", "guide/intro.md?x=1#y", "/docs/guide/intro.md?x=1#y"},
 		{"a.md", "./guide/intro.md", "/docs/guide/intro.md"},
@@ -514,11 +535,11 @@ func TestSpecURLEdges(t *testing.T) {
 		"api.yaml.md": {Data: []byte("# Notes on the API\n")},
 		"a.md":        {Data: []byte("# A\n")},
 	}
-	s := &site{root: root, specPath: "api.yaml", docsPath: ".", docs: root}
+	s := &site{root: root, sections: []*section{apiSection("api.yaml")}, docsPath: ".", docs: root}
 	if got, ok := s.linkURL("a.md", []byte("api.yaml.md")); !ok || string(got) != "/docs/api.yaml.md" {
 		t.Errorf("api.yaml.md: %q %v, want its document page", got, ok)
 	}
-	if got, ok := s.specURL("./api.yaml"); !ok || got != "/specs/api.yaml" {
+	if got, ok := s.specURL("./api.yaml"); !ok || got != "/specs/api" {
 		t.Errorf("specURL(./api.yaml): %q %v", got, ok)
 	}
 	if got, ok := s.docAt("./guide/../a.md"); !ok || got != "a.md" {
@@ -576,5 +597,81 @@ func TestOperationRoutePathItemRef(t *testing.T) {
 		if got, ok := operationRoute(spec, pointer); ok {
 			t.Errorf("%s: %q, want no operation", pointer, got)
 		}
+	}
+}
+
+func TestSpecPart(t *testing.T) {
+	spec := func(title, input string) *section {
+		return &section{Section: Section{Title: title, Type: SpecSection, Input: input}, slug: strings.ToLower(title)}
+	}
+	s := &site{sections: []*section{
+		{Section: Section{Title: "Guides", Type: DocsSection, Input: "specs/api.yaml"}, slug: "guides"},
+		spec("Dir", "specs"),
+		spec("API", "specs/api.yaml"),
+		spec("Again", "specs/api.yaml"),
+	}}
+	for target, want := range map[string]struct{ slug, pointer string }{
+		"specs/api.yaml":                  {"api", ""},
+		"./specs/api.yaml":                {"api", ""},
+		"specs/api.yaml/paths/~1pets/get": {"api", "paths/~1pets/get"},
+		"specs/other.yaml":                {"dir", "other.yaml"},
+		"specs":                           {"dir", ""},
+	} {
+		sec, pointer, ok := s.specPart(target)
+		if !ok || sec.slug != want.slug || pointer != want.pointer {
+			t.Errorf("%s: %+v, %q, %v, want %+v", target, sec, pointer, ok, want)
+		}
+	}
+	for _, target := range []string{"spec", "specs.yaml", "api.yaml", "", "."} {
+		if sec, pointer, ok := s.specPart(target); ok {
+			t.Errorf("%q: %+v, %q, want no spec section", target, sec, pointer)
+		}
+	}
+}
+
+func TestTocLinkAcrossSpecs(t *testing.T) {
+	spec := func(path, id string) *fstest.MapFile {
+		return &fstest.MapFile{Data: []byte("openapi: 3.0.3\ninfo:\n  title: T\n  version: 1.0.0\npaths:\n  " + path + ":\n    get:\n      operationId: " + id + "\n")}
+	}
+	root := fstest.MapFS{"pets.yaml": spec("/pets", "listPets"), "store.yaml": spec("/orders", "listOrders"), "docs/a.md": {Data: []byte("# A\n")}}
+	docs, err := fs.Sub(root, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &site{root: root, sections: []*section{
+		{Section: Section{Title: "Pets", Type: SpecSection, Input: "pets.yaml"}, slug: "pets"},
+		{Section: Section{Title: "Store", Type: SpecSection, Input: "store.yaml"}, slug: "store"},
+		{Section: Section{Title: "Gone", Type: SpecSection, Input: "gone.yaml"}, slug: "gone"},
+	}, docsPath: "docs", docs: docs}
+	p, err := s.newTocPages("a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ uri, want string }{
+		{"pets.yaml/paths/~1pets/get", "/specs/pets#/operations/listPets"},
+		{"store.yaml/paths/~1orders/get", "/specs/store#/operations/listOrders"},
+		{"store.yaml", "/specs/store"},
+		{"pets.yaml", "/specs/pets"},
+	} {
+		if got, ok := p.link("T", c.uri); !ok || got.URL != c.want {
+			t.Errorf("%s: %+v, %v, want %s", c.uri, got, ok, c.want)
+		}
+	}
+	if got, ok := p.link("T", "gone.yaml"); ok {
+		t.Errorf("a spec section without its file: %+v", got)
+	}
+}
+
+func TestSpecURLAcrossSpecs(t *testing.T) {
+	root := fstest.MapFS{"pets.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")}}
+	s := &site{root: root, sections: []*section{
+		{Section: Section{Title: "Gone", Type: SpecSection, Input: "gone.yaml"}, slug: "gone"},
+		{Section: Section{Title: "Pets", Type: SpecSection, Input: "pets.yaml"}, slug: "pets"},
+	}}
+	if got, ok := s.specURL("pets.yaml/paths/~1pets/get"); !ok || got != "/specs/pets#/operations/listPets" {
+		t.Errorf("pets.yaml: %q, %v", got, ok)
+	}
+	if got, ok := s.specURL("gone.yaml"); ok {
+		t.Errorf("a spec section without its file: %q", got)
 	}
 }

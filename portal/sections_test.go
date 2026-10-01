@@ -23,7 +23,6 @@ func newSections(t *testing.T, root fstest.MapFS, sections ...portal.Section) ht
 }
 
 func TestSpecSections(t *testing.T) {
-	t.Skip("HOLE(1): serve each spec section at its slug")
 	h := newSections(t, fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}, "store.yaml": {Data: []byte(store)}},
 		portal.Section{Title: "Pets", Type: portal.SpecSection, Input: "./apis/pets.yaml"},
 		portal.Section{Title: "Store API", Type: portal.SpecSection, Input: "store.yaml"},
@@ -57,7 +56,6 @@ func TestSpecSections(t *testing.T) {
 }
 
 func TestSectionChecks(t *testing.T) {
-	t.Skip("HOLE(1): check every section")
 	root := fstest.MapFS{"api.yaml": {Data: []byte(pets)}, "docs/a.md": {Data: []byte("# A\n")}}
 	spec := portal.Section{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}
 	docs := portal.Section{Title: "Guides", Type: portal.DocsSection, Input: "docs"}
@@ -99,7 +97,6 @@ func TestSectionChecks(t *testing.T) {
 }
 
 func TestLinksToSpecSections(t *testing.T) {
-	t.Skip("HOLE(1): link the spec sections from documents and toc files")
 	page := "# Links\n\n- [pets](apis/pets.yaml)\n- [store](store.yaml)\n- [orders](store.yaml/paths/~1orders/get)\n- [up](../store.yaml)\n"
 	root := fstest.MapFS{
 		"apis/pets.yaml": {Data: []byte(pets)},
