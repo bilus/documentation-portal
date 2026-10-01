@@ -366,6 +366,7 @@ func TestTocSidebarFallsBack(t *testing.T) {
 		"item without uri": {&fstest.MapFile{Data: []byte(`{"items": [{"type": "item", "title": "A"}]}`)}, "no uri"},
 		"symlink":          {&fstest.MapFile{Data: []byte("other.json"), Mode: fs.ModeSymlink}, "symlink"},
 		"no page served":   {&fstest.MapFile{Data: []byte(`{"items": [{"type": "item", "title": "Gone", "uri": "docs/gone.md"}]}`)}, "names no page"},
+		"only other sites": {&fstest.MapFile{Data: []byte(`{"items": [{"type": "item", "title": "Status", "uri": "https://status.example.com/"}]}`)}, "names no page"},
 	} {
 		logged.Reset()
 		root := fstest.MapFS{

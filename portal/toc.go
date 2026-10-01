@@ -37,8 +37,11 @@ func (s *site) tocSidebar(current string) ([]sidebarGroup, error) {
 	}
 	groups := pages.groups(entries)
 	for _, g := range groups {
-		if len(g.Links) > 0 {
-			return groups, nil
+		for _, l := range g.Links {
+			// link writes a page of the portal as a path, another site as a URL.
+			if strings.HasPrefix(l.URL, "/") {
+				return groups, nil
+			}
 		}
 	}
 	return nil, errors.New("names no page that the portal serves")

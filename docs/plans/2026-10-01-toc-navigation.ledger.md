@@ -31,3 +31,4 @@
 - 2026-10-01: the review's 8 wrong implementations and 10 of mine for these fixes each fail at least one test. "Never forget a problem" survived until TestTocSidebarLogsAProblemOnce re-broke the toc with the same problem after a fix.
 - 2026-10-01: stage 2 approved by the user; completed with 0 holes left. The score card moves over the cached one.
 - 2026-10-01: pre-squash tip b69a033. The history becomes three commits: the gate at 220aae7, stage 1 at c4d808a, and stage 2 at this line's commit.
+- 2026-10-01: Copilot's review of pull request 28 left one comment: a toc whose only working entries link other sites suppressed the fallback, though it names no page the portal serves. Applied: tocSidebar needs a link to a page of the portal, from a failing case in TestTocSidebarFallsBack.
