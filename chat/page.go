@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -42,11 +43,19 @@ func (c *Chat) Routes() []portal.Route {
 	return routes
 }
 
-// clientOf names the client of r for the rate limit: its network address.
+// clientOf names the client of r for the rate limit: its IPv4 address, or the
+// /64 network of its IPv6 address, since one IPv6 host often holds a whole /64.
 func clientOf(r *http.Request) (map[string]string, error) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		addr = addr.Unmap()
+		host = addr.String()
+		if network, err := addr.Prefix(64); err == nil && addr.Is6() {
+			host = network.String()
+		}
 	}
 	return map[string]string{"client": host}, nil
 }
@@ -162,8 +171,11 @@ var (
 func answerHTML(src string) string {
 	doc := answers.Parser().Parse(text.NewReader([]byte(src)))
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if link, ok := n.(*ast.Link); ok && entering {
-			link.SetAttributeString("target", "_blank")
+		switch n.(type) {
+		case *ast.Link, *ast.AutoLink:
+			if entering {
+				n.SetAttributeString("target", "_blank")
+			}
 		}
 		return ast.WalkContinue, nil
 	})

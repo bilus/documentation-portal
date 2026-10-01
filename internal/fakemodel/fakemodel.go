@@ -21,6 +21,9 @@ var _ model.LLM = (*Fake)(nil)
 type Exchange struct {
 	Match string
 	Reply string
+	// Thought, when set, comes before the reply as a thought part, as a
+	// thinking model's reasoning does.
+	Thought string
 	// Call, when set, makes this exchange a tool call rather than an answer.
 	// Without it a scripted model can never exercise an agent's tool loop.
 	Call *Call
@@ -87,8 +90,12 @@ func (f *Fake) GenerateContent(ctx context.Context, req *model.LLMRequest, strea
 			}, nil)
 			return
 		}
+		content := genai.NewContentFromText(next.Reply, genai.RoleModel)
+		if next.Thought != "" {
+			content.Parts = append([]*genai.Part{{Thought: true, Text: next.Thought}}, content.Parts...)
+		}
 		yield(&model.LLMResponse{
-			Content:      genai.NewContentFromText(next.Reply, genai.RoleModel),
+			Content:      content,
 			TurnComplete: true,
 			// Token counts are made up but non-zero, so accounting that
 			// reads them can be tested without a network call.
