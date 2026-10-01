@@ -40,14 +40,14 @@ func TestLibraryDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []portal.Document{{Path: "a.md", Title: "Getting started", URL: "/docs/documents/a.md"}, {Path: "guide/b.md", Title: "guide/b.md", URL: "/docs/documents/guide/b.md"}}
+	want := []portal.Document{{Path: "docs/a.md", Title: "Getting started", URL: "/docs/documents/a.md"}, {Path: "docs/guide/b.md", Title: "docs/guide/b.md", URL: "/docs/documents/guide/b.md"}}
 	if len(docs) != len(want) || docs[0] != want[0] || docs[1] != want[1] {
 		t.Errorf("documents: %+v, want %+v", docs, want)
 	}
-	if text, err := lib.ReadDocument("a.md"); err != nil || !strings.Contains(text, "GET /pets") {
-		t.Errorf("a.md: %q, %v", text, err)
+	if text, err := lib.ReadDocument("docs/a.md"); err != nil || !strings.Contains(text, "GET /pets") {
+		t.Errorf("docs/a.md: %q, %v", text, err)
 	}
-	for _, path := range []string{".draft.md", "leak.md", "../private.md", "missing.md"} {
+	for _, path := range []string{"docs/.draft.md", "docs/leak.md", "private.md", "docs/missing.md"} {
 		if text, err := lib.ReadDocument(path); err == nil {
 			t.Errorf("%s: %q, want an error", path, text)
 		}
@@ -60,8 +60,8 @@ func TestLibraryOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []portal.Operation{
-		{Method: "get", Path: "/pets", OperationID: "listPets", Summary: "List the pets", Pointer: "paths/~1pets/get", URL: "/specs/api#/operations/listPets"},
-		{Method: "post", Path: "/pets", Summary: "Add a pet", Pointer: "paths/~1pets/post", URL: "/specs/api#/paths/pets/post"},
+		{Spec: "api", Method: "get", Path: "/pets", OperationID: "listPets", Summary: "List the pets", Pointer: "paths/~1pets/get", URL: "/specs/api#/operations/listPets"},
+		{Spec: "api", Method: "post", Path: "/pets", Summary: "Add a pet", Pointer: "paths/~1pets/post", URL: "/specs/api#/paths/pets/post"},
 	}
 	if len(ops) != len(want) || ops[0] != want[0] || ops[1] != want[1] {
 		t.Errorf("operations: %+v, want %+v", ops, want)
@@ -96,7 +96,7 @@ func TestLibraryReadsGuidesAsTheirPagesShowThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, err := lib.ReadDocument("setup.md")
+	text, err := lib.ReadDocument("docs/setup.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestLibraryReadsGuidesAsTheirPagesShowThem(t *testing.T) {
 	for _, d := range docs {
 		titles[d.Path] = d.Title
 	}
-	if titles["install.md"] != "Install" || titles["closed.md"] != "Closed title" || titles["setup.md"] != "Setup" {
+	if titles["docs/install.md"] != "Install" || titles["docs/closed.md"] != "Closed title" || titles["docs/setup.md"] != "Setup" {
 		t.Errorf("titles %v", titles)
 	}
 }
@@ -189,7 +189,7 @@ func TestLibrarySearchFindsTheSpecPastManyGuideMatches(t *testing.T) {
 	}
 	inSpec := 0
 	for _, m := range matches {
-		if !strings.HasPrefix(m.Where, "many.md:") {
+		if !strings.HasPrefix(m.Where, "docs/many.md:") {
 			inSpec++
 		}
 	}
@@ -208,7 +208,7 @@ func TestLibrarySearch(t *testing.T) {
 	for _, m := range matches {
 		where = append(where, m.Where)
 	}
-	for _, want := range []string{"a.md:3", "paths/~1pets", "paths/~1pets/get/summary"} {
+	for _, want := range []string{"docs/a.md:3", "paths/~1pets", "paths/~1pets/get/summary"} {
 		if !strings.Contains(strings.Join(where, " "), want) {
 			t.Errorf("no match at %s among %v", want, where)
 		}
@@ -223,5 +223,53 @@ func TestLibrarySearch(t *testing.T) {
 	}
 	if lib.Title() != "Pets" {
 		t.Errorf("title %q", lib.Title())
+	}
+}
+
+func TestLibraryReadsEachThingOnce(t *testing.T) {
+	petsOps := "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n"
+	root := fstest.MapFS{
+		"pets.yaml":            {Data: []byte(petsOps)},
+		"broken.yaml":          {Data: []byte("openapi: [3.0\n")},
+		"guides/a.md":          {Data: []byte("# A\n")},
+		"guides/deep/inner.md": {Data: []byte("# Inner\n")},
+	}
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+		{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"},
+		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Pets again", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Guides", Type: portal.DocsSection, Input: "guides"},
+		{Title: "Deep", Type: portal.DocsSection, Input: "guides/deep"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, err := lib.Documents()
+	want := []portal.Document{{Path: "guides/a.md", Title: "A", URL: "/docs/guides/a.md"}, {Path: "guides/deep/inner.md", Title: "Inner", URL: "/docs/guides/deep/inner.md"}}
+	if err != nil || !slices.Equal(docs, want) {
+		t.Errorf("documents: %+v, %v, want %+v", docs, err, want)
+	}
+	ops, err := lib.Operations()
+	if err != nil || len(ops) != 1 || ops[0].Spec != "pets" {
+		t.Errorf("operations: %+v, %v, want listPets once, in Pets", ops, err)
+	}
+	matches, err := lib.Search("pets", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var specs []string
+	for _, m := range matches {
+		if m.Spec != "" && !slices.Contains(specs, m.Spec) {
+			specs = append(specs, m.Spec)
+		}
+	}
+	if !slices.Equal(specs, []string{"pets"}) {
+		t.Errorf("matches in the specs %q, want in pets alone: %+v", specs, matches)
+	}
+	if part, err := lib.SpecPart("pets-again", "paths/~1pets/get"); err != nil || !strings.Contains(part, "listPets") {
+		t.Errorf("the second section of one spec: %q, %v", part, err)
+	}
+	if part, err := lib.SpecPart("broken", "paths"); err == nil {
+		t.Errorf("a spec that does not load: %q", part)
 	}
 }

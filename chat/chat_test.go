@@ -42,7 +42,7 @@ func newChat(t *testing.T, m model.LLM, limits Limits) *Chat {
 func TestAskLooksUpTheAnswer(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "the Pets API", Call: &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}},
-		{Match: `"where":"a.md:3"`, Reply: "Call GET /pets, as [Getting started](/docs/a.md) shows."},
+		{Match: `"where":"docs/a.md:3"`, Reply: "Call GET /pets, as [Getting started](/docs/a.md) shows."},
 	})
 	answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "client", "conv", "How do I list pets?")
 	if err != nil {
@@ -288,7 +288,6 @@ func TestAskReportsARefusal(t *testing.T) {
 }
 
 func TestChatToolsNameTheSpec(t *testing.T) {
-	t.Skip("HOLE(3): name each operation's spec section, and read the part of the spec section it names")
 	root := fstest.MapFS{
 		"pets.yaml":  {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")},
 		"store.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Store\n  version: 1.0.0\npaths:\n  /orders:\n    get:\n      operationId: listOrders\n      summary: List the orders\n")},

@@ -238,7 +238,6 @@ func TestTocAcrossSections(t *testing.T) {
 }
 
 func TestLibraryReadsEverySection(t *testing.T) {
-	t.Skip("HOLE(3): read every section")
 	petsOps := "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n"
 	root := fstest.MapFS{
 		"pets.yaml":   {Data: []byte(petsOps)},

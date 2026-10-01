@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -321,5 +323,21 @@ func TestStartupWithoutChat(t *testing.T) {
 	}
 	if nav := get(h, "/docs/guides/").Body.String(); strings.Contains(nav, `href="/chat"`) {
 		t.Error("the navigation bar links a chat that is off")
+	}
+}
+
+func TestStartupChatPageLinksTheSections(t *testing.T) {
+	_, h, err := startup([]string{"-config", sample, "-chat-model", "claude-opus-5-5"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(h, "/chat").Body.String()
+	nav := page[max(strings.Index(page, "<nav"), 0):max(strings.Index(page, "</nav>"), 0)]
+	var links []string
+	for _, m := range regexp.MustCompile(`<a href="([^"]*)"[^>]*>([^<]*)</a>`).FindAllStringSubmatch(nav, -1) {
+		links = append(links, m[2]+" "+m[1])
+	}
+	if want := []string{"API /specs/api", "Guides /docs/guides/", "Chat /chat"}; !slices.Equal(links, want) {
+		t.Errorf("the chat page links %q, want %q", links, want)
 	}
 }

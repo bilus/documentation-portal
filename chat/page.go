@@ -109,9 +109,9 @@ func (c *Chat) mount(lv live.Ctx) (*page, error) {
 	if title := c.lib.Title(); title != "" {
 		heading = "Ask about the " + title + " API"
 	}
-	nav := []navLink{{Label: "API", URL: c.lib.SpecURL()}}
-	if docs := c.lib.DocumentsURL(); docs != "" {
-		nav = append(nav, navLink{Label: "Documents", URL: docs})
+	var nav []navLink
+	for _, s := range c.lib.Sections() {
+		nav = append(nav, navLink{Label: s.Title, URL: s.URL})
 	}
 	nav = append(nav, navLink{Label: "Chat", URL: "/chat", Current: true})
 	return &page{chat: c, client: lv.Session("client"), conv: hex.EncodeToString(id), Heading: heading, Nav: nav}, nil
