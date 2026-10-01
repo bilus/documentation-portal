@@ -58,6 +58,39 @@ type Document struct {
 
 // Documents lists the markdown files that the document list shows.
 func (l *Library) Documents() ([]Document, error) {
+	pages, err := l.pages()
+	if err != nil {
+		return nil, err
+	}
+	docs := make([]Document, 0, len(pages))
+	for _, pg := range pages {
+		docs = append(docs, pg.Document)
+	}
+	return docs, nil
+}
+
+// ReadDocument returns the text of the document page of the markdown file at
+// path, in markdown's notation, or an error for any path that no document
+// page serves. The text holds only what the page shows: no HTML comments, raw
+// HTML or unused link definitions.
+func (l *Library) ReadDocument(path string) (string, error) {
+	src, err := l.s.readDoc(path)
+	if err != nil {
+		return "", err
+	}
+	text, _, err := l.render(src, path)
+	return text, err
+}
+
+// docText is the text of a document's page.
+type docText struct {
+	Document
+	text string
+}
+
+// pages returns the text of the document page of each markdown file that the
+// document list shows.
+func (l *Library) pages() ([]docText, error) {
 	if l.s.docs == nil {
 		return nil, nil
 	}
@@ -65,32 +98,33 @@ func (l *Library) Documents() ([]Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	docs := make([]Document, 0, len(paths))
+	pages := make([]docText, 0, len(paths))
 	for _, p := range paths {
 		src, err := fs.ReadFile(l.s.docs, p)
 		if err != nil {
 			return nil, err
 		}
-		docs = append(docs, Document{Path: p, Title: heading(src, p), URL: (&url.URL{Path: "/docs/" + p}).String()})
-	}
-	return docs, nil
-}
-
-// heading returns the text of src's first level-one heading, or fallback.
-func heading(src []byte, fallback string) string {
-	for line := range strings.SplitSeq(string(src), "\n") {
-		if title, ok := strings.CutPrefix(line, "# "); ok {
-			return strings.TrimSpace(title)
+		text, title, err := l.render(src, p)
+		if err != nil {
+			return nil, err
 		}
+		if title == "" {
+			title = p
+		}
+		pages = append(pages, docText{Document{Path: p, Title: title, URL: (&url.URL{Path: "/docs/" + p}).String()}, text})
 	}
-	return fallback
+	return pages, nil
 }
 
-// ReadDocument returns the markdown file at path, or an error for any path
-// that no document page serves.
-func (l *Library) ReadDocument(path string) (string, error) {
-	src, err := l.s.readDoc(path)
-	return string(src), err
+// render returns the text and the title of the document page of src, the
+// markdown file at p.
+func (l *Library) render(src []byte, p string) (text, title string, err error) {
+	h, err := l.s.renderMarkdown(src, p)
+	if err != nil {
+		return "", "", err
+	}
+	text, title = pageText(string(h))
+	return text, title, nil
 }
 
 // Operation is an operation of the published spec.
@@ -137,18 +171,59 @@ func (l *Library) Operations() ([]Operation, error) {
 }
 
 // SpecPart returns the part of the published spec at pointer, such as
-// paths/~1pets/get or components/schemas/Pet, as YAML.
+// paths/~1pets/get or components/schemas/Pet, as YAML. The pointer may index
+// a sequence, and may go on past a mapping that holds an internal $ref, as
+// Operations' pointer does for a path item that is a $ref.
 func (l *Library) SpecPart(pointer string) (string, error) {
 	root, err := l.spec()
 	if err != nil {
 		return "", err
 	}
-	node := refTarget(root, "#/"+pointer)
+	node := partAt(root, pointer)
 	if pointer == "" || node == nil {
 		return "", fmt.Errorf("no part of the spec at %q", pointer)
 	}
 	out, err := yaml.Marshal(node)
 	return string(out), err
+}
+
+// partAt returns the node at pointer below root, or nil.
+func partAt(root *yaml.Node, pointer string) *yaml.Node {
+	n := root
+	for _, token := range strings.Split(pointer, "/") {
+		if n = child(root, n, unescapeToken(token)); n == nil {
+			return nil
+		}
+	}
+	return n
+}
+
+// child returns the item of n at key: a sequence's element by its index, or
+// a mapping's value. A mapping without key that holds an internal $ref looks
+// key up in the $ref's target; a few hops end any cycle.
+func child(root, n *yaml.Node, key string) *yaml.Node {
+	for hops := 0; n != nil && hops < 8; hops++ {
+		switch n.Kind {
+		case yaml.SequenceNode:
+			i, err := strconv.Atoi(key)
+			if err != nil || i < 0 || i >= len(n.Content) || strconv.Itoa(i) != key {
+				return nil
+			}
+			return n.Content[i]
+		case yaml.MappingNode:
+			if v := mappingValue(n, key); v != nil {
+				return v
+			}
+			ref := mappingValue(n, "$ref")
+			if ref == nil {
+				return nil
+			}
+			n = refTarget(root, ref.Value)
+		default:
+			return nil
+		}
+	}
+	return nil
 }
 
 // Match is a line of a markdown file, or a key or value of the published
@@ -159,43 +234,39 @@ type Match struct {
 	URL   string `json:"url"` // the page that shows it
 }
 
-// Search returns up to limit matches of query, ignoring case: first in the
-// markdown files, then in the published spec.
+// Search returns up to limit matches of query, ignoring case: in the text of
+// the document pages, then in the published spec. When both hold more matches
+// than fit, the pages take half of limit, rounded up, and the spec the rest.
 func (l *Library) Search(query string, limit int) ([]Match, error) {
 	q := strings.ToLower(query)
 	if q == "" || limit <= 0 {
 		return nil, nil
 	}
-	docs, err := l.Documents()
+	pages, err := l.pages()
 	if err != nil {
 		return nil, err
 	}
-	var matches []Match
-	for _, d := range docs {
-		src, err := l.ReadDocument(d.Path)
-		if err != nil {
-			return nil, err
-		}
-		for i, line := range strings.Split(src, "\n") {
-			if strings.Contains(strings.ToLower(line), q) {
-				matches = append(matches, Match{Where: d.Path + ":" + strconv.Itoa(i+1), Text: clip(line), URL: d.URL})
-				if len(matches) == limit {
-					return matches, nil
-				}
+	var inDocs []Match
+	for _, pg := range pages {
+		for i, line := range strings.Split(pg.text, "\n") {
+			if len(inDocs) < limit && strings.Contains(strings.ToLower(line), q) {
+				inDocs = append(inDocs, Match{Where: pg.Path + ":" + strconv.Itoa(i+1), Text: clip(line), URL: pg.URL})
 			}
 		}
 	}
 	root, err := l.spec()
 	if err != nil {
-		return matches, err
+		return nil, err
 	}
+	var inSpec []Match
 	walk(root, "", func(pointer, text string) bool {
 		if strings.Contains(strings.ToLower(text), q) {
-			matches = append(matches, Match{Where: pointer, Text: clip(text), URL: l.s.viewerURL("")})
+			inSpec = append(inSpec, Match{Where: pointer, Text: clip(text), URL: l.s.viewerURL("")})
 		}
-		return len(matches) < limit
+		return len(inSpec) < limit
 	})
-	return matches, nil
+	n := min(len(inDocs), max(limit-len(inSpec), (limit+1)/2))
+	return append(inDocs[:n], inSpec[:min(len(inSpec), limit-n)]...), nil
 }
 
 // walk calls visit with the pointer and the text of every mapping key and
@@ -237,7 +308,9 @@ func clip(s string) string {
 	return string([]rune(s)[:200]) + "..."
 }
 
-// spec returns the root node of the published spec.
+// spec returns the root node of the published spec, with each alias replaced
+// by a copy of its anchor's node, as when the publication rules removed a
+// part.
 func (l *Library) spec() (*yaml.Node, error) {
 	sp, err := l.s.loadSpec(l.s.specPath)
 	if err != nil {
@@ -245,6 +318,10 @@ func (l *Library) spec() (*yaml.Node, error) {
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(sp.Raw, &doc); err != nil {
+		return nil, err
+	}
+	budget := maxCopies
+	if err := expandAliases(&doc, &budget); err != nil {
 		return nil, err
 	}
 	if len(doc.Content) == 0 {
