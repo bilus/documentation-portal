@@ -8,15 +8,27 @@ Everything runs through [devbox](https://www.jetify.com/devbox). The first
 `make` target that needs them downloads the Elements assets, checked against a
 pinned SHA-256, into `portal/elements/`, where the binary embeds them.
 
-    devbox run make run ARGS='-root-dir testdata -spec-path specs/petstore-3.1.yaml -docs-path docs'
+    devbox run make run ARGS='-config testdata/environment.yaml'
 
-Then open http://localhost:8080. The documentation root holds the spec and the
-content directory, and `-spec-path` and `-docs-path` are relative to it. Each
-flag falls back to an environment variable: `-addr` to `DOCPORTAL_ADDR`
-(default `:8080`), `-root-dir` to `DOCPORTAL_ROOT_DIR` (default `.`),
-`-spec-path` to `DOCPORTAL_SPEC_PATH` (default `openapi.yaml`), `-docs-path` to
-`DOCPORTAL_DOCS_PATH` (default none) and `-hide-try-it` to
-`DOCPORTAL_HIDE_TRY_IT` (default `false`).
+Then open http://localhost:8080. The configuration file lists the sections of
+the portal, each under its title in the navigation bar: a spec, or a content
+directory of markdown files with an optional toc file.
+
+    sections:
+      - title: API
+        type: spec
+        input: specs/petstore-3.1.yaml
+      - title: Guides
+        type: docs
+        input: docs
+        toc: toc.json
+
+The directory of the configuration file is the documentation root, and every
+input and toc path is relative to it. Each flag falls back to an environment
+variable: `-addr` to `DOCPORTAL_ADDR` (default `:8080`), `-config` to
+`DOCPORTAL_CONFIG` (default `environment.yaml`) and `-hide-try-it` to
+`DOCPORTAL_HIDE_TRY_IT` (default `false`). A program that mounts the portal
+passes the sections in `portal.Config`, or reads them with `portal.ReadConfig`.
 
 The viewer page shows the Try It console of Stoplight Elements, which sends
 requests from the reader's browser to the servers of the spec, so those
@@ -34,7 +46,7 @@ that operation. The portal reads nothing outside the documentation root,
 follows no symlink in the content directory, and under `/specs/` and
 `/api/specs/` serves no file of the root except the spec.
 
-`-toc-path` (`DOCPORTAL_TOC_PATH`) names a Stoplight `toc.json` inside the
+A docs section's `toc` names a Stoplight `toc.json` inside the
 documentation root, such as `toc.json`. The document sidebar then shows its
 entries in its order and under its titles: an entry for a markdown file links
 its document page, one for the spec or one of its operations links the viewer
@@ -51,7 +63,7 @@ markdown files alone, through read-only tools, and links the pages it used.
 Only the portal's own pages become links in an answer; any other URL shows as
 text. The Anthropic SDK reads its credentials from `ANTHROPIC_API_KEY`.
 
-    ANTHROPIC_API_KEY=... devbox run make run ARGS='-root-dir testdata -spec-path specs/petstore-3.1.yaml -docs-path docs -chat-model claude-opus-5-5'
+    ANTHROPIC_API_KEY=... devbox run make run ARGS='-config testdata/environment.yaml -chat-model claude-opus-5-5'
 
 Each client may ask 20 questions an hour, a conversation holds 20 questions
 and 512 KiB of messages and lookups, and one answer may make 12 lookups. A

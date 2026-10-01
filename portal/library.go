@@ -20,11 +20,24 @@ type Library struct{ s *site }
 // NewLibrary returns the published documentation of cfg, or the error that
 // New gives for cfg.
 func NewLibrary(cfg Config) (*Library, error) {
-	docs, err := checkConfig(cfg)
+	sections, err := openSections(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &Library{s: &site{root: cfg.Root, specPath: cfg.SpecPath, docsPath: cfg.DocsPath, docs: docs}}, nil
+	return &Library{s: newSite(cfg, sections)}, nil
+}
+
+// SectionLink links a section's page from the navigation bar.
+type SectionLink struct {
+	Title string
+	URL   string
+}
+
+// Sections returns a link to the page of each section, in the order of the
+// portal configuration.
+func (l *Library) Sections() []SectionLink {
+	// HOLE(3): link each section's page
+	return nil
 }
 
 // Title returns the published spec's title, or "" while the spec cannot be
@@ -129,6 +142,7 @@ func (l *Library) render(src []byte, p string) (text, title string, err error) {
 
 // Operation is an operation of the published spec.
 type Operation struct {
+	Spec        string `json:"spec,omitempty"` // the slug of its spec section
 	Method      string `json:"method"`
 	Path        string `json:"path"`
 	OperationID string `json:"operationId,omitempty"`
@@ -170,11 +184,14 @@ func (l *Library) Operations() ([]Operation, error) {
 	return ops, nil
 }
 
-// SpecPart returns the part of the published spec at pointer, such as
-// paths/~1pets/get or components/schemas/Pet, as YAML. The pointer may index
-// a sequence, and may go on past a mapping that holds an internal $ref, as
-// Operations' pointer does for a path item that is a $ref.
-func (l *Library) SpecPart(pointer string) (string, error) {
+// SpecPart returns the part at pointer, such as paths/~1pets/get or
+// components/schemas/Pet, of the published spec of the spec section whose
+// slug is spec, as YAML. The pointer may index a sequence, and may go on past
+// a mapping that holds an internal $ref, as Operations' pointer does for a
+// path item that is a $ref.
+func (l *Library) SpecPart(spec, pointer string) (string, error) {
+	// HOLE(3): read the spec section that spec names. Until then, the first
+	// spec section's.
 	root, err := l.spec()
 	if err != nil {
 		return "", err
@@ -229,7 +246,8 @@ func child(root, n *yaml.Node, key string) *yaml.Node {
 // Match is a line of a markdown file, or a key or value of the published
 // spec, that holds a query.
 type Match struct {
-	Where string `json:"where"` // path:line of a markdown file, or a pointer into the spec
+	Spec  string `json:"spec,omitempty"` // the slug of the spec section of a match in a spec
+	Where string `json:"where"`          // path:line of a markdown file, or a pointer into the spec
 	Text  string `json:"text"`
 	URL   string `json:"url"` // the page that shows it
 }

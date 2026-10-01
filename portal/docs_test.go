@@ -30,7 +30,7 @@ func (r docsRoot) Open(name string) (fs.File, error) {
 
 func newDocsPortal(t *testing.T, docs fs.FS) http.Handler {
 	t.Helper()
-	h, err := portal.New(portal.Config{Root: docsRoot{docs}, SpecPath: "apis/pets.yaml", DocsPath: "docs"})
+	h, err := portal.New(portal.Config{Root: docsRoot{docs}, Sections: sections("apis/pets.yaml", "docs", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestDocPageSidebarFollowsToc(t *testing.T) {
 		"docs/b.md":        {Data: []byte("# B\n")},
 		"docs/unlisted.md": {Data: []byte("# Unlisted\n")},
 	}
-	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs", TocPath: "toc.json"})
+	h, err := portal.New(portal.Config{Root: root, Sections: sections("apis/pets.yaml", "docs", "toc.json")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestDocListSidebarFollowsToc(t *testing.T) {
 		"docs/a.md":      {Data: []byte("# A\n")},
 		"docs/b.md":      {Data: []byte("# B\n")},
 	}
-	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs", TocPath: "toc.json"})
+	h, err := portal.New(portal.Config{Root: root, Sections: sections("apis/pets.yaml", "docs", "toc.json")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestTocSidebarSetsGroupsApart(t *testing.T) {
 		"docs/b.md": {Data: []byte("# B\n")},
 		"docs/c.md": {Data: []byte("# C\n")},
 	}
-	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs", TocPath: "toc.json"})
+	h, err := portal.New(portal.Config{Root: root, Sections: sections("apis/pets.yaml", "docs", "toc.json")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestContentDirFollowsNoSymlink(t *testing.T) {
 		}, []string{"/docs/notes.md", "/raw/diagram.svg"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, err := portal.New(portal.Config{Root: tc.root, SpecPath: "api.yaml", DocsPath: tc.docsPath})
+			h, err := portal.New(portal.Config{Root: tc.root, Sections: sections("api.yaml", tc.docsPath, "")})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -351,7 +351,7 @@ func TestDocListLstatsEachFile(t *testing.T) {
 		"a.md":     {Data: []byte("# A\n")},
 		"notes.md": {Data: []byte("api.yaml"), Mode: fs.ModeSymlink},
 	}}
-	h, err := portal.New(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "."})
+	h, err := portal.New(portal.Config{Root: root, Sections: sections("api.yaml", ".", "")})
 	if err != nil {
 		t.Fatal(err)
 	}

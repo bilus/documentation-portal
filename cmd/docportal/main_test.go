@@ -18,8 +18,22 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 	return rec
 }
 
+// sample is the sample configuration.
+const sample = "../../testdata/environment.yaml"
+
+// writeConfig writes a configuration file with sections, YAML under the
+// sections key, to dir and returns its name.
+func writeConfig(t *testing.T, dir, sections string) string {
+	t.Helper()
+	name := filepath.Join(dir, "environment.yaml")
+	if err := os.WriteFile(name, []byte("sections:\n"+sections), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
 func TestStartupServesSpec(t *testing.T) {
-	addr, h, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml"}, noEnv)
+	addr, h, err := startup([]string{"-config", sample}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,16 +41,16 @@ func TestStartupServesSpec(t *testing.T) {
 		t.Errorf("addr = %q, want :8080", addr)
 	}
 
-	page := get(h, "/specs/petstore-3.0.yaml")
+	page := get(h, "/specs/specs/petstore-3.1.yaml")
 	if page.Code != http.StatusOK || !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("viewer page: %d %s", page.Code, page.Header().Get("Content-Type"))
 	}
-	if want := `apiDescriptionUrl="/api/specs/petstore-3.0.yaml"`; !strings.Contains(page.Body.String(), want) {
+	if want := `apiDescriptionUrl="/api/specs/specs/petstore-3.1.yaml"`; !strings.Contains(page.Body.String(), want) {
 		t.Errorf("viewer page does not contain %s", want)
 	}
 
-	raw := get(h, "/api/specs/petstore-3.0.yaml")
-	want, err := os.ReadFile("../../testdata/specs/petstore-3.0.yaml")
+	raw := get(h, "/api/specs/specs/petstore-3.1.yaml")
+	want, err := os.ReadFile("../../testdata/specs/petstore-3.1.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,54 +67,69 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config{Addr: ":8080", RootDir: ".", SpecPath: "openapi.yaml"}); cfg != want {
+	if want := (config{Addr: ":8080", ConfigName: "environment.yaml"}); cfg != want {
 		t.Errorf("defaults = %+v, want %+v", cfg, want)
 	}
 
-	env := map[string]string{"DOCPORTAL_ROOT_DIR": "/srv/docs", "DOCPORTAL_SPEC_PATH": "api.yaml"}
-	cfg, err = parseConfig([]string{"-spec-path", "apis/pets.yaml"}, func(k string) string { return env[k] })
+	env := map[string]string{"DOCPORTAL_ADDR": ":9090", "DOCPORTAL_CONFIG": "/srv/docs/environment.yaml"}
+	cfg, err = parseConfig([]string{"-config", "docs/portal.yaml"}, func(k string) string { return env[k] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config{Addr: ":8080", RootDir: "/srv/docs", SpecPath: "apis/pets.yaml"}); cfg != want {
+	if want := (config{Addr: ":9090", ConfigName: "docs/portal.yaml"}); cfg != want {
 		t.Errorf("got %+v, want %+v", cfg, want)
 	}
+	cfg, err = parseConfig(nil, func(k string) string { return env[k] })
+	if err != nil || cfg.ConfigName != "/srv/docs/environment.yaml" {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
 
-	if _, err := parseConfig([]string{"-spec-path", "a.yaml", "b.yaml"}, noEnv); err == nil {
+	if _, err := parseConfig([]string{"-config", "a.yaml", "b.yaml"}, noEnv); err == nil {
 		t.Error("a positional argument was accepted")
 	}
 }
 
 func TestParseConfigRejectsUnknownFlag(t *testing.T) {
-	// -spec was the flag's name before it became -spec-path.
-	if _, err := parseConfig([]string{"-spec", "api.yaml"}, noEnv); err == nil || !strings.Contains(err.Error(), "-spec") {
-		t.Errorf("err = %v, want an error about -spec", err)
+	// The configuration file replaced -root-dir, -spec-path, -docs-path and
+	// -toc-path, and -spec-path replaced -spec.
+	for _, flag := range []string{"-spec", "-root-dir", "-spec-path", "-docs-path", "-toc-path"} {
+		if _, err := parseConfig([]string{flag, "api.yaml"}, noEnv); err == nil || !strings.Contains(err.Error(), flag) {
+			t.Errorf("err = %v, want an error about %s", err, flag)
+		}
 	}
 }
 
 func TestParseConfigHelpListsFlags(t *testing.T) {
 	_, err := parseConfig([]string{"-h"}, noEnv)
-	if err == nil || !strings.Contains(err.Error(), "-spec-path") {
-		t.Errorf("err = %v, want the usage with -spec-path", err)
+	if err == nil || !strings.Contains(err.Error(), "-config") {
+		t.Errorf("err = %v, want the usage with -config", err)
 	}
 }
 
 func TestStartupRejectsMissingRootDir(t *testing.T) {
-	_, _, err := startup([]string{"-root-dir", "testdata/no-such-dir"}, noEnv)
+	_, _, err := startup([]string{"-config", "testdata/no-such-dir/environment.yaml"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "testdata/no-such-dir") {
 		t.Errorf("err = %v, want it to name the directory", err)
 	}
 }
 
+func TestStartupRejectsMissingConfigFile(t *testing.T) {
+	_, _, err := startup([]string{"-config", filepath.Join(t.TempDir(), "environment.yaml")}, noEnv)
+	if err == nil || !strings.Contains(err.Error(), "environment.yaml") {
+		t.Errorf("err = %v, want it to name the configuration file", err)
+	}
+}
+
 func TestStartupRejectsSpecPathOutsideDir(t *testing.T) {
-	_, _, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "../specs/petstore-3.0.yaml"}, noEnv)
+	config := writeConfig(t, t.TempDir(), "  - {title: API, type: spec, input: ../specs/petstore-3.0.yaml}\n")
+	_, _, err := startup([]string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "../specs/petstore-3.0.yaml") {
 		t.Errorf("err = %v, want it to name the spec path", err)
 	}
 }
 
 func TestStartupServesDocs(t *testing.T) {
-	_, h, err := startup([]string{"-root-dir", "../../testdata", "-spec-path", "specs/petstore-3.0.yaml", "-docs-path", "docs"}, noEnv)
+	_, h, err := startup([]string{"-config", sample}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,38 +144,25 @@ func TestStartupServesDocs(t *testing.T) {
 	}
 }
 
-func TestParseConfigReadsDocsPath(t *testing.T) {
-	env := func(k string) string { return map[string]string{"DOCPORTAL_DOCS_PATH": "guides"}[k] }
-	if cfg, err := parseConfig(nil, env); err != nil || cfg.DocsPath != "guides" {
-		t.Errorf("from the environment: %+v, %v", cfg, err)
-	}
-	if cfg, err := parseConfig([]string{"-docs-path", "docs"}, env); err != nil || cfg.DocsPath != "docs" {
-		t.Errorf("the flag over the environment: %+v, %v", cfg, err)
-	}
-}
-
-func TestParseConfigReadsTocPath(t *testing.T) {
-	if cfg, err := parseConfig(nil, noEnv); err != nil || cfg.TocPath != "" {
-		t.Errorf("by default: %+v, %v", cfg, err)
-	}
-	env := func(k string) string { return map[string]string{"DOCPORTAL_TOC_PATH": "toc.json"}[k] }
-	if cfg, err := parseConfig(nil, env); err != nil || cfg.TocPath != "toc.json" {
-		t.Errorf("from the environment: %+v, %v", cfg, err)
-	}
-	if cfg, err := parseConfig([]string{"-toc-path", "nav/toc.json"}, env); err != nil || cfg.TocPath != "nav/toc.json" {
-		t.Errorf("the flag over the environment: %+v, %v", cfg, err)
+func TestStartupRejectsUnknownConfigKey(t *testing.T) {
+	config := writeConfig(t, t.TempDir(), "  - {title: API, type: spec, input: api.yaml, path: api.yaml}\n")
+	_, _, err := startup([]string{"-config", config}, noEnv)
+	if err == nil || !strings.Contains(err.Error(), "path") {
+		t.Errorf("err = %v, want one about the key path", err)
 	}
 }
 
 func TestStartupRejectsTocPathOutsideRoot(t *testing.T) {
-	_, _, err := startup([]string{"-root-dir", writeEscape(t), "-spec-path", "api.yaml", "-docs-path", "docs", "-toc-path", "../toc.json"}, noEnv)
+	config := writeConfig(t, writeEscape(t), "  - {title: API, type: spec, input: api.yaml}\n  - {title: Guides, type: docs, input: docs, toc: ../toc.json}\n")
+	_, _, err := startup([]string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "toc path") {
 		t.Errorf("err = %v, want one about the toc path", err)
 	}
 }
 
 func TestStartupRejectsMissingDocsPath(t *testing.T) {
-	_, _, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-path", "no-such-docs"}, noEnv)
+	config := writeConfig(t, t.TempDir(), "  - {title: API, type: spec, input: api.yaml}\n  - {title: Guides, type: docs, input: no-such-docs}\n")
+	_, _, err := startup([]string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "no-such-docs") {
 		t.Errorf("err = %v, want it to name the directory", err)
 	}
@@ -182,23 +198,24 @@ func writeEscape(t *testing.T) string {
 }
 
 func TestOpenRootKeepsReadsInside(t *testing.T) {
-	cfg, err := openRoot(writeEscape(t), "api.yaml", "docs", "")
+	root, name, err := openRoot(filepath.Join(writeEscape(t), "environment.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.SpecPath != "api.yaml" || cfg.DocsPath != "docs" {
-		t.Errorf("SpecPath = %q, DocsPath = %q", cfg.SpecPath, cfg.DocsPath)
+	if name != "environment.yaml" {
+		t.Errorf("name = %q, want environment.yaml", name)
 	}
-	if _, err := fs.ReadFile(cfg.Root, "docs/a.md"); err != nil {
+	if _, err := fs.ReadFile(root, "docs/a.md"); err != nil {
 		t.Errorf("docs/a.md: %v", err)
 	}
-	if b, err := fs.ReadFile(cfg.Root, "docs/escape.md"); err == nil {
+	if b, err := fs.ReadFile(root, "docs/escape.md"); err == nil {
 		t.Errorf("a symlink out of the directory was followed: %q", b)
 	}
 }
 
 func TestStartupKeepsDocsInside(t *testing.T) {
-	_, h, err := startup([]string{"-root-dir", writeEscape(t), "-spec-path", "api.yaml", "-docs-path", "docs"}, noEnv)
+	config := writeConfig(t, writeEscape(t), "  - {title: API, type: spec, input: api.yaml}\n  - {title: Guides, type: docs, input: docs}\n")
+	_, h, err := startup([]string{"-config", config}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,21 +248,21 @@ func TestParseConfigReadsHideTryIt(t *testing.T) {
 }
 
 func TestStartupShowsTryIt(t *testing.T) {
-	_, h, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml"}, noEnv)
+	_, h, err := startup([]string{"-config", sample}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := get(h, "/specs/petstore-3.0.yaml").Body.String(); strings.Contains(body, "hideTryIt") {
+	if body := get(h, "/specs/specs/petstore-3.1.yaml").Body.String(); strings.Contains(body, "hideTryIt") {
 		t.Errorf("the viewer page hides the Try It console by default: %q", body)
 	}
 }
 
 func TestStartupHidesTryIt(t *testing.T) {
-	_, h, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-hide-try-it"}, noEnv)
+	_, h, err := startup([]string{"-config", sample, "-hide-try-it"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := get(h, "/specs/petstore-3.0.yaml").Body.String(); !strings.Contains(body, `hideTryIt="true"`) {
+	if body := get(h, "/specs/specs/petstore-3.1.yaml").Body.String(); !strings.Contains(body, `hideTryIt="true"`) {
 		t.Errorf("the viewer page shows the Try It console: %q", body)
 	}
 }
@@ -263,7 +280,8 @@ func TestStartupRejectsDocsPathOutsideRoot(t *testing.T) {
 	if err := os.Symlink("../outside", filepath.Join(dir, "root", "docs")); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := startup([]string{"-root-dir", filepath.Join(dir, "root"), "-spec-path", "api.yaml", "-docs-path", "docs"}, noEnv)
+	config := writeConfig(t, filepath.Join(dir, "root"), "  - {title: API, type: spec, input: api.yaml}\n  - {title: Guides, type: docs, input: docs}\n")
+	_, _, err := startup([]string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "docs") {
 		t.Errorf("err = %v, want a refusal naming the content directory path", err)
 	}
@@ -280,7 +298,7 @@ func TestParseConfigReadsChatModel(t *testing.T) {
 }
 
 func TestStartupServesChat(t *testing.T) {
-	_, h, err := startup([]string{"-root-dir", "../../testdata", "-spec-path", "specs/petstore-3.1.yaml", "-docs-path", "docs", "-chat-model", "claude-opus-5-5"}, noEnv)
+	_, h, err := startup([]string{"-config", sample, "-chat-model", "claude-opus-5-5"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +312,7 @@ func TestStartupServesChat(t *testing.T) {
 }
 
 func TestStartupWithoutChat(t *testing.T) {
-	_, h, err := startup([]string{"-root-dir", "../../testdata", "-spec-path", "specs/petstore-3.1.yaml", "-docs-path", "docs"}, noEnv)
+	_, h, err := startup([]string{"-config", sample}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
