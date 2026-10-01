@@ -40,7 +40,7 @@ func TestLibraryDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []portal.Document{{Path: "a.md", Title: "Getting started", URL: "/docs/a.md"}, {Path: "guide/b.md", Title: "guide/b.md", URL: "/docs/guide/b.md"}}
+	want := []portal.Document{{Path: "a.md", Title: "Getting started", URL: "/docs/documents/a.md"}, {Path: "guide/b.md", Title: "guide/b.md", URL: "/docs/documents/guide/b.md"}}
 	if len(docs) != len(want) || docs[0] != want[0] || docs[1] != want[1] {
 		t.Errorf("documents: %+v, want %+v", docs, want)
 	}

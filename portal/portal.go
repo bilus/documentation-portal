@@ -80,11 +80,10 @@ func newRouter(cfg Config, sections []*section, assets fs.FS) (http.Handler, err
 	mux.HandleFunc("GET /specs/{slug}", s.viewerPage)
 	mux.HandleFunc("GET /api/specs/{slug}", s.rawSpec)
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
-	if s.docs != nil {
-		mux.HandleFunc("GET /docs/{$}", s.docList)
-		mux.HandleFunc("GET /docs/{path...}", s.docPage)
-		mux.HandleFunc("GET /raw/{path...}", s.rawFile)
-	}
+	mux.HandleFunc("GET /docs/{slug}", s.docsRoot)
+	mux.HandleFunc("GET /docs/{slug}/{$}", s.docList)
+	mux.HandleFunc("GET /docs/{slug}/{path...}", s.docPage)
+	mux.HandleFunc("GET /raw/{slug}/{path...}", s.rawFile)
 	for _, r := range cfg.Chat {
 		if err := handle(mux, r); err != nil {
 			return nil, err

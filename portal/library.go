@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -64,13 +63,14 @@ func (l *Library) SpecURL() string {
 	return sec.viewerURL("")
 }
 
-// DocumentsURL returns the document list's URL, or "" without a content
-// directory.
+// DocumentsURL returns the first docs section's document list URL, or ""
+// without a docs section.
 func (l *Library) DocumentsURL() string {
-	if l.s.docs == nil {
+	sec, ok := l.s.firstDocs()
+	if !ok {
 		return ""
 	}
-	return "/docs/"
+	return sec.pageURL()
 }
 
 // Document is a markdown file that the document list shows.
@@ -98,11 +98,15 @@ func (l *Library) Documents() ([]Document, error) {
 // page serves. The text holds only what the page shows: no HTML comments, raw
 // HTML or unused link definitions.
 func (l *Library) ReadDocument(path string) (string, error) {
-	src, err := l.s.readDoc(path)
+	sec, ok := l.s.firstDocs()
+	if !ok {
+		return "", errNoDoc
+	}
+	src, err := sec.readDoc(path)
 	if err != nil {
 		return "", err
 	}
-	text, _, err := l.render(src, path)
+	text, _, err := l.render(sec, src, path)
 	return text, err
 }
 
@@ -115,35 +119,36 @@ type docText struct {
 // pages returns the text of the document page of each markdown file that the
 // document list shows.
 func (l *Library) pages() ([]docText, error) {
-	if l.s.docs == nil {
+	sec, ok := l.s.firstDocs()
+	if !ok {
 		return nil, nil
 	}
-	paths, err := markdownFiles(l.s.docs)
+	paths, err := markdownFiles(sec.docs)
 	if err != nil {
 		return nil, err
 	}
 	pages := make([]docText, 0, len(paths))
 	for _, p := range paths {
-		src, err := fs.ReadFile(l.s.docs, p)
+		src, err := fs.ReadFile(sec.docs, p)
 		if err != nil {
 			return nil, err
 		}
-		text, title, err := l.render(src, p)
+		text, title, err := l.render(sec, src, p)
 		if err != nil {
 			return nil, err
 		}
 		if title == "" {
 			title = p
 		}
-		pages = append(pages, docText{Document{Path: p, Title: title, URL: (&url.URL{Path: "/docs/" + p}).String()}, text})
+		pages = append(pages, docText{Document{Path: p, Title: title, URL: sec.docURL(p, "", "")}, text})
 	}
 	return pages, nil
 }
 
 // render returns the text and the title of the document page of src, the
-// markdown file at p.
-func (l *Library) render(src []byte, p string) (text, title string, err error) {
-	h, err := l.s.renderMarkdown(src, p)
+// markdown file at p of the docs section sec.
+func (l *Library) render(sec *section, src []byte, p string) (text, title string, err error) {
+	h, err := l.s.renderMarkdown(sec, src, p)
 	if err != nil {
 		return "", "", err
 	}

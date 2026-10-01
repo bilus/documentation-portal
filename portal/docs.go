@@ -22,20 +22,36 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// docList writes the document list: a link to the document page of every
-// markdown file in the content directory, sorted by path, or a 404 without a
-// content directory.
-func (s *site) docList(w http.ResponseWriter, r *http.Request) {
-	if s.docs == nil {
+// docsRoot redirects to the document list of the docs section with the
+// request's slug, or answers 404 for a slug of no docs section.
+func (s *site) docsRoot(w http.ResponseWriter, r *http.Request) {
+	sec, ok := s.docsFor(r.PathValue("slug"))
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	paths, err := markdownFiles(s.docs)
+	http.Redirect(w, r, sec.pageURL(), http.StatusMovedPermanently)
+}
+
+// docList writes the document list of the docs section with the request's
+// slug: a link to the document page of every markdown file of its content
+// directory, sorted by path, or a 404 for a slug of no docs section.
+func (s *site) docList(w http.ResponseWriter, r *http.Request) {
+	sec, ok := s.docsFor(r.PathValue("slug"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	paths, err := markdownFiles(sec.docs)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	render(w, http.StatusOK, "list.html", page{Title: "Documents", Paths: paths, Nav: s.nav(), Sidebar: s.sidebar("")})
+	docs := make([]docLink, 0, len(paths))
+	for _, p := range paths {
+		docs = append(docs, docLink{Path: p, URL: sec.docURL(p, "", "")})
+	}
+	render(w, http.StatusOK, "list.html", page{Title: sec.Title, Section: sec.Title, Docs: docs, Nav: s.nav(), Sidebar: s.sidebar(sec, "")})
 }
 
 // markdownFiles returns the paths of the markdown files of fsys that are not
@@ -64,11 +80,17 @@ func markdownFiles(fsys fs.FS) ([]string, error) {
 }
 
 // docPage writes the document page of the markdown file at the request's
-// path, or a 404 error page naming the path, also without a content
-// directory.
+// path in the docs section with the request's slug, or a 404 error page for
+// a slug of no docs section and for a path that names no markdown file of the
+// section.
 func (s *site) docPage(w http.ResponseWriter, r *http.Request) {
-	p := r.PathValue("path")
-	src, err := s.readDoc(p)
+	slug, p := r.PathValue("slug"), r.PathValue("path")
+	sec, ok := s.docsFor(slug)
+	if !ok {
+		render(w, http.StatusNotFound, "error.html", page{Title: "Document not found", Message: "No docs section has the slug " + slug + ".", Nav: s.nav()})
+		return
+	}
+	src, err := sec.readDoc(p)
 	if errors.Is(err, errNoDoc) {
 		render(w, http.StatusNotFound, "error.html", page{Title: "Document not found", Message: "No markdown file at " + p + ".", Nav: s.nav()})
 		return
@@ -77,31 +99,32 @@ func (s *site) docPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	body, err := s.renderMarkdown(src, p)
+	body, err := s.renderMarkdown(sec, src, p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	render(w, http.StatusOK, "doc.html", page{Title: p, Body: body, Nav: s.nav(), Sidebar: s.sidebar(p)})
+	render(w, http.StatusOK, "doc.html", page{Title: p, Section: sec.Title, Body: body, Nav: s.nav(), Sidebar: s.sidebar(sec, p)})
 }
 
-// errNoDoc means the request names no markdown file of the content directory.
+// errNoDoc means the request names no markdown file of a content directory.
 var errNoDoc = errors.New("no such document")
 
-// readDoc reads the markdown file at p, or returns errNoDoc for any path
-// missing from the document list.
-func (s *site) readDoc(p string) ([]byte, error) {
-	if s.docs == nil {
+// readDoc reads the markdown file at p of the section's content directory,
+// or returns errNoDoc for any path missing from the section's document list,
+// and for a spec section.
+func (sec *section) readDoc(p string) ([]byte, error) {
+	if sec.docs == nil {
 		return nil, errNoDoc
 	}
-	paths, err := markdownFiles(s.docs)
+	paths, err := markdownFiles(sec.docs)
 	if err != nil {
 		return nil, err
 	}
 	if !slices.Contains(paths, p) {
 		return nil, errNoDoc
 	}
-	return fs.ReadFile(s.docs, p)
+	return fs.ReadFile(sec.docs, p)
 }
 
 var markdown = goldmark.New(
@@ -111,10 +134,11 @@ var markdown = goldmark.New(
 
 var sanitizer = bluemonday.UGCPolicy()
 
-// renderMarkdown renders src, the markdown file at docPath, as HTML without
-// active content, with its relative image references under /raw/ and each
-// relative link pointed at the page that serves its link target.
-func (s *site) renderMarkdown(src []byte, docPath string) (template.HTML, error) {
+// renderMarkdown renders src, the markdown file at docPath of the docs
+// section sec, as HTML without active content, with its relative image
+// references under the section's /raw/ URLs and each relative link pointed at
+// the page that serves its link target.
+func (s *site) renderMarkdown(sec *section, src []byte, docPath string) (template.HTML, error) {
 	doc := markdown.Parser().Parse(text.NewReader(src))
 	dir := path.Dir(docPath)
 	var nowhere []*ast.Link
@@ -125,12 +149,12 @@ func (s *site) renderMarkdown(src []byte, docPath string) (template.HTML, error)
 		switch n := n.(type) {
 		case *ast.Image:
 			dest := unescape(n.Destination)
-			if url := rawImageURL(dir, dest); !bytes.Equal(url, dest) {
+			if url := rawImageURL(sec.slug, dir, dest); !bytes.Equal(url, dest) {
 				n.Destination = url
 			}
 		case *ast.Link:
 			dest := unescape(n.Destination)
-			switch url, ok := s.linkURL(docPath, dest); {
+			switch url, ok := s.linkURL(sec, docPath, dest); {
 			case !ok:
 				nowhere = append(nowhere, n)
 			case !bytes.Equal(url, dest):
@@ -162,9 +186,10 @@ func unescape(dest []byte) []byte {
 	return util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(dest)))
 }
 
-// rawImageURL turns an image reference relative to dir into its /raw/ URL,
-// and returns any other reference unchanged.
-func rawImageURL(dir string, dest []byte) []byte {
+// rawImageURL turns an image reference relative to dir, a directory of the
+// content directory of the docs section with the slug slug, into its /raw/
+// URL, and returns any other reference unchanged.
+func rawImageURL(slug, dir string, dest []byte) []byte {
 	u, err := url.Parse(string(dest))
 	if err != nil || u.Scheme != "" || u.Host != "" || u.Path == "" || strings.HasPrefix(u.Path, "/") {
 		return dest
@@ -173,26 +198,28 @@ func rawImageURL(dir string, dest []byte) []byte {
 	if p == ".." || strings.HasPrefix(p, "../") {
 		return dest
 	}
-	return []byte((&url.URL{Path: "/raw/" + p, RawQuery: u.RawQuery, Fragment: u.Fragment}).String())
+	return []byte((&url.URL{Path: "/raw/" + slug + "/" + p, RawQuery: u.RawQuery, Fragment: u.Fragment}).String())
 }
 
-// rawFile writes the image file at the request's path with the image type
-// of its extension and headers that stop the browser from running it, or a
-// 404 for any other file or without a content directory.
+// rawFile writes the image file at the request's path in the docs section
+// with the request's slug, with the image type of its extension and headers
+// that stop the browser from running it, or a 404 for any other file and for
+// a slug of no docs section.
 func (s *site) rawFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox")
 	p := r.PathValue("path")
+	sec, found := s.docsFor(r.PathValue("slug"))
 	ctype, ok := imageTypes[path.Ext(p)]
-	if s.docs == nil || !ok || !fs.ValidPath(p) || strings.HasPrefix(p, ".") || strings.Contains(p, "/.") {
+	if !found || !ok || !fs.ValidPath(p) || strings.HasPrefix(p, ".") || strings.Contains(p, "/.") {
 		http.NotFound(w, r)
 		return
 	}
-	if !regularFile(s.docs, p) {
+	if !regularFile(sec.docs, p) {
 		http.NotFound(w, r)
 		return
 	}
-	data, err := fs.ReadFile(s.docs, p)
+	data, err := fs.ReadFile(sec.docs, p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -244,44 +271,46 @@ type sidebarLink struct {
 	Current bool
 }
 
-// noteTocProblem logs err, the toc file's problem, unless the log already
-// named the same problem last, and forgets the last problem when err is nil.
-func (s *site) noteTocProblem(err error) {
+// noteTocProblem logs err, the problem of the section's toc file, unless the
+// log already named the same problem last, and forgets the last problem when
+// err is nil.
+func (sec *section) noteTocProblem(err error) {
 	problem := ""
 	if err != nil {
 		problem = err.Error()
 	}
-	s.tocMu.Lock()
-	defer s.tocMu.Unlock()
-	if problem != "" && problem != s.tocProblem {
-		log.Printf("toc file %s: %s", s.tocPath, problem)
+	sec.tocMu.Lock()
+	defer sec.tocMu.Unlock()
+	if problem != "" && problem != sec.tocProblem {
+		log.Printf("toc file %s: %s", sec.Toc, problem)
 	}
-	s.tocProblem = problem
+	sec.tocProblem = problem
 }
 
-// sidebar returns the document sidebar, with the file at current marked: the
-// entries of the toc file when the configuration names one, else the
-// markdown files that are not hidden, grouped by directory. A problem with
-// the toc file gives the markdown files, and a line in the log.
-func (s *site) sidebar(current string) []sidebarGroup {
-	if s.docs == nil {
+// sidebar returns the document sidebar of the docs section sec, with its file
+// at current marked: the entries of the section's toc file when it names
+// one, else the section's markdown files that are not hidden, grouped by
+// directory. A problem with the toc file gives the markdown files, and a line
+// in the log. A spec section has no sidebar.
+func (s *site) sidebar(sec *section, current string) []sidebarGroup {
+	if sec.docs == nil {
 		return nil
 	}
-	if s.tocPath != "" {
-		groups, err := s.tocSidebar(current)
-		s.noteTocProblem(err)
+	if sec.Toc != "" {
+		groups, err := s.tocSidebar(sec, current)
+		sec.noteTocProblem(err)
 		if err == nil {
 			return groups
 		}
 	}
-	paths, err := markdownFiles(s.docs)
+	paths, err := markdownFiles(sec.docs)
 	if err != nil {
 		return nil
 	}
 	byDir := map[string][]sidebarLink{}
 	for _, p := range paths {
 		dir := path.Dir(p)
-		byDir[dir] = append(byDir[dir], sidebarLink{Title: path.Base(p), URL: (&url.URL{Path: "/docs/" + p}).String(), Current: p == current})
+		byDir[dir] = append(byDir[dir], sidebarLink{Title: path.Base(p), URL: sec.docURL(p, "", ""), Current: p == current})
 	}
 	var groups []sidebarGroup
 	if links, ok := byDir["."]; ok {

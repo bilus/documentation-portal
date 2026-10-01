@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"strings"
+	"sync"
 	"unicode"
 
 	"gopkg.in/yaml.v3"
@@ -61,6 +62,9 @@ type section struct {
 	Section
 	slug string
 	docs fs.FS // a docs section's content directory handle, else nil
+
+	tocMu      sync.Mutex
+	tocProblem string // the toc file's problem that the log named last, or empty
 }
 
 // openSections checks the sections of cfg and opens the content directory of

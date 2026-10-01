@@ -48,14 +48,14 @@ func TestDocLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := get(h, "/docs/guide/links.md").Body.String()
+	body := get(h, "/docs/documents/guide/links.md").Body.String()
 	hrefs := linkHrefs(body)
 	for text, want := range map[string]string{
-		"root":     "/docs/guide-oauth.md",
-		"slash":    "/docs/guide-oauth.md",
-		"fragment": "/docs/guide-oauth.md#tokens",
-		"sibling":  "/docs/guide/intro.md",
-		"up":       "/docs/guide-oauth.md",
+		"root":     "/docs/documents/guide-oauth.md",
+		"slash":    "/docs/documents/guide-oauth.md",
+		"fragment": "/docs/documents/guide-oauth.md#tokens",
+		"sibling":  "/docs/documents/guide/intro.md",
+		"up":       "/docs/documents/guide-oauth.md",
 		"anchor":   "#setup",
 		"absolute": "https://example.com/a?b=c",
 		"mail":     "mailto:team@example.com",
@@ -99,7 +99,7 @@ func TestSpecLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := get(h, "/docs/links.md").Body.String()
+	body := get(h, "/docs/documents/links.md").Body.String()
 	hrefs := linkHrefs(body)
 	for text, want := range map[string]string{
 		"spec":              "/specs/api",
@@ -136,15 +136,15 @@ func TestDocLinkWalk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := get(h, "/docs/walk.md").Body.String()
+	body := get(h, "/docs/documents/walk.md").Body.String()
 	prose := body[strings.Index(body, "sl-markdown-viewer"):]
-	if href := linkHrefs(prose)["second"]; href != "/docs/guide-oauth.md" {
+	if href := linkHrefs(prose)["second"]; href != "/docs/documents/guide-oauth.md" {
 		t.Errorf("the link after one that leads nowhere: href %q", href)
 	}
-	if n := strings.Count(prose, `src="/raw/diagram.png"`); n != 2 {
+	if n := strings.Count(prose, `src="/raw/documents/diagram.png"`); n != 2 {
 		t.Errorf("%d images under /raw/, want the one after the links and the one inside a link:\n%s", n, prose)
 	}
-	if n := strings.Count(prose, `href="/docs/guide-oauth.md"`); n != 2 {
+	if n := strings.Count(prose, `href="/docs/documents/guide-oauth.md"`); n != 2 {
 		t.Errorf("%d links to the document, want 2:\n%s", n, prose)
 	}
 }
@@ -167,8 +167,8 @@ func TestDocLinkTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hrefs := linkHrefs(get(h, "/docs/guide/p.md").Body.String())
-	for text, want := range map[string]string{"dot": "/docs/guide-oauth.md", "host only": "//cdn.example.com/x.md", "root dots": "/docs/guide-oauth.md"} {
+	hrefs := linkHrefs(get(h, "/docs/documents/guide/p.md").Body.String())
+	for text, want := range map[string]string{"dot": "/docs/documents/guide-oauth.md", "host only": "//cdn.example.com/x.md", "root dots": "/docs/documents/guide-oauth.md"} {
 		if hrefs[text] != want {
 			t.Errorf("%s: href %q, want %q", text, hrefs[text], want)
 		}
@@ -201,14 +201,14 @@ func TestDocLinkEscapes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := get(h, "/docs/links.md").Body.String()
+	body := get(h, "/docs/documents/links.md").Body.String()
 	hrefs := linkHrefs(body)
 	for text, want := range map[string]string{
-		"escape":         "/docs/guide_oauth.md",
-		"entity":         "/docs/guide_oauth.md",
-		"parens":         "/docs/a%281%29.md",
-		"ampersand":      "/docs/r&amp;d.md",
-		"accent":         "/docs/guide_oauth.md#caf%C3%A9",
+		"escape":         "/docs/documents/guide_oauth.md",
+		"entity":         "/docs/documents/guide_oauth.md",
+		"parens":         "/docs/documents/a%281%29.md",
+		"ampersand":      "/docs/documents/r&amp;d.md",
+		"accent":         "/docs/documents/guide_oauth.md#caf%C3%A9",
 		"up to the spec": "/specs/api",
 	} {
 		if hrefs[text] != want {
@@ -229,7 +229,7 @@ func TestSpecLinkToMissingSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	hrefs := linkHrefs(get(h, "/docs/links.md").Body.String())
+	hrefs := linkHrefs(get(h, "/docs/documents/links.md").Body.String())
 	for _, text := range []string{"spec", "operation"} {
 		if href, ok := hrefs[text]; ok {
 			t.Errorf("%s leads to %q, want no link", text, href)
@@ -246,7 +246,7 @@ func TestSpecLinkToSpecDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if href, ok := linkHrefs(get(h, "/docs/links.md").Body.String())["spec"]; ok {
+	if href, ok := linkHrefs(get(h, "/docs/documents/links.md").Body.String())["spec"]; ok {
 		t.Errorf("spec leads to %q, want no link", href)
 	}
 }

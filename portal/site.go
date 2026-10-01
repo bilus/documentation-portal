@@ -10,35 +10,21 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"sync"
 
 	"gopkg.in/yaml.v3"
 )
 
 // site answers the requests for the sections.
 type site struct {
-	root       fs.FS
-	sections   []*section
-	docsPath   string // the first docs section's, until stage 2 routes by slug
-	docs       fs.FS  // the content directory, or nil
-	tocPath    string // the toc file, or empty
-	tocMu      sync.Mutex
-	tocProblem string // the toc file's problem that the log named last, or empty
-	hideTryIt  bool
-	chat       bool // whether the portal serves a chat page at /chat
+	root      fs.FS
+	sections  []*section
+	hideTryIt bool
+	chat      bool // whether the portal serves a chat page at /chat
 }
 
-// newSite returns the site of cfg's documentation root and sections. Until
-// stage 2 routes by slug, the first docs section stands for the content
-// directory.
+// newSite returns the site of cfg's documentation root and sections.
 func newSite(cfg Config, sections []*section) *site {
-	s := &site{root: cfg.Root, sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
-	for _, sec := range sections {
-		if sec.Type == DocsSection && s.docs == nil {
-			s.docsPath, s.docs, s.tocPath = sec.Input, sec.docs, sec.Toc
-		}
-	}
-	return s
+	return &site{root: cfg.Root, sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
 }
 
 // specFor returns the spec section whose slug is slug, or false.
@@ -68,8 +54,13 @@ func (sec *section) pageURL() string {
 	if sec.Type == SpecSection {
 		return sec.viewerURL("")
 	}
-	// Until stage 2 routes by slug, the first docs section's list is at /docs/.
-	return "/docs/"
+	return (&url.URL{Path: "/docs/" + sec.slug + "/"}).String()
+}
+
+// docURL returns the URL of the document page of the markdown file at doc,
+// a path in the docs section's content directory, with query and fragment.
+func (sec *section) docURL(doc, query, fragment string) string {
+	return (&url.URL{Path: "/docs/" + sec.slug + "/" + doc, RawQuery: query, Fragment: fragment}).String()
 }
 
 // viewerURL returns the URL of the spec section's viewer page with fragment,
@@ -80,7 +71,22 @@ func (sec *section) viewerURL(fragment string) string {
 
 // docsFor returns the docs section whose slug is slug, or false.
 func (s *site) docsFor(slug string) (*section, bool) {
-	// HOLE(2): find the docs section
+	for _, sec := range s.sections {
+		if sec.Type == DocsSection && sec.slug == slug {
+			return sec, true
+		}
+	}
+	return nil, false
+}
+
+// firstDocs returns the first docs section, or false without one. Until
+// stage 3 reads every section, the library reads this one alone.
+func (s *site) firstDocs() (*section, bool) {
+	for _, sec := range s.sections {
+		if sec.Type == DocsSection {
+			return sec, true
+		}
+	}
 	return nil, false
 }
 
@@ -123,9 +129,16 @@ type page struct {
 	HideTryIt bool   // viewer page only
 	Message   string // error page only
 	Nav       []navLink
-	Sidebar   []sidebarGroup // document pages only
-	Paths     []string       // document list only
+	Section   string         // the docs section's title: document pages and lists only
+	Sidebar   []sidebarGroup // document pages and lists only
+	Docs      []docLink      // document list only
 	Body      template.HTML  // document page only
+}
+
+// docLink links a document page from the document list.
+type docLink struct {
+	Path string // in the content directory
+	URL  string
 }
 
 // navLink is one link of the navigation bar.
