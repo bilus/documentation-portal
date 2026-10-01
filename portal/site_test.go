@@ -1,7 +1,10 @@
 package portal
 
 import (
+	"bytes"
 	"errors"
+	"io/fs"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -131,6 +134,90 @@ func TestSidebarGroups(t *testing.T) {
 	}
 	if got := (&site{}).sidebar(""); got != nil {
 		t.Errorf("without a content directory: %+v", got)
+	}
+}
+
+func TestTocSidebar(t *testing.T) {
+	t.Skip("HOLE(1): lay out the document sidebar from the toc file")
+	toc := `{"items": [
+		{"type": "item", "title": "Getting started", "uri": "docs/start.md"},
+		{"type": "item", "title": "API reference", "uri": "api.yaml"},
+		{"type": "item", "title": "Status", "uri": "https://status.example.com/"},
+		{"type": "item", "title": "Hidden", "uri": "docs/.draft.md"},
+		{"type": "item", "title": "Missing", "uri": "docs/missing.md"},
+		{"type": "item", "title": "Outside the content directory", "uri": "notes.md"},
+		{"type": "item", "title": "Outside the root", "uri": "../secret.md"},
+		{"type": "item", "title": "Mail", "uri": "mailto:team@example.com"},
+		{"type": "item", "title": "Host only", "uri": "//example.com/a.md"},
+		{"type": "group", "title": "Guides", "items": [
+			{"type": "item", "title": "OAuth", "uri": "/docs/guides/oauth.md#scopes"},
+			{"type": "group", "title": "More", "items": [
+				{"type": "item", "title": "Devices", "uri": "docs/guides/devices.md"}
+			]}
+		]},
+		{"type": "divider", "title": "Reference"},
+		{"type": "item", "title": "Pets", "uri": "api.yaml/paths/~1pets/get"}
+	]}`
+	root := fstest.MapFS{
+		"toc.json":               {Data: []byte(toc)},
+		"api.yaml":               {Data: []byte("openapi: 3.0.3\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")},
+		"notes.md":               {Data: []byte("# Notes\n")},
+		"docs/start.md":          {Data: []byte("# Start\n")},
+		"docs/.draft.md":         {Data: []byte("# Draft\n")},
+		"docs/guides/oauth.md":   {Data: []byte("# OAuth\n")},
+		"docs/guides/devices.md": {Data: []byte("# Devices\n")},
+		"docs/unlisted.md":       {Data: []byte("# Unlisted\n")},
+	}
+	docs, err := fs.Sub(root, "docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &site{root: root, specPath: "api.yaml", docsPath: "docs", docs: docs, tocPath: "toc.json"}
+	want := []sidebarGroup{
+		{Links: []sidebarLink{{Title: "Getting started", URL: "/docs/start.md"}, {Title: "API reference", URL: "/specs/api.yaml"}, {Title: "Status", URL: "https://status.example.com/"}}},
+		{Title: "Guides", Links: []sidebarLink{{Title: "OAuth", URL: "/docs/guides/oauth.md#scopes", Current: true}, {Title: "Devices", URL: "/docs/guides/devices.md"}}},
+		{Title: "Reference", Links: []sidebarLink{{Title: "Pets", URL: "/specs/api.yaml#/operations/listPets"}}},
+	}
+	if got := s.sidebar("guides/oauth.md"); !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestTocSidebarFallsBack(t *testing.T) {
+	t.Skip("HOLE(1): fall back to the list of markdown files on a missing or invalid toc file")
+	var logged bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	for name, toc := range map[string]*fstest.MapFile{
+		"missing":          nil,
+		"not JSON":         {Data: []byte("{")},
+		"no items":         {Data: []byte(`{"title": "Docs"}`)},
+		"unknown type":     {Data: []byte(`{"items": [{"type": "link", "title": "A", "uri": "docs/a.md"}]}`)},
+		"no title":         {Data: []byte(`{"items": [{"type": "item", "uri": "docs/a.md"}]}`)},
+		"item without uri": {Data: []byte(`{"items": [{"type": "item", "title": "A"}]}`)},
+		"symlink":          {Data: []byte("other.json"), Mode: fs.ModeSymlink},
+	} {
+		logged.Reset()
+		root := fstest.MapFS{
+			"docs/a.md":  {Data: []byte("# A\n")},
+			"other.json": {Data: []byte(`{"items": [{"type": "item", "title": "A", "uri": "docs/a.md"}]}`)},
+		}
+		if toc != nil {
+			root["toc.json"] = toc
+		}
+		docs, err := fs.Sub(root, "docs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := &site{root: root, docsPath: "docs", docs: docs, tocPath: "toc.json"}
+		want := []sidebarGroup{{Links: []sidebarLink{{Title: "a.md", URL: "/docs/a.md", Current: true}}}}
+		if got := s.sidebar("a.md"); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: got %+v", name, got)
+		}
+		if !strings.Contains(logged.String(), "toc.json") {
+			t.Errorf("%s: the log %q names no toc file", name, logged.String())
+		}
 	}
 }
 

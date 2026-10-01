@@ -164,6 +164,36 @@ func TestRawFile(t *testing.T) {
 	}
 }
 
+func TestDocPageSidebarFollowsToc(t *testing.T) {
+	t.Skip("HOLE(1): lay out the document sidebar from the toc file")
+	root := fstest.MapFS{
+		"apis/pets.yaml": {Data: []byte(pets)},
+		"toc.json": {Data: []byte(`{"items": [{"type": "item", "title": "Second", "uri": "docs/b.md"},` +
+			` {"type": "item", "title": "First", "uri": "docs/a.md"}, {"type": "item", "title": "Reference", "uri": "apis/pets.yaml"}]}`)},
+		"docs/a.md":        {Data: []byte("# A\n")},
+		"docs/b.md":        {Data: []byte("# B\n")},
+		"docs/unlisted.md": {Data: []byte("# Unlisted\n")},
+	}
+	h, err := portal.New(portal.Config{Root: root, SpecPath: "apis/pets.yaml", DocsPath: "docs", TocPath: "toc.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(h, "/docs/a.md").Body.String()
+	second, first, ref := strings.Index(page, `title="Second"`), strings.Index(page, `title="First"`), strings.Index(page, `title="Reference"`)
+	if second < 0 || first < second || ref < first {
+		t.Errorf("the sidebar is not in the toc file's order: Second at %d, First at %d, Reference at %d", second, first, ref)
+	}
+	if strings.Contains(page, `href="/docs/unlisted.md"`) {
+		t.Error("the sidebar links a markdown file missing from the toc file")
+	}
+	if rec := get(h, "/docs/unlisted.md"); rec.Code != http.StatusOK {
+		t.Errorf("a markdown file missing from the toc file: %d", rec.Code)
+	}
+	if list := get(h, "/docs/").Body.String(); !strings.Contains(list, "unlisted.md") {
+		t.Error("the document list left out a markdown file missing from the toc file")
+	}
+}
+
 func TestPagesShareNavigation(t *testing.T) {
 	h := newDocsPortal(t, fstest.MapFS{"a.md": {Data: []byte("# A\n")}})
 	for _, path := range []string{"/specs/apis/pets.yaml", "/docs/", "/docs/a.md", "/docs/missing.md"} {

@@ -4,7 +4,7 @@
 {5 Add the Try It setting}
 > portal configuration
 [3.1. Check the portal configuration and open its content directory
- so that the spec path and the content directory stay inside the documentation root
+ so that the spec path, the content directory and the toc path stay inside the documentation root
  (portal.checkConfig)]
     > content directory path
     < content directory handle
@@ -16,7 +16,7 @@
 > portal configuration, content directory handle, Elements assets
 [3.3. Build the router
  that sends each request to the viewer page, the raw spec, the Elements assets,
- with a content directory the document list, a document page or a raw file, and with a chat its routes
+ with a content directory the document list, a document page or a raw file, with the document sidebar from the toc file when the configuration names one, and with a chat its routes
  (portal.newRouter)]
 > portal
 {HTTP server}

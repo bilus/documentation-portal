@@ -22,6 +22,7 @@ type config struct {
 	RootDir   string
 	SpecPath  string // relative to RootDir
 	DocsPath  string // relative to RootDir, empty without a content directory
+	TocPath   string // relative to RootDir, empty without a toc file
 	HideTryIt bool
 	ChatModel string // empty without a chat
 }
@@ -44,7 +45,7 @@ func startup(args []string, getenv func(string) string) (string, http.Handler, e
 	if err != nil {
 		return "", nil, err
 	}
-	pcfg, err := openRoot(cfg.RootDir, cfg.SpecPath, cfg.DocsPath)
+	pcfg, err := openRoot(cfg.RootDir, cfg.SpecPath, cfg.DocsPath, cfg.TocPath)
 	if err != nil {
 		return "", nil, err
 	}
@@ -76,6 +77,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	if v := getenv("DOCPORTAL_DOCS_PATH"); v != "" {
 		cfg.DocsPath = v
 	}
+	if v := getenv("DOCPORTAL_TOC_PATH"); v != "" {
+		cfg.TocPath = v
+	}
 	if v := getenv("DOCPORTAL_CHAT_MODEL"); v != "" {
 		cfg.ChatModel = v
 	}
@@ -95,6 +99,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	fs.StringVar(&cfg.RootDir, "root-dir", cfg.RootDir, "documentation root, the directory that holds the API spec and the markdown files")
 	fs.StringVar(&cfg.SpecPath, "spec-path", cfg.SpecPath, "API spec to serve, relative to -root-dir")
 	fs.StringVar(&cfg.DocsPath, "docs-path", cfg.DocsPath, "directory of the markdown files and their images, relative to -root-dir")
+	fs.StringVar(&cfg.TocPath, "toc-path", cfg.TocPath, "Stoplight toc.json that lays out the document sidebar, relative to -root-dir; none lists the markdown files")
 	fs.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	fs.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
 	if err := fs.Parse(args); err != nil {
@@ -106,15 +111,16 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	return cfg, nil
 }
 
-// openRoot opens the documentation root and pairs it with the spec path and
-// the content directory path, so that the portal cannot read outside the root.
-func openRoot(dir, specPath, docsPath string) (portal.Config, error) {
+// openRoot opens the documentation root and pairs it with the spec path, the
+// content directory path and the toc path, so that the portal cannot read
+// outside the root.
+func openRoot(dir, specPath, docsPath, tocPath string) (portal.Config, error) {
 	// The root stays open for as long as docportal runs.
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return portal.Config{}, fmt.Errorf("open documentation root: %w", err)
 	}
-	return portal.Config{Root: root.FS(), SpecPath: specPath, DocsPath: docsPath}, nil
+	return portal.Config{Root: root.FS(), SpecPath: specPath, DocsPath: docsPath, TocPath: tocPath}, nil
 }
 
 // setTryIt adds the Try It setting to the portal configuration.

@@ -125,6 +125,26 @@ func TestParseConfigReadsDocsPath(t *testing.T) {
 	}
 }
 
+func TestParseConfigReadsTocPath(t *testing.T) {
+	if cfg, err := parseConfig(nil, noEnv); err != nil || cfg.TocPath != "" {
+		t.Errorf("by default: %+v, %v", cfg, err)
+	}
+	env := func(k string) string { return map[string]string{"DOCPORTAL_TOC_PATH": "toc.json"}[k] }
+	if cfg, err := parseConfig(nil, env); err != nil || cfg.TocPath != "toc.json" {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig([]string{"-toc-path", "nav/toc.json"}, env); err != nil || cfg.TocPath != "nav/toc.json" {
+		t.Errorf("the flag over the environment: %+v, %v", cfg, err)
+	}
+}
+
+func TestStartupRejectsTocPathOutsideRoot(t *testing.T) {
+	_, _, err := startup([]string{"-root-dir", writeEscape(t), "-spec-path", "api.yaml", "-docs-path", "docs", "-toc-path", "../toc.json"}, noEnv)
+	if err == nil || !strings.Contains(err.Error(), "toc path") {
+		t.Errorf("err = %v, want one about the toc path", err)
+	}
+}
+
 func TestStartupRejectsMissingDocsPath(t *testing.T) {
 	_, _, err := startup([]string{"-root-dir", "../../testdata/specs", "-spec-path", "petstore-3.0.yaml", "-docs-path", "no-such-docs"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "no-such-docs") {
@@ -162,7 +182,7 @@ func writeEscape(t *testing.T) string {
 }
 
 func TestOpenRootKeepsReadsInside(t *testing.T) {
-	cfg, err := openRoot(writeEscape(t), "api.yaml", "docs")
+	cfg, err := openRoot(writeEscape(t), "api.yaml", "docs", "")
 	if err != nil {
 		t.Fatal(err)
 	}

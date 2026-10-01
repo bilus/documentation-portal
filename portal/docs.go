@@ -5,6 +5,7 @@ import (
 	"errors"
 	"html/template"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -242,11 +243,20 @@ type sidebarLink struct {
 	Current bool
 }
 
-// sidebar returns the document sidebar: the markdown files that are not
-// hidden, grouped by directory, with the file at current marked.
+// sidebar returns the document sidebar, with the file at current marked: the
+// entries of the toc file when the configuration names one, else the
+// markdown files that are not hidden, grouped by directory. A toc file that
+// is missing or invalid gives the markdown files, and a line in the log.
 func (s *site) sidebar(current string) []sidebarGroup {
 	if s.docs == nil {
 		return nil
+	}
+	if s.tocPath != "" {
+		groups, err := s.tocSidebar(current)
+		if err == nil {
+			return groups
+		}
+		log.Printf("toc file %s: %v", s.tocPath, err)
 	}
 	paths, err := markdownFiles(s.docs)
 	if err != nil {
