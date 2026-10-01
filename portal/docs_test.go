@@ -165,7 +165,6 @@ func TestRawFile(t *testing.T) {
 }
 
 func TestDocPageSidebarFollowsToc(t *testing.T) {
-	t.Skip("HOLE(1): lay out the document sidebar from the toc file")
 	root := fstest.MapFS{
 		"apis/pets.yaml": {Data: []byte(pets)},
 		"toc.json": {Data: []byte(`{"items": [{"type": "item", "title": "Second", "uri": "docs/b.md"},` +

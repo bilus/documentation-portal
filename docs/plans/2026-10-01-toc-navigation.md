@@ -52,3 +52,12 @@ The plan gate adds the toc path to the configuration inline, with its tests, and
 - Holes: `1 portal.readToc`, `1 portal.site.tocGroups`, `1 portal.site.tocLink`.
 - Acceptance: `TestTocSidebar`, `TestTocSidebarFallsBack`, and `TestDocPageSidebarFollowsToc` through the HTTP handler.
 - Size: 200 lines.
+
+### Stage 2: the defect review's findings
+
+- Goal: a document page lists the markdown files and loads the spec once for its toc sidebar, whatever the toc's size; a divider's title shows even with no item after it, and top-level items after a group stand apart from it; a toc that names no page the portal serves falls back with a line in the log, a toc path without a content directory path stops docportal at startup, and the log repeats a toc problem only when it changes; and each of the defect review's 8 wrong implementations fails a test.
+- Requirement: 1, 3, 5 and 6.
+- Dependencies: stage 1.
+- Holes: none; each change starts as a failing test. Plan diff, for approval: `portal.site.tocSidebar` builds a `portal.tocPages` value once per sidebar, which holds the listed markdown files and the published spec, and `tocGroups`, `tocLinks` and `tocLink` become its methods; `portal.checkConfig` refuses a toc path without a content directory path, and box 3 of `docs/flow.dfd` names that refusal; `sidebar.html` gives an untitled group after a titled one the heading's top margin; `portal.site` remembers the last toc problem it logged.
+- Acceptance: a test that counts the listings of a page with a toc, and a failing test for each of the review's 8 wrong implementations and findings 2, 3, 5 and 6.
+- Size: 200 lines.
