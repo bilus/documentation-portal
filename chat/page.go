@@ -106,8 +106,8 @@ func (c *Chat) mount(lv live.Ctx) (*page, error) {
 	// crypto/rand.Read is documented never to fail.
 	_, _ = rand.Read(id)
 	heading := "Ask about the API"
-	if title := c.lib.Title(); title != "" {
-		heading = "Ask about the " + title + " API"
+	if names := apis(c.lib.Titles()); names != "" {
+		heading = "Ask about " + names
 	}
 	var nav []navLink
 	for _, s := range c.lib.Sections() {

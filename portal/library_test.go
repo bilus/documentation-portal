@@ -273,3 +273,31 @@ func TestLibraryReadsEachThingOnce(t *testing.T) {
 		t.Errorf("a spec that does not load: %q", part)
 	}
 }
+
+func TestLibraryTitles(t *testing.T) {
+	spec := func(title string) *fstest.MapFile {
+		return &fstest.MapFile{Data: []byte("openapi: 3.0.3\ninfo:\n  title: " + title + "\n  version: 1.0.0\npaths: {}\n")}
+	}
+	root := fstest.MapFS{"pets.yaml": spec("Pets"), "store.yaml": spec("Store"), "pets-v2.yaml": spec("Pets"), "broken.yaml": {Data: []byte("openapi: [3.0\n")}, "docs/a.md": {Data: []byte("# A\n")}}
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+		{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"},
+		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Guides", Type: portal.DocsSection, Input: "docs"},
+		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
+		{Title: "Pets again", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Pets v2", Type: portal.SpecSection, Input: "pets-v2.yaml"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := lib.Titles(), []string{"Pets", "Store"}; !slices.Equal(got, want) {
+		t.Errorf("titles %q, want %q", got, want)
+	}
+	docsOnly, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{{Title: "Guides", Type: portal.DocsSection, Input: "docs"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := docsOnly.Titles(); len(got) != 0 {
+		t.Errorf("without a spec section: %q", got)
+	}
+}

@@ -120,7 +120,7 @@ func New(cfg Config) (*Chat, error) {
 		// A provider, unlike Instruction, is not a template, so braces in the
 		// prompt stay as they are.
 		InstructionProvider: func(agent.ReadonlyContext) (string, error) {
-			return instruction(lib.Title()), nil
+			return instruction(lib.Titles()), nil
 		},
 		Tools:               tt,
 		BeforeToolCallbacks: []llmagent.BeforeToolCallback{spend},
