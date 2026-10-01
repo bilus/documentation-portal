@@ -84,8 +84,12 @@ func (l *llm) GenerateContent(ctx context.Context, req *model.LLMRequest, stream
 			yield(nil, fmt.Errorf("anthropic: %w", err))
 			return
 		}
-		if resp.StopReason == anthropic.StopReasonRefusal {
+		switch resp.StopReason {
+		case anthropic.StopReasonRefusal:
 			yield(nil, ErrRefused)
+			return
+		case anthropic.StopReasonMaxTokens, anthropic.StopReasonModelContextWindowExceeded:
+			yield(nil, ErrTruncated)
 			return
 		}
 		var parts []*genai.Part
@@ -125,6 +129,10 @@ const redacted = "redacted:"
 
 // ErrRefused means the model declined to answer.
 var ErrRefused = fmt.Errorf("anthropic: the model declined the request")
+
+// ErrTruncated means the response stopped at its token limit or at the end of
+// the model's context window, so its text is incomplete.
+var ErrTruncated = fmt.Errorf("anthropic: the response was cut off")
 
 // messages translates ADK's contents into Anthropic messages, merging
 // consecutive contents of one role into one message.

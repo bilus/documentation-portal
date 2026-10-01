@@ -41,11 +41,12 @@ func TestChatAnswersAQuestion(t *testing.T) {
 	browser := newBrowser(t)
 	ctx, cancel := context.WithTimeout(browser, 30*time.Second)
 	defer cancel()
-	var href, target string
+	var href, target, label string
 	var ok bool
 	err = chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/chat"),
 		chromedp.WaitVisible(`.phx-connected`, chromedp.ByQuery),
+		chromedp.AttributeValue(`textarea[name=question]`, "aria-label", &label, &ok, chromedp.ByQuery),
 		chromedp.SendKeys(`textarea[name=question]`, "How do I get one pet?", chromedp.ByQuery),
 		chromedp.Click(`button[type=submit]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`//a[text()="Info for a specific pet"]`, chromedp.BySearch),
@@ -57,5 +58,8 @@ func TestChatAnswersAQuestion(t *testing.T) {
 	}
 	if href != "/specs/specs/petstore-3.1.yaml#/operations/showPetById" || target != "_blank" {
 		t.Errorf("the answer's link: href %q, target %q", href, target)
+	}
+	if label == "" {
+		t.Error("the question's textarea has no accessible name")
 	}
 }

@@ -148,6 +148,52 @@ func TestAskContinuesAfterTooManyLookups(t *testing.T) {
 	}
 }
 
+func TestAskRunsNoLookupOverTheLimit(t *testing.T) {
+	search := func(q string) fakemodel.Call { return fakemodel.Call{Name: "search", Args: map[string]any{"query": q}} }
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Calls: []fakemodel.Call{search("pets"), search("cats"), search("dogs")}}})
+	c := newChat(t, m, Limits{ToolCalls: 2})
+	if _, err := c.Ask(t.Context(), "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
+		t.Fatalf("err = %v, want ErrTooManyTools", err)
+	}
+	got, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ran, refused := 0, 0
+	for ev := range got.Session.Events().All() {
+		if ev.Content == nil {
+			continue
+		}
+		for _, p := range ev.Content.Parts {
+			if r := p.FunctionResponse; r != nil {
+				if _, ok := r.Response["matches"]; ok {
+					ran++
+				} else {
+					refused++
+				}
+			}
+		}
+	}
+	if ran != 2 || refused != 1 {
+		t.Errorf("%d lookups ran and %d were refused, want 2 and 1", ran, refused)
+	}
+}
+
+// failing is a model whose every request fails with err.
+type failing struct{ err error }
+
+func (failing) Name() string { return "failing" }
+
+func (f failing) GenerateContent(context.Context, *model.LLMRequest, bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) { yield(nil, f.err) }
+}
+
+func TestAskReportsACutOffAnswer(t *testing.T) {
+	if _, err := newChat(t, failing{anthropicmodel.ErrTruncated}, Limits{}).Ask(t.Context(), "a", "c", "Tell me everything"); !errors.Is(err, ErrCutOff) {
+		t.Errorf("err = %v, want ErrCutOff", err)
+	}
+}
+
 func TestAskLeavesThoughtsOut(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Thought: "The guide says GET /pets.", Reply: "Call GET /pets."}})
 	if answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "a", "c", "pets?"); err != nil || answer != "Call GET /pets." {

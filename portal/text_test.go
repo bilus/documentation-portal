@@ -19,3 +19,16 @@ func TestPageText(t *testing.T) {
 		t.Errorf("title %q, want Pets", title)
 	}
 }
+
+func TestPageTextTitleIsTheHeadingsText(t *testing.T) {
+	text, title := pageText("<h1 id=\"setup\"><a href=\"/docs/a.md\">Set</a> <code>up</code></h1>\n")
+	if text != "# [Set](/docs/a.md) `up`" || title != "Set up" {
+		t.Errorf("text %q, title %q", text, title)
+	}
+}
+
+func TestPageTextKeepsAListStartingAtZeroOrdered(t *testing.T) {
+	if text, _ := pageText("<ol start=\"0\">\n<li>zero</li>\n<li>one</li>\n</ol>\n"); text != "0. zero\n1. one" {
+		t.Errorf("text %q", text)
+	}
+}

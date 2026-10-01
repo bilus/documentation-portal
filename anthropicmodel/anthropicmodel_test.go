@@ -144,6 +144,19 @@ func TestGenerateContentSendsTheInstructionAndTools(t *testing.T) {
 	}
 }
 
+func TestGenerateContentReportsTruncation(t *testing.T) {
+	for _, reason := range []string{"max_tokens", "model_context_window_exceeded"} {
+		srv, _ := fakeAPI(t, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5","content":[{"type":"text","text":"Call GET /pe"}],"stop_reason":"`+reason+`","usage":{"input_tokens":10,"output_tokens":16000}}`)
+		m, err := New("claude-opus-5-5", Config{APIKey: "test", BaseURL: srv.URL})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := generate(t, m, []*genai.Content{genai.NewContentFromText("?", genai.RoleUser)}); !errors.Is(err, ErrTruncated) {
+			t.Errorf("%s: %v, %v, want ErrTruncated", reason, got, err)
+		}
+	}
+}
+
 func TestGenerateContentReportsRefusal(t *testing.T) {
 	srv, _ := fakeAPI(t, `{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-5-5","content":[],"stop_reason":"refusal","usage":{"input_tokens":10,"output_tokens":0}}`)
 	m, err := New("claude-opus-5-5", Config{APIKey: "test", BaseURL: srv.URL})

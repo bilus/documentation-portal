@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 
 	"github.com/bilus/documentation-portal/portal"
 )
@@ -151,6 +153,8 @@ func (c *Chat) explain(err error) string {
 		return "I could not find the answer in the documentation in time. Please ask a narrower question."
 	case errors.Is(err, ErrDeclined):
 		return "I can't help with that. I answer questions about using this API."
+	case errors.Is(err, ErrCutOff):
+		return "The answer came out too long. Please ask a narrower question."
 	}
 	log.Printf("chat: %v", err)
 	return "The assistant is unavailable right now. Please try again later."
@@ -167,21 +171,68 @@ var (
 	}()
 )
 
-// answerHTML renders an answer's markdown as HTML without active content.
+// answerHTML renders an answer's markdown as HTML without active content. A
+// page of the portal becomes a link that opens in a new tab, so that the
+// conversation stays; any other link, and an image from elsewhere, shows as
+// text, since the model can write any URL.
 func answerHTML(src string) string {
-	doc := answers.Parser().Parse(text.NewReader([]byte(src)))
+	source := []byte(src)
+	doc := answers.Parser().Parse(text.NewReader(source))
+	type replacement struct {
+		node ast.Node
+		tail string // text after the node's children
+	}
+	var plain []replacement
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		switch n.(type) {
-		case *ast.Link, *ast.AutoLink:
-			if entering {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n := n.(type) {
+		case *ast.Link:
+			if dest := destination(n.Destination); portalPage(dest) {
 				n.SetAttributeString("target", "_blank")
+			} else {
+				plain = append(plain, replacement{n, " (" + dest + ")"})
 			}
+		case *ast.Image:
+			if !portalPage(destination(n.Destination)) {
+				plain = append(plain, replacement{n, ""})
+			}
+		case *ast.AutoLink:
+			plain = append(plain, replacement{n, string(n.Label(source))})
 		}
 		return ast.WalkContinue, nil
 	})
+	for _, r := range plain {
+		parent := r.node.Parent()
+		for c := r.node.FirstChild(); c != nil; c = r.node.FirstChild() {
+			parent.InsertBefore(parent, r.node, c)
+		}
+		if r.tail != "" {
+			tail := ast.NewString([]byte(r.tail))
+			tail.SetRaw(true)
+			parent.InsertBefore(parent, r.node, tail)
+		}
+		parent.RemoveChild(parent, r.node)
+	}
 	var buf bytes.Buffer
-	if err := answers.Renderer().Render(&buf, []byte(src), doc); err != nil {
+	if err := answers.Renderer().Render(&buf, source, doc); err != nil {
 		return "<p>" + html.EscapeString(src) + "</p>"
 	}
 	return answerPolicy.Sanitize(buf.String())
+}
+
+// destination resolves the backslash escapes and character references of a
+// link destination, as goldmark's renderer does before it writes one.
+func destination(dest []byte) string {
+	return string(util.ResolveEntityNames(util.ResolveNumericReferences(util.UnescapePunctuations(dest))))
+}
+
+// portalPage reports whether dest is a path on the portal, such as
+// /docs/a.md#setup: it starts with one slash, and has no scheme, no host and
+// no backslash, which a browser reads as a slash.
+func portalPage(dest string) bool {
+	u, err := url.Parse(dest)
+	return err == nil && u.Scheme == "" && u.Host == "" &&
+		strings.HasPrefix(dest, "/") && !strings.HasPrefix(dest, "//") && !strings.Contains(dest, `\`)
 }

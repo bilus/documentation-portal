@@ -185,7 +185,7 @@ func chatPage(lv live.Ctx, p *page) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\"><p class=\"thinking\">Looking it up...</p><div class=\"ask\"><textarea name=\"question\" rows=\"3\" placeholder=\"Ask a question about the API\" required></textarea> <button type=\"submit\" phx-disable-with=\"Sending...\">Send</button></div></form></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\"><p class=\"thinking\">Looking it up...</p><div class=\"ask\"><textarea name=\"question\" rows=\"3\" aria-label=\"Your question\" placeholder=\"Ask a question about the API\" required></textarea> <button type=\"submit\" phx-disable-with=\"Sending...\">Send</button></div></form></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -39,7 +39,7 @@ func New(cfg Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newRouter(cfg, docs, assets), nil
+	return newRouter(cfg, docs, assets)
 }
 
 // checkConfig checks the portal configuration and opens its content
@@ -101,7 +101,7 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 // newRouter builds the router that sends each request to the viewer page, the
 // raw spec, the Elements assets, with a content directory the document list, a
 // document page or a raw file, and with a chat its routes.
-func newRouter(cfg Config, docs, assets fs.FS) http.Handler {
+func newRouter(cfg Config, docs, assets fs.FS) (http.Handler, error) {
 	s := &site{root: cfg.Root, specPath: cfg.SpecPath, docsPath: cfg.DocsPath, docs: docs, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
@@ -114,7 +114,22 @@ func newRouter(cfg Config, docs, assets fs.FS) http.Handler {
 		mux.HandleFunc("GET /raw/{path...}", s.rawFile)
 	}
 	for _, r := range cfg.Chat {
-		mux.Handle(r.Pattern, r.Handler)
+		if err := handle(mux, r); err != nil {
+			return nil, err
+		}
 	}
-	return mux
+	return mux, nil
+}
+
+// handle adds r to mux, and returns as an error what ServeMux.Handle panics
+// with: a nil handler, an invalid pattern, or one that conflicts with a route
+// already added.
+func handle(mux *http.ServeMux, r Route) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("chat route %q: %v", r.Pattern, p)
+		}
+	}()
+	mux.Handle(r.Pattern, r.Handler)
+	return nil
 }

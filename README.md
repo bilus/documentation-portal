@@ -40,7 +40,8 @@ With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
 `claude-opus-5-5`, the portal serves a chat page at `/chat`, where readers ask
 questions about the API. The model answers from the published spec and the
 markdown files alone, through read-only tools, and links the pages it used.
-The Anthropic SDK reads its credentials from `ANTHROPIC_API_KEY`.
+Only the portal's own pages become links in an answer; any other URL shows as
+text. The Anthropic SDK reads its credentials from `ANTHROPIC_API_KEY`.
 
     ANTHROPIC_API_KEY=... devbox run make run ARGS='-root-dir testdata -spec-path specs/petstore-3.1.yaml -docs-path docs -chat-model claude-opus-5-5'
 

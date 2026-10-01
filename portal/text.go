@@ -27,11 +27,17 @@ func pageText(h string) (text, title string) {
 // textWriter writes a page's text, one block after another.
 type textWriter struct {
 	b     strings.Builder
-	need  int   // line breaks owed before the next text
-	space bool  // a space owed before the next text on the same line
-	lists []int // per open list: the next item's number, or 0 when unordered
-	item  bool  // a list item's marker is the last thing written
+	need  int    // line breaks owed before the next text
+	space bool   // a space owed before the next text on the same line
+	lists []list // the open lists, innermost last
+	item  bool   // a list item's marker is the last thing written
 	title string
+}
+
+// list is an open list: ordered or not, and the number of its next item.
+type list struct {
+	ordered bool
+	next    int
 }
 
 var spaces = regexp.MustCompile(`\s+`)
@@ -69,10 +75,9 @@ func (w *textWriter) node(n *html.Node) {
 	case atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6:
 		w.block(2)
 		w.write(strings.Repeat("#", int(n.Data[1]-'0')) + " ")
-		start := w.b.Len()
 		w.children(n)
 		if n.DataAtom == atom.H1 && w.title == "" {
-			w.title = strings.TrimSpace(w.b.String()[start:])
+			w.title = strings.TrimSpace(spaces.ReplaceAllString(textOf(n), " "))
 		}
 		w.block(2)
 	case atom.P, atom.Blockquote, atom.Table, atom.Div:
@@ -80,12 +85,9 @@ func (w *textWriter) node(n *html.Node) {
 		w.children(n)
 		w.block(2)
 	case atom.Ul, atom.Ol:
-		next := 0
-		if n.DataAtom == atom.Ol {
-			next = 1
-			if start, err := strconv.Atoi(attr(n, "start")); err == nil {
-				next = start
-			}
+		l := list{ordered: n.DataAtom == atom.Ol, next: 1}
+		if start, err := strconv.Atoi(attr(n, "start")); err == nil {
+			l.next = start
 		}
 		// A list nested in an item starts on the item's next line.
 		gap := 2
@@ -93,16 +95,16 @@ func (w *textWriter) node(n *html.Node) {
 			gap = 1
 		}
 		w.block(gap)
-		w.lists = append(w.lists, next)
+		w.lists = append(w.lists, l)
 		w.children(n)
 		w.lists = w.lists[:len(w.lists)-1]
 		w.block(gap)
 	case atom.Li:
 		marker := "- "
 		if depth := len(w.lists); depth > 0 {
-			if next := w.lists[depth-1]; next > 0 {
-				marker = strconv.Itoa(next) + ". "
-				w.lists[depth-1]++
+			if l := &w.lists[depth-1]; l.ordered {
+				marker = strconv.Itoa(l.next) + ". "
+				l.next++
 			}
 			marker = strings.Repeat("  ", depth-1) + marker
 		}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
 	"github.com/bilus/documentation-portal/anthropicmodel"
@@ -74,6 +76,7 @@ var (
 	ErrTooManyTools = errors.New("chat: the answer needed too many lookups")
 	ErrNoAnswer     = errors.New("chat: the model returned no answer")
 	ErrDeclined     = errors.New("chat: the model declined the question")
+	ErrCutOff       = errors.New("chat: the answer was cut off")
 	ErrUnavailable  = errors.New("chat: the model is unavailable")
 )
 
@@ -119,7 +122,8 @@ func New(cfg Config) (*Chat, error) {
 		InstructionProvider: func(agent.ReadonlyContext) (string, error) {
 			return instruction(lib.Title()), nil
 		},
-		Tools: tt,
+		Tools:               tt,
+		BeforeToolCallbacks: []llmagent.BeforeToolCallback{spend},
 	})
 	if err != nil {
 		return nil, err
@@ -157,10 +161,14 @@ func (c *Chat) Ask(ctx context.Context, client, conv, question string) (string, 
 	calls := 0
 	var answer strings.Builder
 	msg := genai.NewContentFromText(question, genai.RoleUser)
-	for ev, err := range c.runner.Run(ctx, userID, conv, msg, agent.RunConfig{}) {
+	run := context.WithValue(ctx, budgetKey{}, &budget{max: int64(c.limits.ToolCalls)})
+	for ev, err := range c.runner.Run(run, userID, conv, msg, agent.RunConfig{}) {
 		if err != nil {
-			if errors.Is(err, anthropicmodel.ErrRefused) {
+			switch {
+			case errors.Is(err, anthropicmodel.ErrRefused):
 				return "", ErrDeclined
+			case errors.Is(err, anthropicmodel.ErrTruncated):
+				return "", ErrCutOff
 			}
 			return "", fmt.Errorf("%w: %v", ErrUnavailable, err)
 		}
@@ -244,6 +252,24 @@ func (c *Chat) sweep(ctx context.Context, now time.Time) {
 			_ = c.sessions.Delete(ctx, &session.DeleteRequest{AppName: appName, UserID: userID, SessionID: id})
 		}
 	}
+}
+
+// budget counts the lookups of one answer, and travels in its run's context.
+type budget struct {
+	used atomic.Int64
+	max  int64
+}
+
+type budgetKey struct{}
+
+// spend runs before each tool call. Once the answer has used its lookups, the
+// call reads nothing and returns an error to the model; the calls of one turn
+// may run at once, so the count is atomic.
+func spend(ctx agent.Context, _ tool.Tool, _ map[string]any) (map[string]any, error) {
+	if b, ok := ctx.Value(budgetKey{}).(*budget); ok && b.used.Add(1) > b.max {
+		return map[string]any{"error": "no lookups left for this question"}, nil
+	}
+	return nil, nil
 }
 
 // grow adds n bytes to the history of cv.
