@@ -134,11 +134,11 @@ func TestStartupServesDocs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	list := get(h, "/docs/")
-	if list.Code != http.StatusOK || !strings.HasPrefix(list.Header().Get("Content-Type"), "text/html") || !strings.Contains(list.Body.String(), `href="/docs/guide/intro.md"`) {
+	list := get(h, "/docs/guides/")
+	if list.Code != http.StatusOK || !strings.HasPrefix(list.Header().Get("Content-Type"), "text/html") || !strings.Contains(list.Body.String(), `href="/docs/guides/guide/intro.md"`) {
 		t.Errorf("document list: %d %s %q", list.Code, list.Header().Get("Content-Type"), list.Body)
 	}
-	page := get(h, "/docs/guide/intro.md")
+	page := get(h, "/docs/guides/guide/intro.md")
 	if page.Code != http.StatusOK || !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") || !strings.Contains(page.Body.String(), "Introduction") {
 		t.Errorf("document page: %d %s %q", page.Code, page.Header().Get("Content-Type"), page.Body)
 	}
@@ -219,12 +219,12 @@ func TestStartupKeepsDocsInside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/docs/escape.md", "/docs/inside.md", "/raw/leak.png"} {
+	for _, path := range []string{"/docs/guides/escape.md", "/docs/guides/inside.md", "/raw/guides/leak.png"} {
 		if rec := get(h, path); rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "hunter") {
 			t.Errorf("%s: %d %q", path, rec.Code, rec.Body)
 		}
 	}
-	if list := get(h, "/docs/").Body.String(); strings.Contains(list, "escape.md") || strings.Contains(list, "inside.md") || !strings.Contains(list, `href="/docs/a.md"`) {
+	if list := get(h, "/docs/guides/").Body.String(); strings.Contains(list, "escape.md") || strings.Contains(list, "inside.md") || !strings.Contains(list, `href="/docs/guides/a.md"`) {
 		t.Errorf("document list: %q", list)
 	}
 }
@@ -306,7 +306,7 @@ func TestStartupServesChat(t *testing.T) {
 	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Ask about the") {
 		t.Errorf("chat page: %d %q", page.Code, page.Body)
 	}
-	if nav := get(h, "/docs/").Body.String(); !strings.Contains(nav, `href="/chat"`) {
+	if nav := get(h, "/docs/guides/").Body.String(); !strings.Contains(nav, `href="/chat"`) {
 		t.Errorf("the navigation bar has no Chat link: %q", nav)
 	}
 }
@@ -319,7 +319,7 @@ func TestStartupWithoutChat(t *testing.T) {
 	if rec := get(h, "/chat"); rec.Code != http.StatusNotFound {
 		t.Errorf("/chat: %d", rec.Code)
 	}
-	if nav := get(h, "/docs/").Body.String(); strings.Contains(nav, `href="/chat"`) {
+	if nav := get(h, "/docs/guides/").Body.String(); strings.Contains(nav, `href="/chat"`) {
 		t.Error("the navigation bar links a chat that is off")
 	}
 }

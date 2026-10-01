@@ -110,7 +110,7 @@ func TestLinksToSpecSections(t *testing.T) {
 		portal.Section{Title: "Store again", Type: portal.SpecSection, Input: "./store.yaml"},
 		portal.Section{Title: "Documents", Type: portal.DocsSection, Input: "docs", Toc: "toc.json"},
 	)
-	body := get(h, "/docs/links.md").Body.String()
+	body := get(h, "/docs/documents/links.md").Body.String()
 	hrefs := linkHrefs(body)
 	for text, want := range map[string]string{
 		"pets":   "/specs/pets",
@@ -128,7 +128,6 @@ func TestLinksToSpecSections(t *testing.T) {
 }
 
 func TestDocsSections(t *testing.T) {
-	t.Skip("HOLE(2): serve each docs section at its slug")
 	root := fstest.MapFS{
 		"api.yaml":            {Data: []byte(pets)},
 		"guides/start.md":     {Data: []byte("# Start\n\n![flow](img/flow.png)\n")},
@@ -173,7 +172,6 @@ func TestDocsSections(t *testing.T) {
 }
 
 func TestLinksAcrossDocsSections(t *testing.T) {
-	t.Skip("HOLE(2): link the docs section that holds a link's target")
 	page := "# Links\n\n- [runbook](ops/runbook.md)\n- [up](../ops/runbook.md)\n- [sibling](next.md)\n- [inner](deep/inner.md)\n"
 	root := fstest.MapFS{
 		"api.yaml":             {Data: []byte(pets)},
@@ -208,7 +206,6 @@ func TestLinksAcrossDocsSections(t *testing.T) {
 }
 
 func TestTocAcrossSections(t *testing.T) {
-	t.Skip("HOLE(2): lay out each docs section's sidebar from its own toc file")
 	root := fstest.MapFS{
 		"api.yaml":    {Data: []byte(pets)},
 		"guides/a.md": {Data: []byte("# A\n")},

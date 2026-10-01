@@ -18,7 +18,7 @@
 <div class="sl-prose sl-markdown-viewer">
 <h1>{{.Title}}</h1>
 <ul>
-{{range .Paths}}<li><a href="/docs/{{.}}">{{.}}</a></li>
+{{range .Docs}}<li><a href="{{.URL}}">{{.Path}}</a></li>
 {{end}}</ul>
 </div>
 </div>

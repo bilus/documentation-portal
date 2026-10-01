@@ -69,7 +69,7 @@ func TestIndexOpensTheFirstSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/docs/" {
+	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/docs/documents/" {
 		t.Errorf("got %d to %q, want the document list of the first section", rec.Code, rec.Header().Get("Location"))
 	}
 }

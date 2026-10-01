@@ -43,25 +43,29 @@ requests from the reader's browser to the servers of the spec, so those
 servers must allow the portal's origin through CORS. `-hide-try-it` hides the
 console.
 
-With a content directory, `/docs/` lists its markdown files, `/docs/{path}`
-renders one as HTML without scripts, and `/raw/{path}` serves its PNG, JPEG,
-GIF, WebP and SVG images. A relative link in a markdown file resolves against
-the documentation root, as on Stoplight, and then against the file's own
+A docs section's document list at `/docs/{slug}/` lists the markdown files
+of its content directory, `/docs/{slug}/{path}` renders one as HTML without
+scripts, and `/raw/{slug}/{path}` serves its PNG, JPEG, GIF, WebP and SVG
+images. A relative link in a markdown file resolves against the
+documentation root, as on Stoplight, and then against the file's own
 directory, and it shows as plain text when no page serves its target. A link
-to a spec opens its section's viewer page, and a link to one of its
-operations in Stoplight's form, such as `openapi.yaml/paths/~1pets/get`, opens
-the viewer at that operation. Of two spec sections with one spec, links open
-the first. The portal reads nothing outside the documentation root, follows
-no symlink in the content directory, and under `/specs/` and `/api/specs/`
-serves no file of the root except the specs of the spec sections.
+to a markdown file opens its document page in the first docs section whose
+content directory holds it, so content directories may nest. A link to a
+spec opens its section's viewer page, and a link to one of its operations in
+Stoplight's form, such as `openapi.yaml/paths/~1pets/get`, opens the viewer at
+that operation. Of two spec sections with one spec, links open the first. The
+portal reads nothing outside the documentation root, follows no symlink in a
+content directory, and under `/specs/` and `/api/specs/` serves no file of
+the root except the specs of the spec sections.
 
-A docs section's `toc` names a Stoplight `toc.json` inside the
-documentation root, such as `toc.json`. The document sidebar then shows its
+A docs section's `toc` names a Stoplight `toc.json` inside the documentation
+root, such as `toc.json`. The section's document sidebar then shows its
 entries in its order and under its titles: an entry for a markdown file links
-its document page, one for a spec or one of its operations links its
-section's viewer page, and an http or https URL stays as it is. The sidebar leaves out an entry
-that no page serves. A missing or invalid toc file brings back the list of
-markdown files, with a line in the log.
+its document page, in any docs section, one for a spec or one of its
+operations links its section's viewer page, and an http or https URL stays as
+it is. The sidebar leaves out an entry that no page serves. A missing or
+invalid toc file brings back the list of markdown files, with a line in the
+log.
 
 ## Chat
 

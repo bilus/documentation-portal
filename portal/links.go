@@ -12,10 +12,10 @@ import (
 )
 
 // linkURL returns the URL of the page that serves the link target of dest, a
-// link in the markdown file at docPath, or false when the link leads nowhere.
-// It returns dest unchanged when dest has a scheme, a host or no path, and
-// false when dest does not parse.
-func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
+// link in the markdown file at docPath of the docs section sec, or false when
+// the link leads nowhere. It returns dest unchanged when dest has a scheme, a
+// host or no path, and false when dest does not parse.
+func (s *site) linkURL(sec *section, docPath string, dest []byte) ([]byte, bool) {
 	u, err := url.Parse(string(dest))
 	if err != nil {
 		return nil, false
@@ -25,7 +25,7 @@ func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
 	}
 	targets := []string{strings.TrimPrefix(path.Clean(u.Path), "/")}
 	if !strings.HasPrefix(u.Path, "/") {
-		targets = append(targets, path.Join(s.docsPath, path.Dir(docPath), u.Path))
+		targets = append(targets, path.Join(sec.Input, path.Dir(docPath), u.Path))
 	}
 	for _, target := range targets {
 		if target == ".." || strings.HasPrefix(target, "../") {
@@ -34,37 +34,42 @@ func (s *site) linkURL(docPath string, dest []byte) ([]byte, bool) {
 		if page, ok := s.specURL(target); ok {
 			return []byte(page), true
 		}
-		if doc, ok := s.docAt(target); ok {
-			return []byte((&url.URL{Path: "/docs/" + doc, RawQuery: u.RawQuery, Fragment: u.Fragment}).String()), true
+		if docs, doc, ok := s.docAt(target); ok {
+			return []byte(docs.docURL(doc, u.RawQuery, u.Fragment)), true
 		}
 	}
 	return nil, false
 }
 
-// docAt returns the path in the content directory of the markdown file at
-// target, a path inside the documentation root, or false when no document
-// page serves it.
-func (s *site) docAt(target string) (string, bool) {
-	doc, ok := s.contentPath(target)
-	if !ok || s.docs == nil {
-		return "", false
+// docAt returns the first docs section, in the order of the portal
+// configuration, whose content directory holds the markdown file at target,
+// a path inside the documentation root, with the file's path in that
+// directory, or false when no document page serves it.
+func (s *site) docAt(target string) (*section, string, bool) {
+	for _, sec := range s.sections {
+		doc, ok := sec.contentPath(target)
+		if !ok {
+			continue
+		}
+		if paths, err := markdownFiles(sec.docs); err == nil && slices.Contains(paths, doc) {
+			return sec, doc, true
+		}
 	}
-	paths, err := markdownFiles(s.docs)
-	return doc, err == nil && slices.Contains(paths, doc)
+	return nil, "", false
 }
 
 // contentPath returns target, a path inside the documentation root, as a
-// path in the content directory, or false for a target outside it or
-// without a content directory.
-func (s *site) contentPath(target string) (string, bool) {
-	target = path.Clean(target)
-	switch s.docsPath {
-	case "":
+// path in the section's content directory, or false for a target outside it
+// and for a spec section.
+func (sec *section) contentPath(target string) (string, bool) {
+	if sec.Type != DocsSection {
 		return "", false
-	case ".":
+	}
+	target = path.Clean(target)
+	if sec.Input == "." {
 		return target, true
 	}
-	return strings.CutPrefix(target, s.docsPath+"/")
+	return strings.CutPrefix(target, sec.Input+"/")
 }
 
 // specURL returns the viewer page URL for target, a path inside the
