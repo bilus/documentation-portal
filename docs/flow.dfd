@@ -7,8 +7,8 @@
 [1. Read the configuration
  from the flags and the environment
  (main.parseConfig)]
-> documentation root name, spec path, content directory path
-[2. Open the documentation root and pair it with the spec path and the content directory path
+> documentation root name, spec path, content directory path, toc path
+[2. Open the documentation root and pair it with the spec path, the content directory path and the toc path
  so that the portal cannot read outside the root
  (main.openRoot)]
     > documentation root name
@@ -24,7 +24,7 @@
  (main.addChat)]
 > portal configuration
 [3. Build the portal
- or refuse a spec path outside the documentation root, a content directory path that names no directory in it, or missing Elements assets
+ or refuse a spec path outside the documentation root, a content directory path that names no directory in it, a toc path outside it, or missing Elements assets
  (portal.New)]
 > address, portal
 {HTTP server}
@@ -34,6 +34,7 @@
 # type: documentation root name = string
 # type: spec path = string
 # type: content directory path = string
+# type: toc path = string
 # type: Try It setting = bool
 # type: chat model = string
 # type: portal configuration = portal.Config

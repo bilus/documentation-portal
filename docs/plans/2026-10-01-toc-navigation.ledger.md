@@ -1,0 +1,8 @@
+# Ledger, plan: docs/plans/2026-10-01-toc-navigation.md
+
+- 2026-10-01: plan written from issue 22, on bilus/development at base 6b069d7. The user asked for the toc navigation to be optional; the plan reads that as an operator setting, -toc-path. conrad's toc.json holds 4 items and a group of 9: 11 entries link a markdown file, 1 the spec and 1 an external URL.
+- 2026-10-01: decision, no design review and no vocabulary review at the gate: AGENTS.md replaces them with one defect review before the pull request.
+- 2026-10-01: skeleton. Inline with their tests: -toc-path and DOCPORTAL_TOC_PATH in main.parseConfig, main.openRoot taking the toc path, portal.Config.TocPath, the toc path's check in portal.checkConfig, site.tocPath, and the sidebar's branch that uses the toc file or falls back with a line in the log. A wrong implementation of each of the check, the environment variable and openRoot fails a test. TestOpenRootKeepsReadsInside passes an empty toc path, as Q10 says.
+- 2026-10-01: holes `1 portal.readToc`, `1 portal.site.tocGroups` and `1 portal.site.tocLink`; portal.site.tocSidebar calls the first two. Skipped acceptance tests: `1 TestTocSidebar`, `1 TestTocSidebarFallsBack`, `1 TestDocPageSidebarFollowsToc`.
+- 2026-10-01: the top diagram carries the toc path from box 1 to box 2, and box 3 refuses one outside the root; in flow.3.dfd box 3.1 checks it and box 3.3 draws the sidebar from it. The vocabulary adds toc path and toc file, and changes flags, environment, configuration, portal configuration and document sidebar. Score card unchanged, all zero, no findings.
+- 2026-10-01: plan approved by the user ("go"); the score card moves over the cached one.
