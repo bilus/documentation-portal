@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -55,6 +56,18 @@ func (l *Library) Title() string {
 		return ""
 	}
 	return sp.Title
+}
+
+// Titles returns the titles of the published specs of the spec sections, in
+// their order, each title once, and without a spec that does not load.
+func (l *Library) Titles() []string {
+	var titles []string
+	for _, sec := range l.specSections() {
+		if sp, err := l.s.loadSpec(sec.Input); err == nil && !slices.Contains(titles, sp.Title) {
+			titles = append(titles, sp.Title)
+		}
+	}
+	return titles
 }
 
 // Document is a markdown file that a document list shows.

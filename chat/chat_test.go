@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -311,5 +313,37 @@ func TestChatToolsNameTheSpec(t *testing.T) {
 	answer, err := c.Ask(t.Context(), "client", "conv", "How do I list orders?")
 	if err != nil || !strings.Contains(answer, "/specs/store#/operations/listOrders") || !m.Exhausted() {
 		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
+	}
+}
+
+func TestChatNamesEveryAPI(t *testing.T) {
+	spec := func(title, version string) *fstest.MapFile {
+		return &fstest.MapFile{Data: []byte("openapi: 3.0.3\ninfo:\n  title: " + title + "\n  version: " + version + "\npaths: {}\n")}
+	}
+	root := fstest.MapFS{"pets.yaml": spec("Pets", "1.0.0"), "store.yaml": spec("Store", "1.0.0"), "pets-v2.yaml": spec("Pets", "2.0.0")}
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
+		{Title: "Pets v2", Type: portal.SpecSection, Input: "pets-v2.yaml"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Match: "questions from customers about the Pets and Store APIs.", Reply: "Ask me about either."}})
+	c, err := New(Config{Model: m, Library: lib})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer, err := c.Ask(t.Context(), "client", "conv", "What can you help with?"); err != nil || !m.Exhausted() {
+		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
+	}
+	mux := http.NewServeMux()
+	for _, r := range c.Routes() {
+		mux.Handle(r.Pattern, r.Handler)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/chat", nil))
+	if !strings.Contains(rec.Body.String(), "Ask about the Pets and Store APIs") {
+		t.Errorf("the chat page's heading names not every API: %q", rec.Body)
 	}
 }
