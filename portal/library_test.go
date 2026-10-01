@@ -27,7 +27,7 @@ func newLibrary(t *testing.T) *portal.Library {
 		"docs/leak.md":    {Data: []byte("../private.md"), Mode: fs.ModeSymlink},
 		"docs/guide/b.md": {Data: []byte("No heading here.\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs"})
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: sections("api.yaml", "docs", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,14 +70,14 @@ func TestLibraryOperations(t *testing.T) {
 
 func TestLibrarySpecPart(t *testing.T) {
 	lib := newLibrary(t)
-	if part, err := lib.SpecPart("paths/~1pets/get"); err != nil || !strings.Contains(part, "listPets") {
+	if part, err := lib.SpecPart("api", "paths/~1pets/get"); err != nil || !strings.Contains(part, "listPets") {
 		t.Errorf("paths/~1pets/get: %q, %v", part, err)
 	}
-	if part, err := lib.SpecPart("components/schemas/Pet"); err != nil || !strings.Contains(part, "name") || strings.Contains(part, "secretField") {
+	if part, err := lib.SpecPart("api", "components/schemas/Pet"); err != nil || !strings.Contains(part, "name") || strings.Contains(part, "secretField") {
 		t.Errorf("components/schemas/Pet: %q, %v", part, err)
 	}
 	for _, pointer := range []string{"paths/~1pets/delete", "components/schemas/Cat", ""} {
-		if part, err := lib.SpecPart(pointer); err == nil {
+		if part, err := lib.SpecPart("api", pointer); err == nil {
 			t.Errorf("%q: %q, want an error", pointer, part)
 		}
 	}
@@ -92,7 +92,7 @@ func TestLibraryReadsGuidesAsTheirPagesShowThem(t *testing.T) {
 		"docs/install.md": {Data: []byte("## Before you start\n\n```sh\n# install the CLI\n```\n\nInstall\n=======\n\nRun the installer.\n")},
 		"docs/closed.md":  {Data: []byte("# Closed title #\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs"})
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: sections("api.yaml", "docs", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestLibraryReadsEveryPointerItGives(t *testing.T) {
 		"    Loop:\n      $ref: '#/components/pathItems/Loop'\n" +
 		"  schemas:\n    Pet: &pet\n      properties:\n        name:\n          type: string\n    Dog: *pet\n" +
 		"    Cat:\n      allOf:\n        - $ref: '#/components/schemas/Pet'\n        - description: A cat\n"
-	lib, err := portal.NewLibrary(portal.Config{Root: fstest.MapFS{"api.yaml": {Data: []byte(spec)}}, SpecPath: "api.yaml"})
+	lib, err := portal.NewLibrary(portal.Config{Root: fstest.MapFS{"api.yaml": {Data: []byte(spec)}}, Sections: sections("api.yaml", "", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestLibraryReadsEveryPointerItGives(t *testing.T) {
 		t.Fatalf("operations: %+v, %v", ops, err)
 	}
 	for _, op := range ops {
-		if part, err := lib.SpecPart(op.Pointer); err != nil || !strings.Contains(part, op.Summary) {
+		if part, err := lib.SpecPart(op.Spec, op.Pointer); err != nil || !strings.Contains(part, op.Summary) {
 			t.Errorf("%s: %q, %v", op.Pointer, part, err)
 		}
 	}
@@ -154,7 +154,7 @@ func TestLibraryReadsEveryPointerItGives(t *testing.T) {
 	var where []string
 	for _, m := range matches {
 		where = append(where, m.Where)
-		if _, err := lib.SpecPart(m.Where); err != nil {
+		if _, err := lib.SpecPart(m.Spec, m.Where); err != nil {
 			t.Errorf("search gave %s, which reads as %v", m.Where, err)
 		}
 	}
@@ -163,13 +163,13 @@ func TestLibraryReadsEveryPointerItGives(t *testing.T) {
 			t.Errorf("no match at %s among %v", want, where)
 		}
 	}
-	if dog, err := lib.SpecPart("components/schemas/Dog"); err != nil || strings.ContainsAny(dog, "&*") || !strings.Contains(dog, "name:") {
+	if dog, err := lib.SpecPart("api", "components/schemas/Dog"); err != nil || strings.ContainsAny(dog, "&*") || !strings.Contains(dog, "name:") {
 		t.Errorf("components/schemas/Dog: %q, %v", dog, err)
 	}
-	if part, err := lib.SpecPart("components/schemas/Cat/allOf/1/description"); err != nil || !strings.Contains(part, "A cat") {
+	if part, err := lib.SpecPart("api", "components/schemas/Cat/allOf/1/description"); err != nil || !strings.Contains(part, "A cat") {
 		t.Errorf("an allOf entry: %q, %v", part, err)
 	}
-	if part, err := lib.SpecPart("paths/~1loop/get"); err == nil {
+	if part, err := lib.SpecPart("api", "paths/~1loop/get"); err == nil {
 		t.Errorf("a $ref cycle: %q", part)
 	}
 }
@@ -179,7 +179,7 @@ func TestLibrarySearchFindsTheSpecPastManyGuideMatches(t *testing.T) {
 		"api.yaml":     {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      summary: List the pets\n")},
 		"docs/many.md": {Data: []byte(strings.Repeat("Pets are here.\n\n", 30))},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs"})
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: sections("api.yaml", "docs", "")})
 	if err != nil {
 		t.Fatal(err)
 	}

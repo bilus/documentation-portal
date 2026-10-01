@@ -14,7 +14,7 @@ import (
 func TestViewerTryIt(t *testing.T) {
 	browser := newBrowser(t)
 	for _, hide := range []bool{false, true} {
-		h, err := portal.New(portal.Config{Root: os.DirFS("../testdata/specs"), SpecPath: "petstore-3.1.yaml", HideTryIt: hide})
+		h, err := portal.New(portal.Config{Root: os.DirFS("../testdata/specs"), Sections: sections("petstore-3.1.yaml", "", ""), HideTryIt: hide})
 		if err != nil {
 			t.Fatal(err)
 		}

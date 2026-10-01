@@ -15,7 +15,7 @@ import (
 )
 
 func TestRawSVGRunsNoScript(t *testing.T) {
-	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), SpecPath: "specs/petstore-3.1.yaml", DocsPath: "docs"})
+	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), Sections: sections("specs/petstore-3.1.yaml", "docs", "")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ const sidebarStyle = `(() => {
 })()`
 
 func TestDocSidebarMatchesElements(t *testing.T) {
-	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), SpecPath: "specs/petstore-3.1.yaml", DocsPath: "docs"})
+	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), Sections: sections("specs/petstore-3.1.yaml", "docs", "")})
 	if err != nil {
 		t.Fatal(err)
 	}

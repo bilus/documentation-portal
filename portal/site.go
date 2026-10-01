@@ -17,14 +17,43 @@ import (
 // site answers the requests for the configured spec and the content directory.
 type site struct {
 	root       fs.FS
-	specPath   string
-	docsPath   string
+	sections   []*section
+	specPath   string // the first spec section's, until stage 1 routes by slug
+	docsPath   string // the first docs section's, until stage 2 routes by slug
 	docs       fs.FS  // the content directory, or nil
 	tocPath    string // the toc file, or empty
 	tocMu      sync.Mutex
 	tocProblem string // the toc file's problem that the log named last, or empty
 	hideTryIt  bool
 	chat       bool // whether the portal serves a chat page at /chat
+}
+
+// newSite returns the site of cfg's documentation root and sections. Until
+// stages 1 and 2 route by slug, the first spec section and the first docs
+// section stand for the spec path and the content directory.
+func newSite(cfg Config, sections []*section) *site {
+	s := &site{root: cfg.Root, sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
+	for _, sec := range sections {
+		switch {
+		case sec.Type == SpecSection && s.specPath == "":
+			s.specPath = sec.Input
+		case sec.Type == DocsSection && s.docs == nil:
+			s.docsPath, s.docs, s.tocPath = sec.Input, sec.docs, sec.Toc
+		}
+	}
+	return s
+}
+
+// specFor returns the spec section whose slug is slug, or false.
+func (s *site) specFor(slug string) (*section, bool) {
+	// HOLE(1): find the spec section
+	return nil, false
+}
+
+// docsFor returns the docs section whose slug is slug, or false.
+func (s *site) docsFor(slug string) (*section, bool) {
+	// HOLE(2): find the docs section
+	return nil, false
 }
 
 func (s *site) index(w http.ResponseWriter, r *http.Request) {

@@ -17,7 +17,7 @@ import (
 )
 
 func TestChatAnswersAQuestion(t *testing.T) {
-	cfg := portal.Config{Root: os.DirFS("../testdata"), SpecPath: "specs/petstore-3.1.yaml", DocsPath: "docs"}
+	cfg := portal.Config{Root: os.DirFS("../testdata"), Sections: sections("specs/petstore-3.1.yaml", "docs", "")}
 	lib, err := portal.NewLibrary(cfg)
 	if err != nil {
 		t.Fatal(err)

@@ -71,7 +71,8 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 			Name:        "read_spec",
 			Description: "Returns one part of the API reference, the OpenAPI spec, as YAML: an operation, a schema, or any other part named by a JSON pointer. Follow a $ref such as #/components/schemas/Pet by reading components/schemas/Pet.",
 		}, func(_ agent.Context, a pointerArg) (map[string]any, error) {
-			part, err := lib.SpecPart(a.Pointer)
+			// Stage 3 of issue 29 passes the spec section's slug.
+			part, err := lib.SpecPart("", a.Pointer)
 			if err != nil {
 				return nil, err
 			}

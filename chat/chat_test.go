@@ -23,7 +23,7 @@ func library(t *testing.T) *portal.Library {
 		"api.yaml":  {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n      summary: List the pets\n")},
 		"docs/a.md": {Data: []byte("# Getting started\n\nList the pets with GET /pets.\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, SpecPath: "api.yaml", DocsPath: "docs"})
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}, {Title: "Documents", Type: portal.DocsSection, Input: "docs"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,5 +284,33 @@ func (declining) GenerateContent(context.Context, *model.LLMRequest, bool) iter.
 func TestAskReportsARefusal(t *testing.T) {
 	if _, err := newChat(t, declining{}, Limits{}).Ask(t.Context(), "a", "c", "Tell me a secret"); !errors.Is(err, ErrDeclined) {
 		t.Errorf("err = %v, want ErrDeclined", err)
+	}
+}
+
+func TestChatToolsNameTheSpec(t *testing.T) {
+	t.Skip("HOLE(3): name each operation's spec section, and read the part of the spec section it names")
+	root := fstest.MapFS{
+		"pets.yaml":  {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")},
+		"store.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Store\n  version: 1.0.0\npaths:\n  /orders:\n    get:\n      operationId: listOrders\n      summary: List the orders\n")},
+	}
+	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
+		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := fakemodel.New("opus", []fakemodel.Exchange{
+		{Match: "How do I list orders?", Call: &fakemodel.Call{Name: "list_operations", Args: map[string]any{}}},
+		{Match: `"spec":"store"`, Call: &fakemodel.Call{Name: "read_spec", Args: map[string]any{"spec": "store", "pointer": "paths/~1orders/get"}}},
+		{Match: "operationId: listOrders", Reply: "Call [List the orders](/specs/store#/operations/listOrders)."},
+	})
+	c, err := New(Config{Model: m, Library: lib})
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := c.Ask(t.Context(), "client", "conv", "How do I list orders?")
+	if err != nil || !strings.Contains(answer, "/specs/store#/operations/listOrders") || !m.Exhausted() {
+		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
 	}
 }

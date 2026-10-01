@@ -7,12 +7,19 @@
 [1. Read the configuration
  from the flags and the environment
  (main.parseConfig)]
-> documentation root name, spec path, content directory path, toc path
-[2. Open the documentation root and pair it with the spec path, the content directory path and the toc path
- so that the portal cannot read outside the root
+> configuration file name
+[2. Open the directory of the configuration file as the documentation root
+ so that the portal cannot read outside it
  (main.openRoot)]
     > documentation root name
     < documentation root handle
+    <Documentation root>
+> documentation root handle, configuration file path
+[7. Read the sections from the configuration file
+ into the portal configuration
+ (portal.ReadConfig)]
+    > configuration file path
+    < configuration file
     <Documentation root>
 > portal configuration, Try It setting
 [5. Add the Try It setting to the portal configuration
@@ -24,17 +31,18 @@
  (main.addChat)]
 > portal configuration
 [3. Build the portal
- or refuse a spec path outside the documentation root, a content directory path that names no directory in it, a toc path outside it or without a content directory path, or missing Elements assets
+ or refuse sections that openSections refuses, or missing Elements assets
  (portal.New)]
 > address, portal
 {HTTP server}
 
 # type: arguments = []string
 # type: environment = func(string) string
+# type: configuration file name = string
 # type: documentation root name = string
-# type: spec path = string
-# type: content directory path = string
-# type: toc path = string
+# type: documentation root handle = io/fs.FS
+# type: configuration file path = string
+# type: configuration file = []byte
 # type: Try It setting = bool
 # type: chat model = string
 # type: portal configuration = portal.Config
