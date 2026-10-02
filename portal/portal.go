@@ -10,14 +10,14 @@ import (
 	"strings"
 )
 
-// Config says where the portal reads its content from, which sections the
-// navigation bar shows, and whether the viewer page hides the Try It console.
+// Config says where the portal handler reads its content from, which
+// portals it serves, and whether the viewer page hides the Try It console.
 // ReadConfig reads one from a configuration file.
 type Config struct {
-	Root      fs.FS     // the documentation root handle
-	Sections  []Section // in the order of the navigation bar
-	HideTryIt bool      // hides the Try It console of the viewer page
-	Chat      []Route   // the chat page's routes, or none
+	Root      fs.FS    // the documentation root handle
+	Portals   []Portal // in the order of the home page and the portal menu
+	HideTryIt bool     // hides the Try It console of the viewer page
+	Chat      []Route  // the chat pages' routes, or none
 }
 
 // Route is a mux pattern and its handler.
@@ -26,10 +26,10 @@ type Route struct {
 	Handler http.Handler
 }
 
-// New builds the portal, or refuses sections that openSections refuses, or
-// missing Elements assets.
+// New builds the portal handler, or refuses portals that openPortals
+// refuses, or missing Elements assets.
 func New(cfg Config) (http.Handler, error) {
-	sections, err := openSections(cfg)
+	sites, err := openPortals(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func New(cfg Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newRouter(cfg, sections, assets)
+	return newRouter(cfg, sites, assets)
 }
 
 // loadAssets loads the Elements assets, or refuses to start without them.
@@ -69,27 +69,76 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 	return dir, nil
 }
 
-// newRouter builds the router that sends each request to a section's page: a
-// spec section's viewer page or raw spec, or a docs section's document list,
-// document page or raw file, with the document sidebar from the section's toc
-// file when it names one; and the Elements assets, and with a chat its routes.
-func newRouter(cfg Config, sections []*section, assets fs.FS) (http.Handler, error) {
-	s := newSite(cfg, sections)
+// newRouter builds the router that sends each request to a portal's page by
+// the portal's slug: a spec section's viewer page or raw spec, or a docs
+// section's document list, document page or raw file, with the document
+// sidebar from the section's toc file when it names one; and the home page,
+// the Elements assets, and with a chat its routes.
+func newRouter(cfg Config, sites []*site, assets fs.FS) (http.Handler, error) {
+	rt := &router{sites: sites}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.index)
-	mux.HandleFunc("GET /specs/{slug}", s.viewerPage)
-	mux.HandleFunc("GET /api/specs/{slug}", s.rawSpec)
+	mux.HandleFunc("GET /{$}", rt.home)
+	mux.HandleFunc("GET /portals/{portal}", rt.serve((*site).index))
+	mux.HandleFunc("GET /portals/{portal}/{$}", rt.serve((*site).index))
+	mux.HandleFunc("GET /portals/{portal}/specs/{slug}", rt.serve((*site).viewerPage))
+	mux.HandleFunc("GET /portals/{portal}/api/specs/{slug}", rt.serve((*site).rawSpec))
+	mux.HandleFunc("GET /portals/{portal}/docs/{slug}", rt.serve((*site).docsRoot))
+	mux.HandleFunc("GET /portals/{portal}/docs/{slug}/{$}", rt.serve((*site).docList))
+	mux.HandleFunc("GET /portals/{portal}/docs/{slug}/{path...}", rt.serve((*site).docPage))
+	mux.HandleFunc("GET /portals/{portal}/raw/{slug}/{path...}", rt.serve((*site).rawFile))
+	// Any other path of a portal: the named 404 for a slug of no portal.
+	mux.HandleFunc("GET /portals/{portal}/{rest...}", rt.serve(func(_ *site, w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
-	mux.HandleFunc("GET /docs/{slug}", s.docsRoot)
-	mux.HandleFunc("GET /docs/{slug}/{$}", s.docList)
-	mux.HandleFunc("GET /docs/{slug}/{path...}", s.docPage)
-	mux.HandleFunc("GET /raw/{slug}/{path...}", s.rawFile)
 	for _, r := range cfg.Chat {
 		if err := handle(mux, r); err != nil {
 			return nil, err
 		}
 	}
 	return mux, nil
+}
+
+// router sends each request to the site of its portal.
+type router struct {
+	sites []*site // one for each portal, in the order of the portal configuration
+}
+
+// portalFor returns the site of the portal whose slug is slug, or false.
+func (rt *router) portalFor(slug string) (*site, bool) {
+	for _, s := range rt.sites {
+		if s.slug == slug {
+			return s, true
+		}
+	}
+	return nil, false
+}
+
+// serve returns the handler that answers a request under
+// /portals/{portal}/ with h and the site of the portal, or with a 404 error
+// page that links the home page for a slug of no portal.
+func (rt *router) serve(h func(*site, http.ResponseWriter, *http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("portal")
+		s, ok := rt.portalFor(slug)
+		if !ok {
+			render(w, http.StatusNotFound, "error.html", page{Title: "Portal not found", Message: "No portal has the slug " + slug + ".", Nav: navBar{Links: []navLink{{Label: "Portals", URL: "/"}}}})
+			return
+		}
+		h(s, w, r)
+	}
+}
+
+// home redirects to the first section of the only portal, or writes the home
+// page, which links the first section of each portal under its name.
+func (rt *router) home(w http.ResponseWriter, r *http.Request) {
+	if len(rt.sites) == 1 {
+		rt.sites[0].index(w, r)
+		return
+	}
+	links := make([]navLink, 0, len(rt.sites))
+	for _, s := range rt.sites {
+		links = append(links, navLink{Label: s.name, URL: s.url()})
+	}
+	render(w, http.StatusOK, "home.html", page{Title: "Portals", Portals: links})
 }
 
 // handle adds r to mux, and returns as an error what ServeMux.Handle panics

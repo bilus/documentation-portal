@@ -14,17 +14,56 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// site answers the requests for the sections.
+// site answers the requests for the pages of one portal.
 type site struct {
 	root      fs.FS
+	name      string // the portal's name
+	slug      string // the portal's slug
 	sections  []*section
+	portals   []*site // the site of every portal, for the portal menu
 	hideTryIt bool
-	chat      bool // whether the portal serves a chat page at /chat
+	chat      bool // whether a route of the chat serves the portal's chat page
 }
 
-// newSite returns the site of cfg's documentation root and sections.
-func newSite(cfg Config, sections []*section) *site {
-	return &site{root: cfg.Root, sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
+// newSite returns the site of the portal p of cfg, with sections, p's
+// sections after openSections has checked them, whose URLs it puts under the
+// portal's URL path. The site links its chat page when a route of cfg.Chat
+// serves that page.
+func newSite(cfg Config, p Portal, sections []*section) *site {
+	s := &site{root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt}
+	for _, sec := range sections {
+		sec.base = "/portals/" + s.slug
+	}
+	s.chat = slices.ContainsFunc(cfg.Chat, func(r Route) bool { return r.Pattern == "GET "+s.chatURL() })
+	return s
+}
+
+// url returns the URL that opens the site's portal: the page of its first
+// section, or the portal's path without a section.
+func (s *site) url() string {
+	if len(s.sections) == 0 {
+		return (&url.URL{Path: "/portals/" + s.slug + "/"}).String()
+	}
+	return s.sections[0].pageURL()
+}
+
+// chatURL returns the URL of the portal's chat page.
+func (s *site) chatURL() string {
+	return (&url.URL{Path: "/portals/" + s.slug + "/chat"}).String()
+}
+
+// menu returns the links of the portal menu: the first section of every
+// portal under its name, in the order of the portal configuration, or none
+// with one portal.
+func (s *site) menu() []navLink {
+	if len(s.portals) < 2 {
+		return nil
+	}
+	links := make([]navLink, 0, len(s.portals))
+	for _, p := range s.portals {
+		links = append(links, navLink{Label: p.name, URL: p.url()})
+	}
+	return links
 }
 
 // specFor returns the spec section whose slug is slug, or false.
@@ -53,19 +92,24 @@ func (sec *section) pageURL() string {
 	if sec.Type == SpecSection {
 		return sec.viewerURL("")
 	}
-	return (&url.URL{Path: "/docs/" + sec.slug + "/"}).String()
+	return (&url.URL{Path: sec.base + "/docs/" + sec.slug + "/"}).String()
 }
 
 // docURL returns the URL of the document page of the markdown file at doc,
 // a path in the docs section's content directory, with query and fragment.
 func (sec *section) docURL(doc, query, fragment string) string {
-	return (&url.URL{Path: "/docs/" + sec.slug + "/" + doc, RawQuery: query, Fragment: fragment}).String()
+	return (&url.URL{Path: sec.base + "/docs/" + sec.slug + "/" + doc, RawQuery: query, Fragment: fragment}).String()
 }
 
 // viewerURL returns the URL of the spec section's viewer page with fragment,
 // an operation route or "".
 func (sec *section) viewerURL(fragment string) string {
-	return (&url.URL{Path: "/specs/" + sec.slug, Fragment: fragment}).String()
+	return (&url.URL{Path: sec.base + "/specs/" + sec.slug, Fragment: fragment}).String()
+}
+
+// rawSpecURL returns the URL of the spec section's raw spec.
+func (sec *section) rawSpecURL() string {
+	return (&url.URL{Path: sec.base + "/api/specs/" + sec.slug}).String()
 }
 
 // docsFor returns the docs section whose slug is slug, or false.
@@ -107,7 +151,7 @@ func (s *site) viewerPage(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
-		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: (&url.URL{Path: "/api/specs/" + sec.slug}).String(), HideTryIt: s.hideTryIt, Nav: s.nav()})
+		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: sec.rawSpecURL(), HideTryIt: s.hideTryIt, Nav: s.nav()})
 	}
 }
 
@@ -116,10 +160,11 @@ type page struct {
 	SpecURL   string // viewer page only
 	HideTryIt bool   // viewer page only
 	Message   string // error page only
-	Nav       []navLink
+	Nav       navBar
 	Section   string         // the docs section's title: document pages and lists only
 	Sidebar   []sidebarGroup // document pages and lists only
 	Docs      []docLink      // document list only
+	Portals   []navLink      // home page only
 	Body      template.HTML  // document page only
 }
 
@@ -129,24 +174,31 @@ type docLink struct {
 	URL  string
 }
 
+// navBar is the navigation bar of a page.
+type navBar struct {
+	Links  []navLink
+	Portal string    // the name of the page's portal, the label of the menu
+	Menu   []navLink // the portal menu's links, or none
+}
+
 // navLink is one link of the navigation bar.
 type navLink struct {
 	Label string
 	URL   string
 }
 
-// nav returns the links of the navigation bar: each section's page under its
-// title, in the order of the portal configuration, and the chat page when the
-// portal serves one.
-func (s *site) nav() []navLink {
+// nav returns the navigation bar of the portal's pages: each section's page
+// under its title, in the order of the portal configuration, the chat page
+// when the portal handler serves one, and the portal menu.
+func (s *site) nav() navBar {
 	links := make([]navLink, 0, len(s.sections)+1)
 	for _, sec := range s.sections {
 		links = append(links, navLink{Label: sec.Title, URL: sec.pageURL()})
 	}
 	if s.chat {
-		links = append(links, navLink{Label: "Chat", URL: "/chat"})
+		links = append(links, navLink{Label: "Chat", URL: s.chatURL()})
 	}
-	return links
+	return navBar{Links: links, Portal: s.name, Menu: s.menu()}
 }
 
 //go:embed templates/*.html

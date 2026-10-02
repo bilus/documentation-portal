@@ -30,11 +30,18 @@ const (
 	DocsSection SectionType = "docs" // a content directory
 )
 
-// ReadConfig reads the sections from the configuration file at name, a path
+// Portal is a named set of sections, whose pages have URLs of their own under
+// /portals/{slug}/, where the slug comes from the name.
+type Portal struct {
+	Name     string    `yaml:"name"`
+	Sections []Section `yaml:"sections"`
+}
+
+// ReadConfig reads the portals from the configuration file at name, a path
 // inside root, into the portal configuration of root. It refuses no root, a
 // file that is missing, that is not YAML or that holds more than one YAML
-// document, and a key it does not know. An empty file gives no sections. New
-// checks the sections.
+// document, a key it does not know, and an empty entry in a list of portals
+// or of sections. An empty file gives no portals. New checks the portals.
 func ReadConfig(root fs.FS, name string) (Config, error) {
 	if root == nil {
 		return Config{}, errors.New("no documentation root")
@@ -45,8 +52,12 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
+	// Pointers keep an empty entry, which yaml.v3 drops from a list of structs.
 	var file struct {
-		Sections []Section `yaml:"sections"`
+		Portals []*struct {
+			Name     string     `yaml:"name"`
+			Sections []*Section `yaml:"sections"`
+		} `yaml:"portals"`
 	}
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, fmt.Errorf("configuration file %s: %w", name, err)
@@ -57,7 +68,59 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 	case !errors.Is(err, io.EOF):
 		return Config{}, fmt.Errorf("configuration file %s: %w", name, err)
 	}
-	return Config{Root: root, Sections: file.Sections}, nil
+	var portals []Portal
+	for i, p := range file.Portals {
+		if p == nil {
+			return Config{}, fmt.Errorf("configuration file %s: portal %d is empty", name, i+1)
+		}
+		var sections []Section
+		for j, sec := range p.Sections {
+			if sec == nil {
+				return Config{}, fmt.Errorf("configuration file %s: portal %q: section %d is empty", name, p.Name, j+1)
+			}
+			sections = append(sections, *sec)
+		}
+		portals = append(portals, Portal{Name: p.Name, Sections: sections})
+	}
+	return Config{Root: root, Portals: portals}, nil
+}
+
+// openPortals checks the portals of cfg and their sections and opens the
+// content directory of each docs section, so that every input and toc path
+// stays inside the documentation root. It returns a site for each portal, in
+// order, and refuses no portals, a portal without a name, with an empty slug
+// or with the slug of another portal, and the sections that openSections
+// refuses.
+func openPortals(cfg Config) ([]*site, error) {
+	if cfg.Root == nil {
+		return nil, errors.New("no documentation root")
+	}
+	if len(cfg.Portals) == 0 {
+		return nil, errors.New("no portals")
+	}
+	sites := make([]*site, 0, len(cfg.Portals))
+	names := map[string]string{} // the name of the portal with each slug
+	for i, p := range cfg.Portals {
+		slug := slugOf(p.Name)
+		switch other, taken := names[slug]; {
+		case p.Name == "":
+			return nil, fmt.Errorf("portal %d has no name", i+1)
+		case slug == "":
+			return nil, fmt.Errorf("portal %q: the name gives an empty slug", p.Name)
+		case taken:
+			return nil, fmt.Errorf("portals %q and %q share the slug %q", other, p.Name, slug)
+		}
+		names[slug] = p.Name
+		sections, err := openSections(cfg.Root, p.Sections)
+		if err != nil {
+			return nil, fmt.Errorf("portal %q: %w", p.Name, err)
+		}
+		sites = append(sites, newSite(cfg, p, sections))
+	}
+	for _, s := range sites {
+		s.portals = sites
+	}
+	return sites, nil
 }
 
 // section is a section of the portal configuration after openSections has
@@ -65,33 +128,35 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 type section struct {
 	Section
 	slug string
-	docs fs.FS // a docs section's content directory handle, else nil
+	base string // the URL path of its portal, such as /portals/pets, or empty
+	docs fs.FS  // a docs section's content directory handle, else nil
 
 	tocMu      sync.Mutex
 	tocProblem string // the toc file's problem that the log named last, or empty
 }
 
-// openSections checks the sections of cfg and opens the content directory of
-// each docs section, so that every input and toc path stays inside the
-// documentation root. It cleans a leading ./ and a trailing / from each path,
-// and refuses no documentation root, no sections, a section without a title,
-// with an empty slug or without an input, an unknown type, two sections with
-// one slug, an input or a toc path outside the root, a docs input that names
-// no directory reached through no symlink, and a toc on a spec section.
-func openSections(cfg Config) ([]*section, error) {
-	if cfg.Root == nil {
+// openSections checks sections, the sections of a portal, and opens the
+// content directory of each docs section in root, so that every input and
+// toc path stays inside root, the documentation root. It cleans a leading ./
+// and a trailing / from each path, and refuses no documentation root, no
+// sections, a section without a title, with an empty slug or without an
+// input, an unknown type, two sections with one slug, an input or a toc path
+// outside the root, a docs input that names no directory reached through no
+// symlink, and a toc on a spec section.
+func openSections(root fs.FS, sections []Section) ([]*section, error) {
+	if root == nil {
 		return nil, errors.New("no documentation root")
 	}
-	if len(cfg.Sections) == 0 {
+	if len(sections) == 0 {
 		return nil, errors.New("no sections")
 	}
-	sections := make([]*section, 0, len(cfg.Sections))
+	opened := make([]*section, 0, len(sections))
 	titles := map[string]string{} // the title of the section with each slug
-	for i, s := range cfg.Sections {
+	for i, s := range sections {
 		if s.Title == "" {
 			return nil, fmt.Errorf("section %d has no title", i+1)
 		}
-		sec, err := openSection(cfg.Root, s)
+		sec, err := openSection(root, s)
 		if err != nil {
 			return nil, fmt.Errorf("section %q: %w", s.Title, err)
 		}
@@ -99,9 +164,9 @@ func openSections(cfg Config) ([]*section, error) {
 			return nil, fmt.Errorf("sections %q and %q share the slug %q", other, s.Title, sec.slug)
 		}
 		titles[sec.slug] = s.Title
-		sections = append(sections, sec)
+		opened = append(opened, sec)
 	}
-	return sections, nil
+	return opened, nil
 }
 
 // openSection checks s, a section with a title, with its paths cleaned, and

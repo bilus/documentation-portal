@@ -48,20 +48,20 @@ func docsSection(input, toc string) Section {
 
 func TestOpenSections(t *testing.T) {
 	root := fstest.MapFS{"apis/pets.yaml": {Data: []byte("openapi: 3.1.0\n")}, "docs/a.md": {Data: []byte("# A\n")}}
-	if sections, err := openSections(Config{Root: root, Sections: []Section{specSection("apis/pets.yaml")}}); err != nil || len(sections) != 1 || sections[0].docs != nil {
+	if sections, err := openSections(root, []Section{specSection("apis/pets.yaml")}); err != nil || len(sections) != 1 || sections[0].docs != nil {
 		t.Errorf("valid config: %v, %v", sections, err)
 	}
-	if _, err := openSections(Config{Sections: []Section{specSection("apis/pets.yaml")}}); err == nil {
+	if _, err := openSections(nil, []Section{specSection("apis/pets.yaml")}); err == nil {
 		t.Error("nil Root accepted")
 	}
 	for _, path := range []string{".", "", "/etc/passwd", "../pets.yaml", "apis/../../pets.yaml"} {
-		_, err := openSections(Config{Root: root, Sections: []Section{specSection(path)}})
+		_, err := openSections(root, []Section{specSection(path)})
 		if err == nil || !strings.Contains(err.Error(), path) {
 			t.Errorf("%q: err = %v", path, err)
 		}
 	}
 	for path, file := range map[string]string{"docs": "a.md", ".": "docs/a.md", "docs/": "a.md"} {
-		sections, err := openSections(Config{Root: root, Sections: []Section{specSection("apis/pets.yaml"), docsSection(path, "")}})
+		sections, err := openSections(root, []Section{specSection("apis/pets.yaml"), docsSection(path, "")})
 		if err != nil {
 			t.Errorf("content directory path %q: %v", path, err)
 		} else if _, err := fs.Stat(sections[1].docs, file); err != nil {
@@ -69,7 +69,7 @@ func TestOpenSections(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"missing", "docs/a.md", "/docs", "../docs"} {
-		_, err := openSections(Config{Root: root, Sections: []Section{specSection("apis/pets.yaml"), docsSection(path, "")}})
+		_, err := openSections(root, []Section{specSection("apis/pets.yaml"), docsSection(path, "")})
 		if err == nil || !strings.Contains(err.Error(), path) {
 			t.Errorf("content directory path %q: err = %v", path, err)
 		}
@@ -89,7 +89,7 @@ func TestOpenSectionsRefusesSymlinkedDocsPath(t *testing.T) {
 		"real/guides/intro.md": {Data: []byte("# Intro\n")},
 	}
 	open := func(path string) error {
-		_, err := openSections(Config{Root: root, Sections: []Section{specSection("api.yaml"), docsSection(path, "")}})
+		_, err := openSections(root, []Section{specSection("api.yaml"), docsSection(path, "")})
 		return err
 	}
 	for _, path := range []string{"docs", "up/sub"} {
@@ -108,13 +108,13 @@ func TestOpenSectionsRefusesSymlinkedDocsPath(t *testing.T) {
 func TestOpenSectionsChecksTocPath(t *testing.T) {
 	root := fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\n")}, "docs/a.md": {Data: []byte("# A\n")}}
 	for _, p := range []string{"../toc.json", "/toc.json", ".", "nav/../toc.json", "nav//toc.json"} {
-		if _, err := openSections(Config{Root: root, Sections: []Section{specSection("api.yaml"), docsSection("docs", p)}}); err == nil || !strings.Contains(err.Error(), "toc path") {
+		if _, err := openSections(root, []Section{specSection("api.yaml"), docsSection("docs", p)}); err == nil || !strings.Contains(err.Error(), "toc path") {
 			t.Errorf("%q: err = %v, want one about the toc path", p, err)
 		}
 	}
 	// A missing toc file is no error at startup: the sidebar falls back.
 	for _, p := range []string{"", "toc.json", "nav/toc.json"} {
-		if _, err := openSections(Config{Root: root, Sections: []Section{specSection("api.yaml"), docsSection("docs", p)}}); err != nil {
+		if _, err := openSections(root, []Section{specSection("api.yaml"), docsSection("docs", p)}); err != nil {
 			t.Errorf("%q: %v", p, err)
 		}
 	}
@@ -122,7 +122,7 @@ func TestOpenSectionsChecksTocPath(t *testing.T) {
 	// content directory.
 	spec := specSection("api.yaml")
 	spec.Toc = "toc.json"
-	if _, err := openSections(Config{Root: root, Sections: []Section{spec}}); err == nil || !strings.Contains(err.Error(), "content directory") {
+	if _, err := openSections(root, []Section{spec}); err == nil || !strings.Contains(err.Error(), "content directory") {
 		t.Errorf("a toc on a spec section: err = %v", err)
 	}
 }
@@ -173,16 +173,16 @@ func TestOpenSectionsChecksEverySection(t *testing.T) {
 		"a later docs miss": {[]Section{spec, docs, docsSection("missing", "")}, "missing"},
 		"a later bad toc":   {[]Section{spec, docs, with(docsSection("ops", ""), func(s *Section) { s.Title, s.Toc = "Ops", "../toc.json" })}, "../toc.json"},
 	} {
-		if _, err := openSections(Config{Root: root, Sections: tc.sections}); err == nil || !strings.Contains(err.Error(), tc.want) {
+		if _, err := openSections(root, tc.sections); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming %s", name, err, tc.want)
 		}
 	}
 
-	sections, err := openSections(Config{Root: root, Sections: []Section{
+	sections, err := openSections(root, []Section{
 		with(docs, func(s *Section) { s.Input, s.Toc = "./docs/", "./toc.json" }),
 		with(spec, func(s *Section) { s.Title, s.Input = "Store API", "./api.yaml" }),
 		with(docsSection("ops/", ""), func(s *Section) { s.Title = "Ops" }),
-	}})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestOpenSectionsChecksEverySection(t *testing.T) {
 			t.Errorf("section %d: %v", i, err)
 		}
 	}
-	if _, err := openSections(Config{Root: root, Sections: []Section{docs}}); err != nil {
+	if _, err := openSections(root, []Section{docs}); err != nil {
 		t.Errorf("docs without a spec: %v", err)
 	}
 }
@@ -218,7 +218,47 @@ func TestSlugOfKeepsDigitsOfAnyScript(t *testing.T) {
 
 func TestOpenSectionsRefusesTwoTrailingSlashes(t *testing.T) {
 	root := fstest.MapFS{"docs/a.md": {Data: []byte("# A\n")}}
-	if _, err := openSections(Config{Root: root, Sections: []Section{docsSection("docs//", "")}}); err == nil || !strings.Contains(err.Error(), "docs/") {
+	if _, err := openSections(root, []Section{docsSection("docs//", "")}); err == nil || !strings.Contains(err.Error(), "docs/") {
 		t.Errorf("docs//: err = %v, want a refusal", err)
+	}
+}
+
+func TestOpenPortals(t *testing.T) {
+	root := fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.1.0\n")}, "docs/a.md": {Data: []byte("# A\n")}}
+	api := []Section{specSection("api.yaml")}
+	sites, err := openPortals(Config{Root: root, Portals: []Portal{
+		{Name: "Pet Shop", Sections: api},
+		{Name: "Store", Sections: []Section{specSection("api.yaml"), docsSection("docs", "")}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sites) != 2 || sites[0].name != "Pet Shop" || sites[0].slug != "pet-shop" || len(sites[0].sections) != 1 ||
+		sites[1].slug != "store" || len(sites[1].sections) != 2 || sites[1].sections[1].docs == nil {
+		t.Errorf("sites: %+v", sites)
+	}
+	for name, tc := range map[string]struct {
+		cfg  Config
+		want string
+	}{
+		"no root":        {Config{Portals: []Portal{{Name: "Pets", Sections: api}}}, "documentation root"},
+		"no portals":     {Config{Root: root}, "no portals"},
+		"no name":        {Config{Root: root, Portals: []Portal{{Name: "Pets", Sections: api}, {Sections: api}}}, "portal 2 has no name"},
+		"an empty slug":  {Config{Root: root, Portals: []Portal{{Name: "--", Sections: api}}}, `"--"`},
+		"one slug twice": {Config{Root: root, Portals: []Portal{{Name: "Pets", Sections: api}, {Name: "PETS", Sections: api}}}, `"pets"`},
+		"a later section": {Config{Root: root, Portals: []Portal{{Name: "Pets", Sections: api}, {Name: "Store", Sections: []Section{docsSection("missing", "")}}}},
+			`portal "Store": section "Documents"`},
+	} {
+		if _, err := openPortals(tc.cfg); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want one naming %s", name, err, tc.want)
+		}
+	}
+}
+
+func TestOpenPortalsRefusesASlugTwoPortalsApart(t *testing.T) {
+	root := fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.1.0\n")}}
+	api := []Section{specSection("api.yaml")}
+	if _, err := openPortals(Config{Root: root, Portals: []Portal{{Name: "Pets", Sections: api}, {Name: "Store", Sections: api}, {Name: "PETS", Sections: api}}}); err == nil || !strings.Contains(err.Error(), `"pets"`) {
+		t.Errorf("err = %v, want one naming the slug pets", err)
 	}
 }

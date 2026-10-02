@@ -1,5 +1,6 @@
 // Command docportal serves the documentation of API specs and markdown files
-// from a local directory, as the sections of a configuration file.
+// from a local directory, as the portals of a configuration file, each a set
+// of sections.
 package main
 
 import (
@@ -91,7 +92,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags := flag.NewFlagSet("docportal", flag.ContinueOnError)
 	flags.SetOutput(&out)
 	flags.StringVar(&cfg.Addr, "addr", cfg.Addr, "address to listen on")
-	flags.StringVar(&cfg.ConfigName, "config", cfg.ConfigName, "configuration file, which lists the sections; its directory is the documentation root")
+	flags.StringVar(&cfg.ConfigName, "config", cfg.ConfigName, "configuration file, which lists the portals and their sections; its directory is the documentation root")
 	flags.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	flags.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
 	if err := flags.Parse(args); err != nil {
@@ -122,12 +123,13 @@ func setTryIt(pcfg portal.Config, hide bool) portal.Config {
 }
 
 // addChat adds the chat's routes to the portal configuration when modelID
-// names a model, so that the portal serves the chat page.
+// names a model, so that the portal handler serves a chat page in every
+// portal.
 func addChat(pcfg portal.Config, modelID string) (portal.Config, error) {
 	if modelID == "" {
 		return pcfg, nil
 	}
-	lib, err := portal.NewLibrary(pcfg)
+	libs, err := portal.NewLibraries(pcfg)
 	if err != nil {
 		return portal.Config{}, err
 	}
@@ -135,7 +137,7 @@ func addChat(pcfg portal.Config, modelID string) (portal.Config, error) {
 	if err != nil {
 		return portal.Config{}, err
 	}
-	c, err := chat.New(chat.Config{Model: m, Library: lib})
+	c, err := chat.New(chat.Config{Model: m, Libraries: libs})
 	if err != nil {
 		return portal.Config{}, err
 	}

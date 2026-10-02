@@ -11,6 +11,11 @@ templ chatPage(lv live.Ctx, p *page) {
 		.portal-nav { display: flex; gap: 1.25rem; align-items: center; height: 2.5rem; padding: 0 1rem; border-bottom: 1px solid #d8dde6; font: 14px Inter, ui-sans-serif, system-ui, sans-serif; }
 		.portal-nav a { color: inherit; text-decoration: none; }
 		.portal-nav a.current { font-weight: 600; }
+		.portal-menu { margin-left: auto; position: relative; }
+		.portal-menu summary { cursor: pointer; }
+		.portal-menu-list { position: absolute; right: 0; top: 100%; z-index: 10; display: flex; flex-direction: column; min-width: 12rem; margin-top: .5rem; padding: .25rem 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; }
+		.portal-menu-list a { padding: .375rem 1rem; }
+		.portal-menu-list a:hover { background: #f1f3f6; }
 		.chat { max-width: 760px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
 		.chat h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
 		.note { margin: 0 0 1.25rem; color: #6b7280; font-size: 0.9rem; }
@@ -30,6 +35,16 @@ templ chatPage(lv live.Ctx, p *page) {
 	<nav class="portal-nav">
 		for _, l := range p.Nav {
 			<a key={ l.URL } href={ templ.SafeURL(l.URL) } class={ templ.KV("current", l.Current) }>{ l.Label }</a>
+		}
+		if len(p.Menu) > 0 {
+			<details class="portal-menu">
+				<summary>{ p.Portal }</summary>
+				<div class="portal-menu-list">
+					for _, l := range p.Menu {
+						<a key={ l.URL } href={ templ.SafeURL(l.URL) }>{ l.Label }</a>
+					}
+				</div>
+			</details>
 		}
 	</nav>
 	<main class="chat">

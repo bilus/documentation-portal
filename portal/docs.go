@@ -149,7 +149,7 @@ func (s *site) renderMarkdown(sec *section, src []byte, docPath string) (templat
 		switch n := n.(type) {
 		case *ast.Image:
 			dest := unescape(n.Destination)
-			if url := rawImageURL(sec.slug, dir, dest); !bytes.Equal(url, dest) {
+			if url := rawImageURL(sec, dir, dest); !bytes.Equal(url, dest) {
 				n.Destination = url
 			}
 		case *ast.Link:
@@ -187,9 +187,9 @@ func unescape(dest []byte) []byte {
 }
 
 // rawImageURL turns an image reference relative to dir, a directory of the
-// content directory of the docs section with the slug slug, into its /raw/
-// URL, and returns any other reference unchanged.
-func rawImageURL(slug, dir string, dest []byte) []byte {
+// content directory of the docs section sec, into its raw file URL, and
+// returns any other reference unchanged.
+func rawImageURL(sec *section, dir string, dest []byte) []byte {
 	u, err := url.Parse(string(dest))
 	if err != nil || u.Scheme != "" || u.Host != "" || u.Path == "" || strings.HasPrefix(u.Path, "/") {
 		return dest
@@ -198,7 +198,7 @@ func rawImageURL(slug, dir string, dest []byte) []byte {
 	if p == ".." || strings.HasPrefix(p, "../") {
 		return dest
 	}
-	return []byte((&url.URL{Path: "/raw/" + slug + "/" + p, RawQuery: u.RawQuery, Fragment: u.Fragment}).String())
+	return []byte((&url.URL{Path: sec.base + "/raw/" + sec.slug + "/" + p, RawQuery: u.RawQuery, Fragment: u.Fragment}).String())
 }
 
 // rawFile writes the image file at the request's path in the docs section
