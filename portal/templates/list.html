@@ -17,10 +17,18 @@
 <div class="sl-py-16">
 <div class="sl-prose sl-markdown-viewer">
 <h1>{{.Title}}</h1>
+{{if .Contents}}{{range .Contents}}{{if .Title}}<h2>{{.Title}}</h2>
+{{end}}<ul>
+{{range .Links}}<li><a href="{{.URL}}">{{.Title}}</a></li>
+{{end}}</ul>
+{{end}}{{with .Docs}}<h2>Other documents</h2>
 <ul>
+{{range .}}<li><a href="{{.URL}}">{{.Path}}</a></li>
+{{end}}</ul>
+{{end}}{{else}}<ul>
 {{range .Docs}}<li><a href="{{.URL}}">{{.Path}}</a></li>
 {{end}}</ul>
-</div>
+{{end}}</div>
 </div>
 </div>
 </div>

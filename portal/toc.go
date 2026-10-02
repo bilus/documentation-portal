@@ -23,28 +23,29 @@ type tocEntry struct {
 }
 
 // tocSidebar returns the document sidebar that the toc file of the docs
-// section sec lays out, with the section's file at current marked, or an
-// error for a toc file that is missing or invalid or that names no page the
-// portal serves, and for a failed listing of the section's markdown files.
-func (s *site) tocSidebar(sec *section, current string) ([]sidebarGroup, error) {
+// section sec lays out, with the section's file at current marked, and the
+// set of the section's markdown files among the sidebar's links, or an error
+// for a toc file that is missing or invalid or that names no page the portal
+// serves, and for a failed listing of the section's markdown files.
+func (s *site) tocSidebar(sec *section, current string) ([]sidebarGroup, map[string]bool, error) {
 	entries, err := readToc(s.root, sec.Toc)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	pages, err := s.newTocPages(sec, current)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	groups := pages.groups(entries)
 	for _, g := range groups {
 		for _, l := range g.Links {
 			// link writes a page of the portal as a path, another site as a URL.
 			if strings.HasPrefix(l.URL, "/") {
-				return groups, nil
+				return groups, pages.linked, nil
 			}
 		}
 	}
-	return nil, errors.New("names no page that the portal serves")
+	return nil, nil, errors.New("names no page that the portal serves")
 }
 
 // readToc reads the toc file at p of fsys and returns its entries, or an
@@ -107,6 +108,7 @@ type tocPages struct {
 	sec     *section                     // the docs section of the page that shows the sidebar
 	current string                       // the markdown file of that page, or ""
 	docs    map[*section]map[string]bool // the markdown files of the docs sections listed so far
+	linked  map[string]bool              // the markdown files of sec among the links so far
 	specs   map[*section]*tocSpec        // the spec sections that the uris named so far
 }
 
@@ -128,7 +130,7 @@ func (s *site) newTocPages(sec *section, current string) (*tocPages, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &tocPages{s: s, sec: sec, current: current, docs: map[*section]map[string]bool{}, specs: map[*section]*tocSpec{}}
+	p := &tocPages{s: s, sec: sec, current: current, docs: map[*section]map[string]bool{}, linked: map[string]bool{}, specs: map[*section]*tocSpec{}}
 	p.docs[sec] = setOf(paths)
 	return p, nil
 }
@@ -199,7 +201,8 @@ func (p *tocPages) links(entries []tocEntry) []sidebarLink {
 // link returns the sidebar link titled title for uri, marked when it links
 // the current page, or false when title is empty or no page serves uri. A
 // uri is an http or https URL, or a path from the documentation root to a
-// markdown file of a docs section or to the spec of a spec section.
+// markdown file of a docs section or to the spec of a spec section. A link to
+// a markdown file of sec adds the file to linked.
 func (p *tocPages) link(title, uri string) (sidebarLink, bool) {
 	u, err := url.Parse(uri)
 	switch {
@@ -218,6 +221,9 @@ func (p *tocPages) link(title, uri string) (sidebarLink, bool) {
 		return sidebarLink{Title: title, URL: page}, true
 	}
 	if sec, doc, ok := p.docAt(target); ok {
+		if sec == p.sec {
+			p.linked[doc] = true
+		}
 		return sidebarLink{Title: title, URL: sec.docURL(doc, u.RawQuery, u.Fragment), Current: sec == p.sec && doc == p.current}, true
 	}
 	return sidebarLink{}, false

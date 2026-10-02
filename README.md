@@ -74,9 +74,11 @@ root, such as `toc.json`. The section's document sidebar then shows its
 entries in its order and under its titles: an entry for a markdown file links
 its document page, in any docs section, one for a spec or one of its
 operations links its section's viewer page, and an http or https URL stays as
-it is. The sidebar leaves out an entry that no page serves. A missing or
-invalid toc file brings back the list of markdown files, with a line in the
-log.
+it is. The sidebar leaves out an entry that no page serves. The section's
+document list shows the same entries, with a heading for each group and
+divider, and then the markdown files without an entry, under Other documents.
+A missing or invalid toc file brings back the list of markdown files, with a
+line in the log.
 
 ## Chat
 

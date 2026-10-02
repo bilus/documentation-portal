@@ -34,8 +34,11 @@ func (s *site) docsRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 // docList writes the document list of the docs section with the request's
-// slug: a link to the document page of every markdown file of its content
-// directory, sorted by path, or a 404 for a slug of no docs section.
+// slug, or a 404 for a slug of no docs section. With the section's toc file,
+// the list shows the toc's groups as the sidebar does, and then a link to the
+// document page of each other markdown file of the content directory. Without
+// one, or with a problem in it, the list links every markdown file. The files
+// come sorted by path.
 func (s *site) docList(w http.ResponseWriter, r *http.Request) {
 	sec, ok := s.docsFor(r.PathValue("slug"))
 	if !ok {
@@ -47,11 +50,19 @@ func (s *site) docList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	docs := make([]docLink, 0, len(paths))
-	for _, p := range paths {
-		docs = append(docs, docLink{Path: p, URL: sec.docURL(p, "", "")})
+	list := page{Title: sec.Title, Section: sec.Title, Nav: s.nav()}
+	contents, linked, ok := s.tocContents(sec, "")
+	if ok {
+		list.Sidebar, list.Contents = contents, contents
+	} else {
+		list.Sidebar = fileSidebar(sec, paths, "")
 	}
-	render(w, http.StatusOK, "list.html", page{Title: sec.Title, Section: sec.Title, Docs: docs, Nav: s.nav(), Sidebar: s.sidebar(sec, "")})
+	for _, p := range paths {
+		if !linked[p] {
+			list.Docs = append(list.Docs, docLink{Path: p, URL: sec.docURL(p, "", "")})
+		}
+	}
+	render(w, http.StatusOK, "list.html", list)
 }
 
 // markdownFiles returns the paths of the markdown files of fsys that are not
@@ -296,17 +307,33 @@ func (s *site) sidebar(sec *section, current string) []sidebarGroup {
 	if sec.docs == nil {
 		return nil
 	}
-	if sec.Toc != "" {
-		groups, err := s.tocSidebar(sec, current)
-		sec.noteTocProblem(err)
-		if err == nil {
-			return groups
-		}
+	if groups, _, ok := s.tocContents(sec, current); ok {
+		return groups
 	}
 	paths, err := markdownFiles(sec.docs)
 	if err != nil {
 		return nil
 	}
+	return fileSidebar(sec, paths, current)
+}
+
+// tocContents returns the groups that the toc file of the docs section sec
+// lays out, with its file at current marked, and the set of its markdown
+// files among their links, or false for a section without a toc file and for
+// a problem with the file, which goes to the log.
+func (s *site) tocContents(sec *section, current string) ([]sidebarGroup, map[string]bool, bool) {
+	if sec.Toc == "" {
+		return nil, nil, false
+	}
+	groups, linked, err := s.tocSidebar(sec, current)
+	sec.noteTocProblem(err)
+	return groups, linked, err == nil
+}
+
+// fileSidebar returns the document sidebar that links the document page of
+// each of paths, markdown files of the docs section sec, grouped by
+// directory, with the file at current marked.
+func fileSidebar(sec *section, paths []string, current string) []sidebarGroup {
 	byDir := map[string][]sidebarLink{}
 	for _, p := range paths {
 		dir := path.Dir(p)
