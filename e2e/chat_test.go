@@ -44,7 +44,7 @@ func TestChatAnswersAQuestion(t *testing.T) {
 	var href, target, label string
 	var ok bool
 	err = chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/chat"),
+		chromedp.Navigate(srv.URL+"/portals/pets/chat"),
 		chromedp.WaitVisible(`.phx-connected`, chromedp.ByQuery),
 		chromedp.AttributeValue(`textarea[name=question]`, "aria-label", &label, &ok, chromedp.ByQuery),
 		chromedp.SendKeys(`textarea[name=question]`, "How do I get one pet?", chromedp.ByQuery),

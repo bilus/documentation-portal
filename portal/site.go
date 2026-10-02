@@ -45,6 +45,11 @@ func (s *site) url() string {
 	return s.sections[0].pageURL()
 }
 
+// chatURL returns the URL of the portal's chat page.
+func (s *site) chatURL() string {
+	return (&url.URL{Path: "/portals/" + s.slug + "/chat"}).String()
+}
+
 // menu returns the links of the portal menu: the first section of every
 // portal under its name, in the order of the portal configuration, or none
 // with one portal.
@@ -189,7 +194,7 @@ func (s *site) nav() navBar {
 		links = append(links, navLink{Label: sec.Title, URL: sec.pageURL()})
 	}
 	if s.chat {
-		links = append(links, navLink{Label: "Chat", URL: "/chat"})
+		links = append(links, navLink{Label: "Chat", URL: s.chatURL()})
 	}
 	return navBar{Links: links, Portal: s.name, Menu: s.menu()}
 }

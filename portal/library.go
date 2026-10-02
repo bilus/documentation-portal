@@ -25,34 +25,24 @@ func NewLibraries(cfg Config) ([]*Library, error) {
 	if err != nil {
 		return nil, err
 	}
-	// HOLE(3): a library for every portal. Until then, the first portal's.
-	return []*Library{{s: sites[0]}}, nil
+	libs := make([]*Library, 0, len(sites))
+	for _, s := range sites {
+		libs = append(libs, &Library{s: s})
+	}
+	return libs, nil
 }
 
 // Name returns the name of the library's portal.
-func (l *Library) Name() string {
-	// HOLE(3): name the portal
-	return ""
-}
+func (l *Library) Name() string { return l.s.name }
 
 // Slug returns the slug of the library's portal.
-func (l *Library) Slug() string {
-	// HOLE(3): the portal's slug
-	return ""
-}
+func (l *Library) Slug() string { return l.s.slug }
 
 // URL returns the URL that opens the library's portal, at its first section.
-func (l *Library) URL() string {
-	// HOLE(3): the portal's URL. Until then, the URL that opens the first
-	// portal.
-	return "/"
-}
+func (l *Library) URL() string { return l.s.url() }
 
 // ChatURL returns the URL of the chat page of the library's portal.
-func (l *Library) ChatURL() string {
-	// HOLE(3): the portal's chat page. Until then, the chat page of #25.
-	return "/chat"
-}
+func (l *Library) ChatURL() string { return l.s.chatURL() }
 
 // SectionLink links a section's page from the navigation bar.
 type SectionLink struct {

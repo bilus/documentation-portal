@@ -158,3 +158,26 @@ func TestPortalPathRedirects(t *testing.T) {
 		t.Errorf("/portals/other: %d to %q, want 404", rec.Code, rec.Header().Get("Location"))
 	}
 }
+
+func TestLibrariesOfPortals(t *testing.T) {
+	root, portals := shopAndStore()
+	libs, err := portal.NewLibraries(portal.Config{Root: root, Portals: portals})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(libs) != 2 {
+		t.Fatalf("%d libraries, want 2", len(libs))
+	}
+	for i, want := range []struct{ name, slug, url, chat, title string }{
+		{"Pet Shop", "pet-shop", "/portals/pet-shop/specs/api", "/portals/pet-shop/chat", "Pets"},
+		{"Store", "store", "/portals/store/specs/api", "/portals/store/chat", "Store"},
+	} {
+		l := libs[i]
+		if l.Name() != want.name || l.Slug() != want.slug || l.URL() != want.url || l.ChatURL() != want.chat || l.Title() != want.title {
+			t.Errorf("library %d: %q %q %q %q %q, want %+v", i, l.Name(), l.Slug(), l.URL(), l.ChatURL(), l.Title(), want)
+		}
+	}
+	if docs, err := libs[1].Documents(); err != nil || len(docs) != 0 {
+		t.Errorf("the Store portal's documents: %+v, %v, want none", docs, err)
+	}
+}

@@ -2,8 +2,13 @@ package chat
 
 import (
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/bilus/live-templ/interpreter"
+
+	"github.com/bilus/documentation-portal/internal/fakemodel"
 )
 
 func TestClientOf(t *testing.T) {
@@ -58,5 +63,24 @@ func TestAnswerHTMLHasNoActiveContent(t *testing.T) {
 		if strings.Contains(got, bad) {
 			t.Errorf("%s holds %s", got, bad)
 		}
+	}
+}
+
+func TestChatPageAsksItsPortal(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Match: "questions from customers about the Store API.", Reply: "From the store."}})
+	c, err := New(Config{Model: m, Libraries: twoPortals(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := &url.URL{Path: "/portals/store/chat"}
+	lv := interpreter.NewCtx(t.Context(), u.Path, u, map[string]string{"client": "client"}, false)
+	p, err := c.mount(lv, c.agents[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Form.Question = "What is in the store?"
+	p.Ask(lv)
+	if last := p.Messages[len(p.Messages)-1]; last.Error || !strings.Contains(last.HTML, "From the store.") {
+		t.Errorf("the Store page's answer: %+v", last)
 	}
 }

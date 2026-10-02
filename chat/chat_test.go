@@ -101,11 +101,11 @@ func TestAskRefusesOverLimits(t *testing.T) {
 		t.Errorf("after the window: %v", err)
 	}
 	now = now.Add(2 * time.Hour)
-	if _, ok := c.convs["c1"]; !ok {
+	if _, ok := c.convs["pets/c1"]; !ok {
 		t.Fatal("c1 is gone too early")
 	}
 	c.admit(t.Context(), "z", "c3")
-	if _, ok := c.convs["c1"]; ok {
+	if _, ok := c.convs["pets/c1"]; ok {
 		t.Error("an idle conversation stayed")
 	}
 }
@@ -171,7 +171,7 @@ func TestAskRunsNoLookupOverTheLimit(t *testing.T) {
 	if _, err := c.Ask(t.Context(), "pets", "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
 		t.Fatalf("err = %v, want ErrTooManyTools", err)
 	}
-	got, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "c"})
+	got, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "pets/c"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestIdleConversationsLoseTheirSessions(t *testing.T) {
 	c := newChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "1"}, {Reply: "2"}}), Limits{Idle: time.Hour})
 	c.now = func() time.Time { return now }
 	session1 := func() error {
-		_, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "c1"})
+		_, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "pets/c1"})
 		return err
 	}
 	if _, err := c.Ask(t.Context(), "pets", "a", "c1", "q"); err != nil {
@@ -356,7 +356,7 @@ func TestChatNamesEveryAPI(t *testing.T) {
 		mux.Handle(r.Pattern, r.Handler)
 	}
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/chat", nil))
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))
 	if !strings.Contains(rec.Body.String(), "Ask about the Pets and Store APIs") {
 		t.Errorf("the chat page's heading names not every API: %q", rec.Body)
 	}
@@ -391,7 +391,6 @@ func twoPortals(t *testing.T) []*portal.Library {
 }
 
 func TestChatInEveryPortal(t *testing.T) {
-	t.Skip("HOLE(3): a chat page in every portal")
 	libs := twoPortals(t)
 	for i, want := range []struct{ name, slug, url, chat string }{
 		{"Pet Shop", "pet-shop", "/portals/pet-shop/specs/api", "/portals/pet-shop/chat"},

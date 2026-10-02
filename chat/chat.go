@@ -78,16 +78,17 @@ var (
 	ErrDeclined     = errors.New("chat: the model declined the question")
 	ErrCutOff       = errors.New("chat: the answer was cut off")
 	ErrUnavailable  = errors.New("chat: the model is unavailable")
+	ErrNoPortal     = errors.New("chat: no portal has the slug")
 )
 
 // ADK keys a session by application, user and session; every conversation
 // has one user, and its own session.
 const appName, userID, agentName = "docportal", "reader", "support"
 
-// Chat answers questions in conversations, each an ADK session.
+// Chat answers questions in conversations, each an ADK session, on the chat
+// page of each portal.
 type Chat struct {
-	lib      *portal.Library
-	runner   *runner.Runner
+	agents   []*portalAgent // one for each library, in order
 	sessions session.Service
 	limits   Limits
 	now      func() time.Time
@@ -95,6 +96,12 @@ type Chat struct {
 	mu    sync.Mutex
 	asked map[string][]time.Time // client: when its recent questions came
 	convs map[string]*conversation
+}
+
+// portalAgent answers from the library of one portal.
+type portalAgent struct {
+	lib    *portal.Library
+	runner *runner.Runner
 }
 
 type conversation struct {
@@ -109,16 +116,34 @@ func New(cfg Config) (*Chat, error) {
 	if cfg.Model == nil || len(cfg.Libraries) == 0 {
 		return nil, errors.New("chat: a model and a library are required")
 	}
-	// HOLE(3): an agent for every library. Until then, the first library's.
-	tt, err := tools(cfg.Libraries[0])
+	c := &Chat{
+		sessions: session.InMemoryService(),
+		limits:   cfg.Limits.withDefaults(),
+		now:      time.Now,
+		asked:    map[string][]time.Time{},
+		convs:    map[string]*conversation{},
+	}
+	for _, lib := range cfg.Libraries {
+		a, err := newAgent(cfg.Model, lib, c.sessions)
+		if err != nil {
+			return nil, err
+		}
+		c.agents = append(c.agents, a)
+	}
+	return c, nil
+}
+
+// newAgent builds the agent that answers from lib with m, and its runner,
+// which keeps its conversations in sessions.
+func newAgent(m model.LLM, lib *portal.Library, sessions session.Service) (*portalAgent, error) {
+	tt, err := tools(lib)
 	if err != nil {
 		return nil, err
 	}
-	lib := cfg.Libraries[0]
 	a, err := llmagent.New(llmagent.Config{
 		Name:        agentName,
 		Description: "Answers customers' questions about the API from its documentation.",
-		Model:       cfg.Model,
+		Model:       m,
 		// A provider, unlike Instruction, is not a template, so braces in the
 		// prompt stay as they are.
 		InstructionProvider: func(agent.ReadonlyContext) (string, error) {
@@ -130,28 +155,33 @@ func New(cfg Config) (*Chat, error) {
 	if err != nil {
 		return nil, err
 	}
-	sessions := session.InMemoryService()
 	r, err := runner.New(runner.Config{AppName: appName, Agent: a, SessionService: sessions, AutoCreateSession: true})
 	if err != nil {
 		return nil, err
 	}
-	return &Chat{
-		lib:      lib,
-		runner:   r,
-		sessions: sessions,
-		limits:   cfg.Limits.withDefaults(),
-		now:      time.Now,
-		asked:    map[string][]time.Time{},
-		convs:    map[string]*conversation{},
-	}, nil
+	return &portalAgent{lib: lib, runner: r}, nil
+}
+
+// agentFor returns the agent of the portal whose slug is slug, or false.
+func (c *Chat) agentFor(slug string) (*portalAgent, bool) {
+	for _, a := range c.agents {
+		if a.lib.Slug() == slug {
+			return a, true
+		}
+	}
+	return nil, false
 }
 
 // Ask answers question, asked by client in conversation conv on the chat
 // page of the portal whose slug is portalSlug, in markdown, from that
 // portal's library.
 func (c *Chat) Ask(ctx context.Context, portalSlug, client, conv, question string) (string, error) {
-	// HOLE(3): ask the portal's agent. Until then, the only agent.
-	_ = portalSlug
+	a, ok := c.agentFor(portalSlug)
+	if !ok {
+		return "", fmt.Errorf("%w %q", ErrNoPortal, portalSlug)
+	}
+	// A conversation lives in one portal, so its session is the portal's.
+	conv = portalSlug + "/" + conv
 	question = strings.TrimSpace(question)
 	switch {
 	case question == "":
@@ -168,7 +198,7 @@ func (c *Chat) Ask(ctx context.Context, portalSlug, client, conv, question strin
 	var answer strings.Builder
 	msg := genai.NewContentFromText(question, genai.RoleUser)
 	run := context.WithValue(ctx, budgetKey{}, &budget{max: int64(c.limits.ToolCalls)})
-	for ev, err := range c.runner.Run(run, userID, conv, msg, agent.RunConfig{}) {
+	for ev, err := range a.runner.Run(run, userID, conv, msg, agent.RunConfig{}) {
 		if err != nil {
 			switch {
 			case errors.Is(err, anthropicmodel.ErrRefused):

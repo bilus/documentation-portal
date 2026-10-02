@@ -311,11 +311,11 @@ func TestStartupServesChat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page := get(h, "/chat")
+	page := get(h, "/portals/petstore/chat")
 	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Ask about the") {
 		t.Errorf("chat page: %d %q", page.Code, page.Body)
 	}
-	if nav := get(h, "/portals/petstore/docs/guides/").Body.String(); !strings.Contains(nav, `href="/chat"`) {
+	if nav := get(h, "/portals/petstore/docs/guides/").Body.String(); !strings.Contains(nav, `href="/portals/petstore/chat"`) {
 		t.Errorf("the navigation bar has no Chat link: %q", nav)
 	}
 }
@@ -325,10 +325,10 @@ func TestStartupWithoutChat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := get(h, "/chat"); rec.Code != http.StatusNotFound {
-		t.Errorf("/chat: %d", rec.Code)
+	if rec := get(h, "/portals/petstore/chat"); rec.Code != http.StatusNotFound {
+		t.Errorf("/portals/petstore/chat: %d", rec.Code)
 	}
-	if nav := get(h, "/portals/petstore/docs/guides/").Body.String(); strings.Contains(nav, `href="/chat"`) {
+	if nav := get(h, "/portals/petstore/docs/guides/").Body.String(); strings.Contains(nav, `href="/portals/petstore/chat"`) {
 		t.Error("the navigation bar links a chat that is off")
 	}
 }
@@ -338,13 +338,13 @@ func TestStartupChatPageLinksTheSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page := get(h, "/chat").Body.String()
+	page := get(h, "/portals/petstore/chat").Body.String()
 	nav := page[max(strings.Index(page, "<nav"), 0):max(strings.Index(page, "</nav>"), 0)]
 	var links []string
 	for _, m := range regexp.MustCompile(`<a href="([^"]*)"[^>]*>([^<]*)</a>`).FindAllStringSubmatch(nav, -1) {
 		links = append(links, m[2]+" "+m[1])
 	}
-	if want := []string{"API /portals/petstore/specs/api", "Guides /portals/petstore/docs/guides/", "Chat /chat"}; !slices.Equal(links, want) {
+	if want := []string{"API /portals/petstore/specs/api", "Guides /portals/petstore/docs/guides/", "Chat /portals/petstore/chat"}; !slices.Equal(links, want) {
 		t.Errorf("the chat page links %q, want %q", links, want)
 	}
 }

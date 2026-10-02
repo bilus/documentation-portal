@@ -81,17 +81,18 @@ log.
 ## Chat
 
 With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
-`claude-opus-5-5`, the portal serves a chat page at `/chat`, where readers ask
-questions about the API. The model answers from the published specs and the
-markdown files of every section alone, through read-only tools, and links the
-pages it used. The page's heading and the model's instructions name the API
-of every spec section.
-Only the portal's own pages become links in an answer; any other URL shows as
-text. The Anthropic SDK reads its credentials from `ANTHROPIC_API_KEY`.
+`claude-opus-5-5`, every portal has a chat page at `/portals/{portal}/chat`,
+where readers ask questions about its APIs. The model answers from the
+published specs and the markdown files of the portal's sections alone, through
+read-only tools, and links the pages it used. The page's heading and the
+model's instructions name the API of every spec section of the portal. Only
+the portal handler's own pages become links in an answer; any other URL shows
+as text. The Anthropic SDK reads its credentials from `ANTHROPIC_API_KEY`.
 
     ANTHROPIC_API_KEY=... devbox run make run ARGS='-config testdata/environment.yaml -chat-model claude-opus-5-5'
 
-Each client may ask 20 questions an hour, a conversation holds 20 questions
+Each client may ask 20 questions an hour, in all portals together, a
+conversation holds 20 questions
 and 512 KiB of messages and lookups, and one answer may make 12 lookups. A
 client is an IPv4 address or an IPv6 /64 network. Behind a proxy, every reader
 shares the proxy's address. The page uses live-templ, a private module that Go

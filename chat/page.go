@@ -39,9 +39,10 @@ func (c *Chat) Routes() []portal.Route {
 	add := func(pattern string, h http.Handler) {
 		routes = append(routes, portal.Route{Pattern: pattern, Handler: h})
 	}
-	// HOLE(3): a page for every library. Until then, the first library's at
-	// the URL of #25.
-	add(app.Handler("/chat", chatComponent, c.mount, live.WithSession(clientOf)))
+	for _, a := range c.agents {
+		mount := func(lv live.Ctx) (*page, error) { return c.mount(lv, a) }
+		add(app.Handler(a.lib.ChatURL(), chatComponent, mount, live.WithSession(clientOf)))
+	}
 	add(app.Assets())
 	add(app.Socket())
 	return routes
@@ -66,7 +67,6 @@ func clientOf(r *http.Request) (map[string]string, error) {
 
 func chatComponent(lv live.Ctx, p *page) live.Component {
 	return component.Must(component.New(
-		chatPage(lv, p).Render,
 		func(context.Context) (*tree.Tree, error) {
 			return chatPageTree(lv, p)
 		},
@@ -76,11 +76,14 @@ func chatComponent(lv live.Ctx, p *page) live.Component {
 // page is the state of one chat tab: one conversation.
 type page struct {
 	chat     *Chat
+	portal   string // the slug of the page's portal
 	client   string
 	conv     string
 	next     int // the ID of the next message
 	Heading  string
 	Nav      []navLink
+	Portal   string    // the name of the page's portal, the label of the menu
+	Menu     []navLink // the portal menu's links, or none
 	Messages []message
 	Form     questionForm
 }
@@ -102,21 +105,27 @@ type questionForm struct {
 	Question string `form:"question"`
 }
 
-// mount starts a conversation in a new tab.
-func (c *Chat) mount(lv live.Ctx) (*page, error) {
+// mount starts a conversation in a new tab of the chat page of a's portal.
+func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 	id := make([]byte, 16)
 	// crypto/rand.Read is documented never to fail.
 	_, _ = rand.Read(id)
 	heading := "Ask about the API"
-	if names := apis(c.lib.Titles()); names != "" {
+	if names := apis(a.lib.Titles()); names != "" {
 		heading = "Ask about " + names
 	}
 	var nav []navLink
-	for _, s := range c.lib.Sections() {
+	for _, s := range a.lib.Sections() {
 		nav = append(nav, navLink{Label: s.Title, URL: s.URL})
 	}
-	nav = append(nav, navLink{Label: "Chat", URL: "/chat", Current: true})
-	return &page{chat: c, client: lv.Session("client"), conv: hex.EncodeToString(id), Heading: heading, Nav: nav}, nil
+	nav = append(nav, navLink{Label: "Chat", URL: a.lib.ChatURL(), Current: true})
+	var menu []navLink
+	if len(c.agents) > 1 {
+		for _, other := range c.agents {
+			menu = append(menu, navLink{Label: other.lib.Name(), URL: other.lib.URL()})
+		}
+	}
+	return &page{chat: c, portal: a.lib.Slug(), client: lv.Session("client"), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
 }
 
 // FormID changes with every message, so the page renders a new, empty form.
@@ -126,7 +135,7 @@ func (p *page) FormID() string { return "ask-" + strconv.Itoa(p.next) }
 func (p *page) Ask(lv live.Ctx) {
 	question := p.Form.Question
 	p.add(message{Mine: true, HTML: "<p>" + strings.ReplaceAll(html.EscapeString(strings.TrimSpace(question)), "\n", "<br>") + "</p>"})
-	answer, err := p.chat.Ask(lv, p.chat.lib.Slug(), p.client, p.conv, question)
+	answer, err := p.chat.Ask(lv, p.portal, p.client, p.conv, question)
 	if err != nil {
 		p.add(message{Error: true, HTML: "<p>" + html.EscapeString(p.chat.explain(err)) + "</p>"})
 		return
