@@ -129,7 +129,6 @@ func TestHomePage(t *testing.T) {
 }
 
 func TestPortalMenu(t *testing.T) {
-	t.Skip("HOLE(2): the portal menu")
 	root, portals := shopAndStore()
 	h := newPortals(t, root, portals...)
 	for _, path := range []string{"/portals/store/specs/api", "/portals/pet-shop/docs/guides/", "/portals/pet-shop/docs/guides/a.md"} {
@@ -146,5 +145,16 @@ func TestPortalMenu(t *testing.T) {
 	}
 	if one := get(newPortals(t, root, portals[1]), "/portals/store/specs/api").Body.String(); strings.Contains(one, "portal-menu") {
 		t.Errorf("a menu with one portal: %q", one)
+	}
+}
+
+func TestPortalPathRedirects(t *testing.T) {
+	root, portals := shopAndStore()
+	h := newPortals(t, root, portals...)
+	if rec := get(h, "/portals/store"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/portals/store/specs/api" {
+		t.Errorf("/portals/store: %d to %q, want the portal's first section", rec.Code, rec.Header().Get("Location"))
+	}
+	if rec := get(h, "/portals/other"); rec.Code != http.StatusNotFound {
+		t.Errorf("/portals/other: %d to %q, want 404", rec.Code, rec.Header().Get("Location"))
 	}
 }

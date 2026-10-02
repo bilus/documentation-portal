@@ -78,6 +78,7 @@ func newRouter(cfg Config, sites []*site, assets fs.FS) (http.Handler, error) {
 	rt := &router{sites: sites}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", rt.home)
+	mux.HandleFunc("GET /portals/{portal}", rt.serve((*site).index))
 	mux.HandleFunc("GET /portals/{portal}/{$}", rt.serve((*site).index))
 	mux.HandleFunc("GET /portals/{portal}/specs/{slug}", rt.serve((*site).viewerPage))
 	mux.HandleFunc("GET /portals/{portal}/api/specs/{slug}", rt.serve((*site).rawSpec))
@@ -117,7 +118,7 @@ func (rt *router) serve(h func(*site, http.ResponseWriter, *http.Request)) http.
 		slug := r.PathValue("portal")
 		s, ok := rt.portalFor(slug)
 		if !ok {
-			render(w, http.StatusNotFound, "error.html", page{Title: "Portal not found", Message: "No portal has the slug " + slug + ".", Nav: []navLink{{Label: "Portals", URL: "/"}}})
+			render(w, http.StatusNotFound, "error.html", page{Title: "Portal not found", Message: "No portal has the slug " + slug + ".", Nav: navBar{Links: []navLink{{Label: "Portals", URL: "/"}}}})
 			return
 		}
 		h(s, w, r)

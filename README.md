@@ -41,7 +41,8 @@ each run of characters other than letters and digits as one dash, such as
 viewer page is at `/portals/{portal}/specs/{slug}` and its raw spec at
 `/portals/{portal}/api/specs/{slug}`, and `/portals/{portal}/` opens the
 portal's first section. With one portal, `/` opens it; with several, `/` lists
-them. Links and toc entries stay within their portal. docportal does not start
+them, and a menu on the right of the navigation bar, labelled with the page's
+portal, opens any other. Links and toc entries stay within their portal. docportal does not start
 without portals, with a portal that has no name, with two portals of one slug,
 or with a problem in a portal's sections: a section that has no title, input
 or known type, two sections of one slug in a portal, a path outside the

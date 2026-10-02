@@ -20,6 +20,7 @@ type site struct {
 	name      string // the portal's name
 	slug      string // the portal's slug
 	sections  []*section
+	portals   []*site // the site of every portal, for the portal menu
 	hideTryIt bool
 	chat      bool // whether the portal handler serves a chat page
 }
@@ -48,8 +49,14 @@ func (s *site) url() string {
 // portal under its name, in the order of the portal configuration, or none
 // with one portal.
 func (s *site) menu() []navLink {
-	// HOLE(2): link every portal
-	return nil
+	if len(s.portals) < 2 {
+		return nil
+	}
+	links := make([]navLink, 0, len(s.portals))
+	for _, p := range s.portals {
+		links = append(links, navLink{Label: p.name, URL: p.url()})
+	}
+	return links
 }
 
 // specFor returns the spec section whose slug is slug, or false.
@@ -146,7 +153,7 @@ type page struct {
 	SpecURL   string // viewer page only
 	HideTryIt bool   // viewer page only
 	Message   string // error page only
-	Nav       []navLink
+	Nav       navBar
 	Section   string         // the docs section's title: document pages and lists only
 	Sidebar   []sidebarGroup // document pages and lists only
 	Docs      []docLink      // document list only
@@ -160,16 +167,23 @@ type docLink struct {
 	URL  string
 }
 
+// navBar is the navigation bar of a page.
+type navBar struct {
+	Links  []navLink
+	Portal string    // the name of the page's portal, the label of the menu
+	Menu   []navLink // the portal menu's links, or none
+}
+
 // navLink is one link of the navigation bar.
 type navLink struct {
 	Label string
 	URL   string
 }
 
-// nav returns the links of the navigation bar: each section's page under its
-// title, in the order of the portal configuration, and the chat page when the
-// portal serves one.
-func (s *site) nav() []navLink {
+// nav returns the navigation bar of the portal's pages: each section's page
+// under its title, in the order of the portal configuration, the chat page
+// when the portal handler serves one, and the portal menu.
+func (s *site) nav() navBar {
 	links := make([]navLink, 0, len(s.sections)+1)
 	for _, sec := range s.sections {
 		links = append(links, navLink{Label: sec.Title, URL: sec.pageURL()})
@@ -177,7 +191,7 @@ func (s *site) nav() []navLink {
 	if s.chat {
 		links = append(links, navLink{Label: "Chat", URL: "/chat"})
 	}
-	return links
+	return navBar{Links: links, Portal: s.name, Menu: s.menu()}
 }
 
 //go:embed templates/*.html

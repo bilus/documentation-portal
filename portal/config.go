@@ -99,6 +99,9 @@ func openPortals(cfg Config) ([]*site, error) {
 		}
 		sites = append(sites, newSite(cfg, p, sections))
 	}
+	for _, s := range sites {
+		s.portals = sites
+	}
 	return sites, nil
 }
 
