@@ -44,7 +44,7 @@ func TestDocLinks(t *testing.T) {
 		"docs/guide/docs/guide-oauth.md": {Data: []byte("# Not the root's\n")},
 		"docs/.drafts/draft.md":          {Data: []byte("# Draft\n")},
 	}
-	h, err := portal.New(portal.Config{Root: root, Sections: sections("apis/pets.yaml", "docs", "")})
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("apis/pets.yaml", "docs", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestSpecLinks(t *testing.T) {
 		"apis/other.yaml": {Data: []byte(pets)},
 		"docs/links.md":   {Data: []byte(page)},
 	}
-	h, err := portal.New(portal.Config{Root: root, Sections: sections("apis/pets.yaml", "docs", "")})
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("apis/pets.yaml", "docs", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestDocLinkWalk(t *testing.T) {
 		"docs/walk.md":        {Data: []byte(page)},
 		"docs/diagram.png":    {Data: []byte("png")},
 	}
-	h, err := portal.New(portal.Config{Root: root, Sections: sections("apis/pets.yaml", "docs", "")})
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("apis/pets.yaml", "docs", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestDocLinkTargets(t *testing.T) {
 		"docs/guide/diagram.png":         {Data: []byte("png")},
 		"docs/guide/docs/guide-oauth.md": {Data: []byte("# Not the root's\n")},
 	}
-	h, err := portal.New(portal.Config{Root: root, Sections: sections("apis/pets.yaml", "docs", "")})
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("apis/pets.yaml", "docs", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestDocLinkEscapes(t *testing.T) {
 		"docs/r&d.md":         {Data: []byte("# R and D\n")},
 		"docs/links.md":       {Data: []byte(page)},
 	}
-	h, err := portal.New(portal.Config{Root: root, Sections: sections("apis/pets.yaml", "docs", "")})
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("apis/pets.yaml", "docs", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestDocLinkEscapes(t *testing.T) {
 
 func TestSpecLinkToMissingSpec(t *testing.T) {
 	root := fstest.MapFS{"docs/links.md": {Data: []byte("- [spec](api.yaml)\n- [operation](api.yaml/paths/~1pets/get)\n")}}
-	h, err := portal.New(portal.Config{Root: root, Sections: sections("api.yaml", "docs", "")})
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("api.yaml", "docs", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func TestSpecLinkToSpecDirectory(t *testing.T) {
 		"api.yaml/readme.txt": {Data: []byte("not a spec\n")},
 		"docs/links.md":       {Data: []byte("- [spec](api.yaml)\n")},
 	}
-	h, err := portal.New(portal.Config{Root: root, Sections: sections("api.yaml", "docs", "")})
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("api.yaml", "docs", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}

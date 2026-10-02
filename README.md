@@ -10,25 +10,29 @@ pinned SHA-256, into `portal/elements/`, where the binary embeds them.
 
     devbox run make run ARGS='-config testdata/environment.yaml'
 
-Then open http://localhost:8080. The configuration file lists the sections of
-the portal, each under its title in the navigation bar: a spec, or a content
-directory of markdown files with an optional toc file.
+Then open http://localhost:8080. The configuration file lists the portals,
+each a named set of sections, and each section shows under its title in the
+navigation bar: a spec, or a content directory of markdown files with an
+optional toc file.
 
-    sections:
-      - title: API
-        type: spec
-        input: specs/petstore-3.1.yaml
-      - title: Guides
-        type: docs
-        input: docs
-        toc: toc.json
+    portals:
+      - name: Petstore
+        sections:
+          - title: API
+            type: spec
+            input: specs/petstore-3.1.yaml
+          - title: Guides
+            type: docs
+            input: docs
+            toc: toc.json
 
 The directory of the configuration file is the documentation root, and every
 input and toc path is relative to it. Each flag falls back to an environment
 variable: `-addr` to `DOCPORTAL_ADDR` (default `:8080`), `-config` to
 `DOCPORTAL_CONFIG` (default `environment.yaml`) and `-hide-try-it` to
 `DOCPORTAL_HIDE_TRY_IT` (default `false`). A program that mounts the portal
-passes the sections in `portal.Config`, or reads them with `portal.ReadConfig`.
+handler passes the portals in `portal.Config`, or reads them with
+`portal.ReadConfig`.
 
 The URLs of a section carry its slug: its title in lower case, with each run
 of characters other than letters and digits as one dash, such as `store-api`

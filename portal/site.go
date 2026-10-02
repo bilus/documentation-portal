@@ -14,17 +14,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// site answers the requests for the sections.
+// site answers the requests for the pages of one portal.
 type site struct {
 	root      fs.FS
+	name      string // the portal's name
+	slug      string // the portal's slug
 	sections  []*section
 	hideTryIt bool
-	chat      bool // whether the portal serves a chat page at /chat
+	chat      bool // whether the portal handler serves a chat page
 }
 
-// newSite returns the site of cfg's documentation root and sections.
-func newSite(cfg Config, sections []*section) *site {
-	return &site{root: cfg.Root, sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
+// newSite returns the site of the portal p of cfg, with sections, p's
+// sections after openSections has checked them.
+func newSite(cfg Config, p Portal, sections []*section) *site {
+	return &site{root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
+}
+
+// menu returns the links of the portal menu: the first section of every
+// portal under its name, in the order of the portal configuration, or none
+// with one portal.
+func (s *site) menu() []navLink {
+	// HOLE(2): link every portal
+	return nil
 }
 
 // specFor returns the spec section whose slug is slug, or false.

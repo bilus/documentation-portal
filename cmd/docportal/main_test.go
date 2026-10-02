@@ -23,12 +23,19 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 // sample is the sample configuration.
 const sample = "../../testdata/environment.yaml"
 
-// writeConfig writes a configuration file with sections, YAML under the
-// sections key, to dir and returns its name.
+// writeConfig writes a configuration file to dir, with one portal, Pets,
+// whose sections are the YAML of sections, a list at an indent of two
+// spaces, and returns its name.
 func writeConfig(t *testing.T, dir, sections string) string {
 	t.Helper()
 	name := filepath.Join(dir, "environment.yaml")
-	if err := os.WriteFile(name, []byte("sections:\n"+sections), 0o644); err != nil {
+	yaml := "portals:\n  - name: Pets\n    sections:\n"
+	for _, line := range strings.SplitAfter(sections, "\n") {
+		if line != "" {
+			yaml += "  " + line
+		}
+	}
+	if err := os.WriteFile(name, []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return name

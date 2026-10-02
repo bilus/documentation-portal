@@ -62,9 +62,9 @@ func (l Limits) withDefaults() Limits {
 
 // Config configures the chat.
 type Config struct {
-	Model   model.LLM
-	Library *portal.Library
-	Limits  Limits
+	Model     model.LLM
+	Libraries []*portal.Library // one for each portal, whose chat page the chat serves
+	Limits    Limits
 }
 
 // The errors that Ask returns for a question it does not answer.
@@ -103,16 +103,18 @@ type conversation struct {
 	lastUsed time.Time
 }
 
-// New builds the chat's agent over cfg's library and model.
+// New builds the chat's agent for each of cfg's libraries over cfg's model,
+// with one question limit for all of them.
 func New(cfg Config) (*Chat, error) {
-	if cfg.Model == nil || cfg.Library == nil {
+	if cfg.Model == nil || len(cfg.Libraries) == 0 {
 		return nil, errors.New("chat: a model and a library are required")
 	}
-	tt, err := tools(cfg.Library)
+	// HOLE(3): an agent for every library. Until then, the first library's.
+	tt, err := tools(cfg.Libraries[0])
 	if err != nil {
 		return nil, err
 	}
-	lib := cfg.Library
+	lib := cfg.Libraries[0]
 	a, err := llmagent.New(llmagent.Config{
 		Name:        agentName,
 		Description: "Answers customers' questions about the API from its documentation.",
@@ -144,8 +146,12 @@ func New(cfg Config) (*Chat, error) {
 	}, nil
 }
 
-// Ask answers question, asked by client in conversation, in markdown.
-func (c *Chat) Ask(ctx context.Context, client, conv, question string) (string, error) {
+// Ask answers question, asked by client in conversation conv on the chat
+// page of the portal whose slug is portalSlug, in markdown, from that
+// portal's library.
+func (c *Chat) Ask(ctx context.Context, portalSlug, client, conv, question string) (string, error) {
+	// HOLE(3): ask the portal's agent. Until then, the only agent.
+	_ = portalSlug
 	question = strings.TrimSpace(question)
 	switch {
 	case question == "":

@@ -28,7 +28,7 @@ func newLibrary(t *testing.T) *portal.Library {
 		"docs/leak.md":    {Data: []byte("../private.md"), Mode: fs.ModeSymlink},
 		"docs/guide/b.md": {Data: []byte("No heading here.\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: sections("api.yaml", "docs", "")})
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal(sections("api.yaml", "docs", ""))}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestLibraryReadsGuidesAsTheirPagesShowThem(t *testing.T) {
 		"docs/install.md": {Data: []byte("## Before you start\n\n```sh\n# install the CLI\n```\n\nInstall\n=======\n\nRun the installer.\n")},
 		"docs/closed.md":  {Data: []byte("# Closed title #\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: sections("api.yaml", "docs", "")})
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal(sections("api.yaml", "docs", ""))}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestLibraryReadsEveryPointerItGives(t *testing.T) {
 		"    Loop:\n      $ref: '#/components/pathItems/Loop'\n" +
 		"  schemas:\n    Pet: &pet\n      properties:\n        name:\n          type: string\n    Dog: *pet\n" +
 		"    Cat:\n      allOf:\n        - $ref: '#/components/schemas/Pet'\n        - description: A cat\n"
-	lib, err := portal.NewLibrary(portal.Config{Root: fstest.MapFS{"api.yaml": {Data: []byte(spec)}}, Sections: sections("api.yaml", "", "")})
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: fstest.MapFS{"api.yaml": {Data: []byte(spec)}}, Portals: petsPortal(sections("api.yaml", "", ""))}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestLibrarySearchFindsTheSpecPastManyGuideMatches(t *testing.T) {
 		"api.yaml":     {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      summary: List the pets\n")},
 		"docs/many.md": {Data: []byte(strings.Repeat("Pets are here.\n\n", 30))},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: sections("api.yaml", "docs", "")})
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal(sections("api.yaml", "docs", ""))}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,13 +235,13 @@ func TestLibraryReadsEachThingOnce(t *testing.T) {
 		"guides/a.md":          {Data: []byte("# A\n")},
 		"guides/deep/inner.md": {Data: []byte("# Inner\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal([]portal.Section{
 		{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"},
 		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
 		{Title: "Pets again", Type: portal.SpecSection, Input: "pets.yaml"},
 		{Title: "Guides", Type: portal.DocsSection, Input: "guides"},
 		{Title: "Deep", Type: portal.DocsSection, Input: "guides/deep"},
-	}})
+	})}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,21 +280,21 @@ func TestLibraryTitles(t *testing.T) {
 		return &fstest.MapFile{Data: []byte("openapi: 3.0.3\ninfo:\n  title: " + title + "\n  version: 1.0.0\npaths: {}\n")}
 	}
 	root := fstest.MapFS{"pets.yaml": spec("Pets"), "store.yaml": spec("Store"), "pets-v2.yaml": spec("Pets"), "broken.yaml": {Data: []byte("openapi: [3.0\n")}, "docs/a.md": {Data: []byte("# A\n")}}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal([]portal.Section{
 		{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"},
 		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
 		{Title: "Guides", Type: portal.DocsSection, Input: "docs"},
 		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
 		{Title: "Pets again", Type: portal.SpecSection, Input: "pets.yaml"},
 		{Title: "Pets v2", Type: portal.SpecSection, Input: "pets-v2.yaml"},
-	}})
+	})}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, want := lib.Titles(), []string{"Pets", "Store"}; !slices.Equal(got, want) {
 		t.Errorf("titles %q, want %q", got, want)
 	}
-	docsOnly, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{{Title: "Guides", Type: portal.DocsSection, Input: "docs"}}})
+	docsOnly, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal([]portal.Section{{Title: "Guides", Type: portal.DocsSection, Input: "docs"}})}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,11 +323,11 @@ func TestLibrarySearchTakesEverySpec(t *testing.T) {
 		}
 		return &fstest.MapFile{Data: []byte(yaml)}
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: fstest.MapFS{"pets.yaml": spec("Pets", 10), "store.yaml": spec("Store", 10), "users.yaml": spec("Users", 1)}, Sections: []portal.Section{
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: fstest.MapFS{"pets.yaml": spec("Pets", 10), "store.yaml": spec("Store", 10), "users.yaml": spec("Users", 1)}, Portals: petsPortal([]portal.Section{
 		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
 		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
 		{Title: "Users", Type: portal.SpecSection, Input: "users.yaml"},
-	}})
+	})}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,12 +352,12 @@ func TestLibraryLeavesOutWhatDoesNotLoad(t *testing.T) {
 		"a/x.md":      {Data: []byte("# X\n\nPets.\n")},
 		"b/y.md":      {Data: []byte("# Y\n\nPets.\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal([]portal.Section{
 		{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"},
 		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
 		{Title: "A", Type: portal.DocsSection, Input: "a"},
 		{Title: "B", Type: portal.DocsSection, Input: "b"},
-	}})
+	})}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +378,7 @@ func TestLibraryLeavesOutWhatDoesNotLoad(t *testing.T) {
 		t.Errorf("matches: %+v, %v, want a/x.md and the Pets spec", matches, err)
 	}
 
-	only, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"}}})
+	only, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal([]portal.Section{{Title: "Broken", Type: portal.SpecSection, Input: "broken.yaml"}})}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestLibraryLeavesOutWhatDoesNotLoad(t *testing.T) {
 	}
 
 	root["b/y.md"] = &fstest.MapFile{Data: []byte("# Y\n")}
-	docsOnly, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{{Title: "B", Type: portal.DocsSection, Input: "b"}}})
+	docsOnly, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal([]portal.Section{{Title: "B", Type: portal.DocsSection, Input: "b"}})}))
 	if err != nil {
 		t.Fatal(err)
 	}

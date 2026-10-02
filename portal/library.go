@@ -18,14 +18,40 @@ import (
 // markdown files of the docs sections, each with the URL of its page.
 type Library struct{ s *site }
 
-// NewLibrary returns the published documentation of cfg, or the error that
-// New gives for cfg.
-func NewLibrary(cfg Config) (*Library, error) {
-	sections, err := openSections(cfg)
+// NewLibraries returns the published documentation of each portal of cfg, in
+// order, or the error that New gives for cfg.
+func NewLibraries(cfg Config) ([]*Library, error) {
+	sites, err := openPortals(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return &Library{s: newSite(cfg, sections)}, nil
+	// HOLE(3): a library for every portal. Until then, the first portal's.
+	return []*Library{{s: sites[0]}}, nil
+}
+
+// Name returns the name of the library's portal.
+func (l *Library) Name() string {
+	// HOLE(3): name the portal
+	return ""
+}
+
+// Slug returns the slug of the library's portal.
+func (l *Library) Slug() string {
+	// HOLE(3): the portal's slug
+	return ""
+}
+
+// URL returns the URL that opens the library's portal, at its first section.
+func (l *Library) URL() string {
+	// HOLE(3): the portal's URL. Until then, the URL that opens the first
+	// portal.
+	return "/"
+}
+
+// ChatURL returns the URL of the chat page of the library's portal.
+func (l *Library) ChatURL() string {
+	// HOLE(3): the portal's chat page. Until then, the chat page of #25.
+	return "/chat"
 }
 
 // SectionLink links a section's page from the navigation bar.

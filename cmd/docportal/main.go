@@ -122,12 +122,13 @@ func setTryIt(pcfg portal.Config, hide bool) portal.Config {
 }
 
 // addChat adds the chat's routes to the portal configuration when modelID
-// names a model, so that the portal serves the chat page.
+// names a model, so that the portal handler serves a chat page in every
+// portal.
 func addChat(pcfg portal.Config, modelID string) (portal.Config, error) {
 	if modelID == "" {
 		return pcfg, nil
 	}
-	lib, err := portal.NewLibrary(pcfg)
+	libs, err := portal.NewLibraries(pcfg)
 	if err != nil {
 		return portal.Config{}, err
 	}
@@ -135,7 +136,7 @@ func addChat(pcfg portal.Config, modelID string) (portal.Config, error) {
 	if err != nil {
 		return portal.Config{}, err
 	}
-	c, err := chat.New(chat.Config{Model: m, Library: lib})
+	c, err := chat.New(chat.Config{Model: m, Libraries: libs})
 	if err != nil {
 		return portal.Config{}, err
 	}

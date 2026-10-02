@@ -15,7 +15,7 @@ const store = "openapi: 3.1.0\ninfo:\n  title: Store\n  version: 1.0.0\npaths:\n
 // newSections returns the portal of root with sections, or fails the test.
 func newSections(t *testing.T, root fstest.MapFS, sections ...portal.Section) http.Handler {
 	t.Helper()
-	h, err := portal.New(portal.Config{Root: root, Sections: sections})
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestSectionChecks(t *testing.T) {
 		"a spec's toc":    {[]portal.Section{with(spec, func(s *portal.Section) { s.Toc = "toc.json" })}, "toc"},
 		"a later problem": {[]portal.Section{spec, docs, with(docs, func(s *portal.Section) { s.Title, s.Input = "More", "missing" })}, "missing"},
 	} {
-		_, err := portal.New(portal.Config{Root: root, Sections: tc.sections})
+		_, err := portal.New(portal.Config{Root: root, Portals: petsPortal(tc.sections)})
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: err = %v, want one naming %s", name, err, tc.want)
 		}
@@ -245,12 +245,12 @@ func TestLibraryReadsEverySection(t *testing.T) {
 		"guides/a.md": {Data: []byte("# Start\n\nOrders come from GET /orders.\n")},
 		"ops/b.md":    {Data: []byte("# Runbook\n")},
 	}
-	lib, err := portal.NewLibrary(portal.Config{Root: root, Sections: []portal.Section{
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal([]portal.Section{
 		{Title: "Pets", Type: portal.SpecSection, Input: "pets.yaml"},
 		{Title: "Guides", Type: portal.DocsSection, Input: "guides"},
 		{Title: "Store", Type: portal.SpecSection, Input: "store.yaml"},
 		{Title: "Ops", Type: portal.DocsSection, Input: "ops"},
-	}})
+	})}))
 	if err != nil {
 		t.Fatal(err)
 	}

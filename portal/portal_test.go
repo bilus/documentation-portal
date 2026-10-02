@@ -14,7 +14,7 @@ const pets = "openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths: {}\
 
 func newPortal(t *testing.T, files fstest.MapFS, specPath string) http.Handler {
 	t.Helper()
-	h, err := portal.New(portal.Config{Root: files, Sections: sections(specPath, "", "")})
+	h, err := portal.New(portal.Config{Root: files, Portals: petsPortal(sections(specPath, "", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +30,20 @@ func sections(specPath, docsPath, tocPath string) []portal.Section {
 		s = append(s, portal.Section{Title: "Documents", Type: portal.DocsSection, Input: docsPath, Toc: tocPath})
 	}
 	return s
+}
+
+// petsPortal returns one portal, named Pets, with sections.
+func petsPortal(sections []portal.Section) []portal.Portal {
+	return []portal.Portal{{Name: "Pets", Sections: sections}}
+}
+
+// firstLibrary returns the first of libs, the libraries of NewLibraries, or
+// its error.
+func firstLibrary(libs []*portal.Library, err error) (*portal.Library, error) {
+	if err != nil {
+		return nil, err
+	}
+	return libs[0], nil
 }
 
 func get(h http.Handler, path string) *httptest.ResponseRecorder {
@@ -65,7 +79,7 @@ func TestIndexRedirects(t *testing.T) {
 func TestIndexOpensTheFirstSection(t *testing.T) {
 	files := fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}, "docs/a.md": {Data: []byte("# A\n")}}
 	s := sections("apis/pets.yaml", "docs", "")
-	h, err := portal.New(portal.Config{Root: files, Sections: []portal.Section{s[1], s[0]}})
+	h, err := portal.New(portal.Config{Root: files, Portals: petsPortal([]portal.Section{s[1], s[0]})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +110,7 @@ func TestViewerPage(t *testing.T) {
 }
 
 func TestViewerPageHidesTryIt(t *testing.T) {
-	h, err := portal.New(portal.Config{Root: fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, Sections: sections("apis/pets.yaml", "", ""), HideTryIt: true})
+	h, err := portal.New(portal.Config{Root: fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}}, Portals: petsPortal(sections("apis/pets.yaml", "", "")), HideTryIt: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +205,7 @@ func TestNewRefusesBadChatRoutes(t *testing.T) {
 		{Pattern: "GET /chat/{", Handler: ok},
 		{Pattern: "GET /specs/{name}", Handler: ok},
 	} {
-		cfg := portal.Config{Root: fstest.MapFS{"api.yaml": {Data: []byte(pets)}}, Sections: sections("api.yaml", "", ""), Chat: []portal.Route{r}}
+		cfg := portal.Config{Root: fstest.MapFS{"api.yaml": {Data: []byte(pets)}}, Portals: petsPortal(sections("api.yaml", "", "")), Chat: []portal.Route{r}}
 		if _, err := portal.New(cfg); err == nil {
 			t.Errorf("%s with handler %v: no error", r.Pattern, r.Handler)
 		}

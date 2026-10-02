@@ -15,7 +15,7 @@
     < documentation root handle
     <Documentation root>
 > documentation root handle, configuration file path
-[7. Read the sections from the configuration file
+[7. Read the portals from the configuration file
  into the portal configuration
  (portal.ReadConfig)]
     > configuration file path
@@ -27,13 +27,13 @@
  (main.setTryIt)]
 > portal configuration, chat model
 [6. Add the chat to the portal configuration, if a chat model is named
- so that the portal serves the chat page
+ so that the portal handler serves a chat page in every portal
  (main.addChat)]
 > portal configuration
-[3. Build the portal
- or refuse sections that openSections refuses, or missing Elements assets
+[3. Build the portal handler
+ or refuse portals that openPortals refuses, or missing Elements assets
  (portal.New)]
-> address, portal
+> address, portal handler
 {HTTP server}
 
 # type: arguments = []string
@@ -47,4 +47,4 @@
 # type: chat model = string
 # type: portal configuration = portal.Config
 # type: address = string
-# type: portal = net/http.Handler
+# type: portal handler = net/http.Handler

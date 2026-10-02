@@ -1,8 +1,10 @@
 # The sample configuration: docportal's tests read it with -config.
-sections:
-  - title: API
-    type: spec
-    input: specs/petstore-3.1.yaml
-  - title: Guides
-    type: docs
-    input: docs
+portals:
+  - name: Petstore
+    sections:
+      - title: API
+        type: spec
+        input: specs/petstore-3.1.yaml
+      - title: Guides
+        type: docs
+        input: docs

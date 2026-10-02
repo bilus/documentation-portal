@@ -15,7 +15,7 @@ import (
 )
 
 func TestOperationLinkOpensOperation(t *testing.T) {
-	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), Sections: sections("specs/petstore-3.1.yaml", "docs", "")})
+	h, err := portal.New(portal.Config{Root: os.DirFS("../testdata"), Portals: petsPortal(sections("specs/petstore-3.1.yaml", "docs", ""))})
 	if err != nil {
 		t.Fatal(err)
 	}

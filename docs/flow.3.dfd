@@ -3,9 +3,9 @@
 
 {6 Add the chat}
 > portal configuration
-[3.1. Check the sections and open the content directory of each docs section
+[3.1. Check the portals and their sections and open the content directory of each docs section
  so that every input and toc path stays inside the documentation root
- (portal.openSections)]
+ (portal.openPortals)]
     > content directory path
     < content directory handle
     <Documentation root>
@@ -13,15 +13,15 @@
 [3.2. Load the Elements assets
  or refuse to start without them
  (portal.loadAssets)]
-> portal configuration, sections, Elements assets
+> portal configuration, sites, Elements assets
 [3.3. Build the router
- that sends each request to a section's page: a spec section's viewer page or raw spec, or a docs section's document list, document page or raw file, with the document sidebar from the section's toc file when it names one; and the Elements assets, and with a chat its routes
+ that sends each request to a portal's page by the portal's slug: a spec section's viewer page or raw spec, or a docs section's document list, document page or raw file, with the document sidebar from the section's toc file when it names one; and the home page, the Elements assets, and with a chat its routes
  (portal.newRouter)]
-> portal
+> portal handler
 {HTTP server}
 
 # type: portal configuration = portal.Config
-# type: sections = []*portal.section
+# type: sites = []*portal.site
 # type: content directory handle = io/fs.FS
 # type: Elements assets = io/fs.FS
-# type: portal = net/http.Handler
+# type: portal handler = net/http.Handler

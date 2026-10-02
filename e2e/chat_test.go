@@ -17,8 +17,8 @@ import (
 )
 
 func TestChatAnswersAQuestion(t *testing.T) {
-	cfg := portal.Config{Root: os.DirFS("../testdata"), Sections: sections("specs/petstore-3.1.yaml", "docs", "")}
-	lib, err := portal.NewLibrary(cfg)
+	cfg := portal.Config{Root: os.DirFS("../testdata"), Portals: petsPortal(sections("specs/petstore-3.1.yaml", "docs", ""))}
+	lib, err := firstLibrary(portal.NewLibraries(cfg))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestChatAnswersAQuestion(t *testing.T) {
 		{Match: "How do I get one pet?", Call: &fakemodel.Call{Name: "list_operations", Args: map[string]any{}}},
 		{Match: "showPetById", Reply: "Call [Info for a specific pet](/specs/api#/operations/showPetById)."},
 	})
-	c, err := chat.New(chat.Config{Model: m, Library: lib})
+	c, err := chat.New(chat.Config{Model: m, Libraries: []*portal.Library{lib}})
 	if err != nil {
 		t.Fatal(err)
 	}

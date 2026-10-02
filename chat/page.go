@@ -31,14 +31,16 @@ import (
 	"github.com/bilus/documentation-portal/portal"
 )
 
-// Routes returns the chat page at /chat, with the socket and the scripts
-// that it needs.
+// Routes returns the chat page of each library's portal at its ChatURL, with
+// the socket and the scripts that they need.
 func (c *Chat) Routes() []portal.Route {
 	app := live.NewApp()
 	var routes []portal.Route
 	add := func(pattern string, h http.Handler) {
 		routes = append(routes, portal.Route{Pattern: pattern, Handler: h})
 	}
+	// HOLE(3): a page for every library. Until then, the first library's at
+	// the URL of #25.
 	add(app.Handler("/chat", chatComponent, c.mount, live.WithSession(clientOf)))
 	add(app.Assets())
 	add(app.Socket())
@@ -124,7 +126,7 @@ func (p *page) FormID() string { return "ask-" + strconv.Itoa(p.next) }
 func (p *page) Ask(lv live.Ctx) {
 	question := p.Form.Question
 	p.add(message{Mine: true, HTML: "<p>" + strings.ReplaceAll(html.EscapeString(strings.TrimSpace(question)), "\n", "<br>") + "</p>"})
-	answer, err := p.chat.Ask(lv, p.client, p.conv, question)
+	answer, err := p.chat.Ask(lv, p.chat.lib.Slug(), p.client, p.conv, question)
 	if err != nil {
 		p.add(message{Error: true, HTML: "<p>" + html.EscapeString(p.chat.explain(err)) + "</p>"})
 		return
