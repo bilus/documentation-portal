@@ -40,8 +40,8 @@ type Portal struct {
 // ReadConfig reads the portals from the configuration file at name, a path
 // inside root, into the portal configuration of root. It refuses no root, a
 // file that is missing, that is not YAML or that holds more than one YAML
-// document, and a key it does not know. An empty file gives no portals. New
-// checks the portals.
+// document, a key it does not know, and an empty entry in a list of portals
+// or of sections. An empty file gives no portals. New checks the portals.
 func ReadConfig(root fs.FS, name string) (Config, error) {
 	if root == nil {
 		return Config{}, errors.New("no documentation root")
@@ -52,8 +52,12 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
+	// Pointers keep an empty entry, which yaml.v3 drops from a list of structs.
 	var file struct {
-		Portals []Portal `yaml:"portals"`
+		Portals []*struct {
+			Name     string     `yaml:"name"`
+			Sections []*Section `yaml:"sections"`
+		} `yaml:"portals"`
 	}
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, fmt.Errorf("configuration file %s: %w", name, err)
@@ -64,7 +68,21 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 	case !errors.Is(err, io.EOF):
 		return Config{}, fmt.Errorf("configuration file %s: %w", name, err)
 	}
-	return Config{Root: root, Portals: file.Portals}, nil
+	var portals []Portal
+	for i, p := range file.Portals {
+		if p == nil {
+			return Config{}, fmt.Errorf("configuration file %s: portal %d is empty", name, i+1)
+		}
+		var sections []Section
+		for j, sec := range p.Sections {
+			if sec == nil {
+				return Config{}, fmt.Errorf("configuration file %s: portal %q: section %d is empty", name, p.Name, j+1)
+			}
+			sections = append(sections, *sec)
+		}
+		portals = append(portals, Portal{Name: p.Name, Sections: sections})
+	}
+	return Config{Root: root, Portals: portals}, nil
 }
 
 // openPortals checks the portals of cfg and their sections and opens the

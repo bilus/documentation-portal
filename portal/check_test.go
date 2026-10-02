@@ -254,3 +254,11 @@ func TestOpenPortals(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenPortalsRefusesASlugTwoPortalsApart(t *testing.T) {
+	root := fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.1.0\n")}}
+	api := []Section{specSection("api.yaml")}
+	if _, err := openPortals(Config{Root: root, Portals: []Portal{{Name: "Pets", Sections: api}, {Name: "Store", Sections: api}, {Name: "PETS", Sections: api}}}); err == nil || !strings.Contains(err.Error(), `"pets"`) {
+		t.Errorf("err = %v, want one naming the slug pets", err)
+	}
+}

@@ -460,3 +460,42 @@ func TestNewNeedsAModelAndALibrary(t *testing.T) {
 		}
 	}
 }
+
+func TestNewRefusesLibrariesItCannotServe(t *testing.T) {
+	m := fakemodel.New("opus", nil)
+	lib := library(t)
+	for name, libs := range map[string][]*portal.Library{
+		"no library":       {},
+		"a nil library":    {lib, nil},
+		"one portal twice": {lib, lib},
+	} {
+		if _, err := New(Config{Model: m, Libraries: libs}); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+func TestChatPageMenu(t *testing.T) {
+	c, err := New(Config{Model: fakemodel.New("opus", nil), Libraries: twoPortals(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	for _, r := range c.Routes() {
+		mux.Handle(r.Pattern, r.Handler)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/store/chat", nil))
+	page := rec.Body.String()
+	for _, want := range []string{"<summary>Store</summary>", `<a href="/portals/pet-shop/specs/api">Pet Shop</a><a href="/portals/store/specs/api">Store</a>`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the Store portal's chat page lacks %s: %q", want, page)
+		}
+	}
+}
+
+func TestAskNamesNoPortal(t *testing.T) {
+	if _, err := newChat(t, fakemodel.New("opus", nil), Limits{}).Ask(t.Context(), "other", "client", "conv", "How?"); !errors.Is(err, ErrNoPortal) {
+		t.Errorf("err = %v, want ErrNoPortal", err)
+	}
+}

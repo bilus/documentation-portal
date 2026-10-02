@@ -111,7 +111,8 @@ type conversation struct {
 }
 
 // New builds the chat's agent for each of cfg's libraries over cfg's model,
-// with one question limit for all of them.
+// with one question limit for all of them, or refuses no model, no library,
+// a nil library and two libraries with one slug.
 func New(cfg Config) (*Chat, error) {
 	if cfg.Model == nil || len(cfg.Libraries) == 0 {
 		return nil, errors.New("chat: a model and a library are required")
@@ -123,7 +124,13 @@ func New(cfg Config) (*Chat, error) {
 		asked:    map[string][]time.Time{},
 		convs:    map[string]*conversation{},
 	}
-	for _, lib := range cfg.Libraries {
+	for i, lib := range cfg.Libraries {
+		if lib == nil {
+			return nil, fmt.Errorf("chat: library %d is nil", i+1)
+		}
+		if _, taken := c.agentFor(lib.Slug()); taken {
+			return nil, fmt.Errorf("chat: two libraries have the slug %q", lib.Slug())
+		}
 		a, err := newAgent(cfg.Model, lib, c.sessions)
 		if err != nil {
 			return nil, err

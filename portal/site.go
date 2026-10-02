@@ -22,17 +22,19 @@ type site struct {
 	sections  []*section
 	portals   []*site // the site of every portal, for the portal menu
 	hideTryIt bool
-	chat      bool // whether the portal handler serves a chat page
+	chat      bool // whether a route of the chat serves the portal's chat page
 }
 
 // newSite returns the site of the portal p of cfg, with sections, p's
 // sections after openSections has checked them, whose URLs it puts under the
-// portal's URL path.
+// portal's URL path. The site links its chat page when a route of cfg.Chat
+// serves that page.
 func newSite(cfg Config, p Portal, sections []*section) *site {
-	s := &site{root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
+	s := &site{root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt}
 	for _, sec := range sections {
 		sec.base = "/portals/" + s.slug
 	}
+	s.chat = slices.ContainsFunc(cfg.Chat, func(r Route) bool { return r.Pattern == "GET "+s.chatURL() })
 	return s
 }
 

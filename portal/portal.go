@@ -86,6 +86,8 @@ func newRouter(cfg Config, sites []*site, assets fs.FS) (http.Handler, error) {
 	mux.HandleFunc("GET /portals/{portal}/docs/{slug}/{$}", rt.serve((*site).docList))
 	mux.HandleFunc("GET /portals/{portal}/docs/{slug}/{path...}", rt.serve((*site).docPage))
 	mux.HandleFunc("GET /portals/{portal}/raw/{slug}/{path...}", rt.serve((*site).rawFile))
+	// Any other path of a portal: the named 404 for a slug of no portal.
+	mux.HandleFunc("GET /portals/{portal}/{rest...}", rt.serve(func(_ *site, w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
 	for _, r := range cfg.Chat {
 		if err := handle(mux, r); err != nil {

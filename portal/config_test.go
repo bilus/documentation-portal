@@ -89,3 +89,15 @@ func TestReadConfigRefusesNilRoot(t *testing.T) {
 		t.Errorf("%+v, %v, want an error about the documentation root", cfg, err)
 	}
 }
+
+func TestReadConfigRefusesEmptyEntries(t *testing.T) {
+	for data, want := range map[string]string{
+		"portals:\n  - name: One\n    sections: [{title: A, type: spec, input: a.yaml}]\n  -\n": "portal 2 is empty",
+		"portals:\n  - ~\n": "portal 1 is empty",
+		"portals:\n  - name: One\n    sections:\n      - {title: A, type: spec, input: a.yaml}\n      -\n": `portal "One": section 2 is empty`,
+	} {
+		if cfg, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(data)}}, "environment.yaml"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %+v, %v, want an error naming %s", data, cfg.Portals, err, want)
+		}
+	}
+}

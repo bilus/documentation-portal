@@ -1,5 +1,6 @@
 // Command docportal serves the documentation of API specs and markdown files
-// from a local directory, as the sections of a configuration file.
+// from a local directory, as the portals of a configuration file, each a set
+// of sections.
 package main
 
 import (
@@ -91,7 +92,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags := flag.NewFlagSet("docportal", flag.ContinueOnError)
 	flags.SetOutput(&out)
 	flags.StringVar(&cfg.Addr, "addr", cfg.Addr, "address to listen on")
-	flags.StringVar(&cfg.ConfigName, "config", cfg.ConfigName, "configuration file, which lists the sections; its directory is the documentation root")
+	flags.StringVar(&cfg.ConfigName, "config", cfg.ConfigName, "configuration file, which lists the portals and their sections; its directory is the documentation root")
 	flags.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	flags.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
 	if err := flags.Parse(args); err != nil {

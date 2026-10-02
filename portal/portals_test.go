@@ -181,3 +181,59 @@ func TestLibrariesOfPortals(t *testing.T) {
 		t.Errorf("the Store portal's documents: %+v, %v, want none", docs, err)
 	}
 }
+
+func TestChatLinkOnlyWhereServed(t *testing.T) {
+	root, portals := shopAndStore()
+	ok := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	h, err := portal.New(portal.Config{Root: root, Portals: portals, Chat: []portal.Route{{Pattern: "GET /portals/pet-shop/chat", Handler: ok}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shop := get(h, "/portals/pet-shop/specs/api").Body.String(); !strings.Contains(shop, `<a href="/portals/pet-shop/chat">Chat</a>`) {
+		t.Errorf("Pet Shop, whose chat page a route serves, links no chat: %q", shop)
+	}
+	if store := get(h, "/portals/store/specs/api").Body.String(); strings.Contains(store, ">Chat</a>") {
+		t.Errorf("Store, whose chat page no route serves, links a chat: %q", store)
+	}
+}
+
+func TestUnknownPortalAnyPath(t *testing.T) {
+	root, portals := shopAndStore()
+	h := newPortals(t, root, portals...)
+	for _, path := range []string{"/portals/other/chat", "/portals/other/x/y", "/portals/other/specs/api/extra"} {
+		rec := get(h, path)
+		if body := rec.Body.String(); rec.Code != http.StatusNotFound || !strings.Contains(body, "No portal has the slug other.") || !strings.Contains(body, `href="/"`) {
+			t.Errorf("%s: %d %q", path, rec.Code, body)
+		}
+	}
+	if rec := get(h, "/portals/store/nonsense"); rec.Code != http.StatusNotFound {
+		t.Errorf("an unknown path of a known portal: %d", rec.Code)
+	}
+}
+
+func TestDocsFirstPortal(t *testing.T) {
+	root, portals := shopAndStore()
+	docsFirst := portal.Portal{Name: "Docs First", Sections: []portal.Section{portals[0].Sections[1], portals[0].Sections[0]}}
+	cfg := portal.Config{Root: root, Portals: []portal.Portal{docsFirst, portals[1]}}
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if home := get(h, "/").Body.String(); !strings.Contains(home, `<a href="/portals/docs-first/docs/guides/">Docs First</a>`) {
+		t.Errorf("the home page does not open a docs-first portal at its document list: %q", home)
+	}
+	libs, err := portal.NewLibraries(cfg)
+	if err != nil || libs[0].URL() != "/portals/docs-first/docs/guides/" {
+		t.Errorf("the library's URL: %v", err)
+	}
+}
+
+func TestPortalSlugsAreExact(t *testing.T) {
+	root, portals := shopAndStore()
+	h := newPortals(t, root, portals...)
+	for _, path := range []string{"/portals/Store/specs/api", "/portals/STORE/", "/portals/pet%20shop/specs/api"} {
+		if rec := get(h, path); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: %d, want 404", path, rec.Code)
+		}
+	}
+}

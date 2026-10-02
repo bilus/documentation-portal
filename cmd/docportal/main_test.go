@@ -348,3 +348,28 @@ func TestStartupChatPageLinksTheSections(t *testing.T) {
 		t.Errorf("the chat page links %q, want %q", links, want)
 	}
 }
+
+func TestStartupServesAChatPageInEveryPortal(t *testing.T) {
+	dir := t.TempDir()
+	spec, err := os.ReadFile("../../testdata/specs/petstore-3.1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pets.yaml"), spec, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(dir, "environment.yaml")
+	two := "portals:\n  - {name: One, sections: [{title: API, type: spec, input: pets.yaml}]}\n  - {name: Two, sections: [{title: API, type: spec, input: pets.yaml}]}\n"
+	if err := os.WriteFile(config, []byte(two), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, h, err := startup([]string{"-config", config, "-chat-model", "claude-opus-5-5"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/portals/one/chat", "/portals/two/chat"} {
+		if page := get(h, path); page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Ask about the") {
+			t.Errorf("%s: %d", path, page.Code)
+		}
+	}
+}
