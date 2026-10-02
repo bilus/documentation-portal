@@ -50,15 +50,15 @@ func TestStartupServesSpec(t *testing.T) {
 		t.Errorf("addr = %q, want :8080", addr)
 	}
 
-	page := get(h, "/specs/api")
+	page := get(h, "/portals/petstore/specs/api")
 	if page.Code != http.StatusOK || !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("viewer page: %d %s", page.Code, page.Header().Get("Content-Type"))
 	}
-	if want := `apiDescriptionUrl="/api/specs/api"`; !strings.Contains(page.Body.String(), want) {
+	if want := `apiDescriptionUrl="/portals/petstore/api/specs/api"`; !strings.Contains(page.Body.String(), want) {
 		t.Errorf("viewer page does not contain %s", want)
 	}
 
-	raw := get(h, "/api/specs/api")
+	raw := get(h, "/portals/petstore/api/specs/api")
 	want, err := os.ReadFile("../../testdata/specs/petstore-3.1.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -143,11 +143,11 @@ func TestStartupServesDocs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	list := get(h, "/docs/guides/")
-	if list.Code != http.StatusOK || !strings.HasPrefix(list.Header().Get("Content-Type"), "text/html") || !strings.Contains(list.Body.String(), `href="/docs/guides/guide/intro.md"`) {
+	list := get(h, "/portals/petstore/docs/guides/")
+	if list.Code != http.StatusOK || !strings.HasPrefix(list.Header().Get("Content-Type"), "text/html") || !strings.Contains(list.Body.String(), `href="/portals/petstore/docs/guides/guide/intro.md"`) {
 		t.Errorf("document list: %d %s %q", list.Code, list.Header().Get("Content-Type"), list.Body)
 	}
-	page := get(h, "/docs/guides/guide/intro.md")
+	page := get(h, "/portals/petstore/docs/guides/guide/intro.md")
 	if page.Code != http.StatusOK || !strings.HasPrefix(page.Header().Get("Content-Type"), "text/html") || !strings.Contains(page.Body.String(), "Introduction") {
 		t.Errorf("document page: %d %s %q", page.Code, page.Header().Get("Content-Type"), page.Body)
 	}
@@ -228,12 +228,12 @@ func TestStartupKeepsDocsInside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/docs/guides/escape.md", "/docs/guides/inside.md", "/raw/guides/leak.png"} {
+	for _, path := range []string{"/portals/pets/docs/guides/escape.md", "/portals/pets/docs/guides/inside.md", "/portals/pets/raw/guides/leak.png"} {
 		if rec := get(h, path); rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "hunter") {
 			t.Errorf("%s: %d %q", path, rec.Code, rec.Body)
 		}
 	}
-	if list := get(h, "/docs/guides/").Body.String(); strings.Contains(list, "escape.md") || strings.Contains(list, "inside.md") || !strings.Contains(list, `href="/docs/guides/a.md"`) {
+	if list := get(h, "/portals/pets/docs/guides/").Body.String(); strings.Contains(list, "escape.md") || strings.Contains(list, "inside.md") || !strings.Contains(list, `href="/portals/pets/docs/guides/a.md"`) {
 		t.Errorf("document list: %q", list)
 	}
 }
@@ -261,7 +261,7 @@ func TestStartupShowsTryIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := get(h, "/specs/api").Body.String(); strings.Contains(body, "hideTryIt") {
+	if body := get(h, "/portals/petstore/specs/api").Body.String(); strings.Contains(body, "hideTryIt") {
 		t.Errorf("the viewer page hides the Try It console by default: %q", body)
 	}
 }
@@ -271,7 +271,7 @@ func TestStartupHidesTryIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body := get(h, "/specs/api").Body.String(); !strings.Contains(body, `hideTryIt="true"`) {
+	if body := get(h, "/portals/petstore/specs/api").Body.String(); !strings.Contains(body, `hideTryIt="true"`) {
 		t.Errorf("the viewer page shows the Try It console: %q", body)
 	}
 }
@@ -315,7 +315,7 @@ func TestStartupServesChat(t *testing.T) {
 	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Ask about the") {
 		t.Errorf("chat page: %d %q", page.Code, page.Body)
 	}
-	if nav := get(h, "/docs/guides/").Body.String(); !strings.Contains(nav, `href="/chat"`) {
+	if nav := get(h, "/portals/petstore/docs/guides/").Body.String(); !strings.Contains(nav, `href="/chat"`) {
 		t.Errorf("the navigation bar has no Chat link: %q", nav)
 	}
 }
@@ -328,7 +328,7 @@ func TestStartupWithoutChat(t *testing.T) {
 	if rec := get(h, "/chat"); rec.Code != http.StatusNotFound {
 		t.Errorf("/chat: %d", rec.Code)
 	}
-	if nav := get(h, "/docs/guides/").Body.String(); strings.Contains(nav, `href="/chat"`) {
+	if nav := get(h, "/portals/petstore/docs/guides/").Body.String(); strings.Contains(nav, `href="/chat"`) {
 		t.Error("the navigation bar links a chat that is off")
 	}
 }
@@ -344,7 +344,7 @@ func TestStartupChatPageLinksTheSections(t *testing.T) {
 	for _, m := range regexp.MustCompile(`<a href="([^"]*)"[^>]*>([^<]*)</a>`).FindAllStringSubmatch(nav, -1) {
 		links = append(links, m[2]+" "+m[1])
 	}
-	if want := []string{"API /specs/api", "Guides /docs/guides/", "Chat /chat"}; !slices.Equal(links, want) {
+	if want := []string{"API /portals/petstore/specs/api", "Guides /portals/petstore/docs/guides/", "Chat /chat"}; !slices.Equal(links, want) {
 		t.Errorf("the chat page links %q, want %q", links, want)
 	}
 }

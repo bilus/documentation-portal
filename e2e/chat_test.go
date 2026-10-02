@@ -24,7 +24,7 @@ func TestChatAnswersAQuestion(t *testing.T) {
 	}
 	m := fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "How do I get one pet?", Call: &fakemodel.Call{Name: "list_operations", Args: map[string]any{}}},
-		{Match: "showPetById", Reply: "Call [Info for a specific pet](/specs/api#/operations/showPetById)."},
+		{Match: "showPetById", Reply: "Call [Info for a specific pet](/portals/pets/specs/api#/operations/showPetById)."},
 	})
 	c, err := chat.New(chat.Config{Model: m, Libraries: []*portal.Library{lib}})
 	if err != nil {
@@ -56,7 +56,7 @@ func TestChatAnswersAQuestion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the chat did not answer: %v", err)
 	}
-	if href != "/specs/api#/operations/showPetById" || target != "_blank" {
+	if href != "/portals/pets/specs/api#/operations/showPetById" || target != "_blank" {
 		t.Errorf("the answer's link: href %q, target %q", href, target)
 	}
 	if label == "" {

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<style>body { font-family: system-ui, sans-serif; margin: 0; } main { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }</style>
+</head>
+<body>
+<main>
+<h1>{{.Title}}</h1>
+<ul>
+{{range .Portals}}<li><a href="{{.URL}}">{{.Label}}</a></li>
+{{end}}</ul>
+</main>
+</body>
+</html>

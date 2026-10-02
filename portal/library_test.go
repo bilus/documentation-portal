@@ -41,7 +41,7 @@ func TestLibraryDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []portal.Document{{Path: "docs/a.md", Title: "Getting started", URL: "/docs/documents/a.md"}, {Path: "docs/guide/b.md", Title: "docs/guide/b.md", URL: "/docs/documents/guide/b.md"}}
+	want := []portal.Document{{Path: "docs/a.md", Title: "Getting started", URL: "/portals/pets/docs/documents/a.md"}, {Path: "docs/guide/b.md", Title: "docs/guide/b.md", URL: "/portals/pets/docs/documents/guide/b.md"}}
 	if len(docs) != len(want) || docs[0] != want[0] || docs[1] != want[1] {
 		t.Errorf("documents: %+v, want %+v", docs, want)
 	}
@@ -61,8 +61,8 @@ func TestLibraryOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []portal.Operation{
-		{Spec: "api", Method: "get", Path: "/pets", OperationID: "listPets", Summary: "List the pets", Pointer: "paths/~1pets/get", URL: "/specs/api#/operations/listPets"},
-		{Spec: "api", Method: "post", Path: "/pets", Summary: "Add a pet", Pointer: "paths/~1pets/post", URL: "/specs/api#/paths/pets/post"},
+		{Spec: "api", Method: "get", Path: "/pets", OperationID: "listPets", Summary: "List the pets", Pointer: "paths/~1pets/get", URL: "/portals/pets/specs/api#/operations/listPets"},
+		{Spec: "api", Method: "post", Path: "/pets", Summary: "Add a pet", Pointer: "paths/~1pets/post", URL: "/portals/pets/specs/api#/paths/pets/post"},
 	}
 	if len(ops) != len(want) || ops[0] != want[0] || ops[1] != want[1] {
 		t.Errorf("operations: %+v, want %+v", ops, want)
@@ -109,7 +109,7 @@ func TestLibraryReadsGuidesAsTheirPagesShowThem(t *testing.T) {
 			t.Errorf("search %q: %+v, %v", hidden, matches, err)
 		}
 	}
-	if want := "# Setup\n\nRead [the reference](/specs/api) first."; text != want {
+	if want := "# Setup\n\nRead [the reference](/portals/pets/specs/api) first."; text != want {
 		t.Errorf("text %q, want %q", text, want)
 	}
 	docs, err := lib.Documents()
@@ -246,7 +246,7 @@ func TestLibraryReadsEachThingOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	docs, err := lib.Documents()
-	want := []portal.Document{{Path: "guides/a.md", Title: "A", URL: "/docs/guides/a.md"}, {Path: "guides/deep/inner.md", Title: "Inner", URL: "/docs/guides/deep/inner.md"}}
+	want := []portal.Document{{Path: "guides/a.md", Title: "A", URL: "/portals/pets/docs/guides/a.md"}, {Path: "guides/deep/inner.md", Title: "Inner", URL: "/portals/pets/docs/guides/deep/inner.md"}}
 	if err != nil || !slices.Equal(docs, want) {
 		t.Errorf("documents: %+v, %v, want %+v", docs, err, want)
 	}
@@ -305,7 +305,7 @@ func TestLibraryTitles(t *testing.T) {
 
 func TestLibraryReadDocumentTakesCleanPaths(t *testing.T) {
 	lib := newLibrary(t)
-	for _, path := range []string{"docs//a.md", "docs/a.md/", "./docs/a.md", "docs/../docs/a.md", "/docs/a.md", "docs/./a.md"} {
+	for _, path := range []string{"docs//a.md", "docs/a.md/", "./docs/a.md", "docs/../docs/a.md", "/portals/pets/docs/a.md", "docs/./a.md"} {
 		if text, err := lib.ReadDocument(path); err == nil {
 			t.Errorf("%q: %q, want an error, as for a page that no URL serves", path, text)
 		}

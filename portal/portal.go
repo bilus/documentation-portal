@@ -75,19 +75,17 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 // sidebar from the section's toc file when it names one; and the home page,
 // the Elements assets, and with a chat its routes.
 func newRouter(cfg Config, sites []*site, assets fs.FS) (http.Handler, error) {
-	// Until stage 1 routes by the portal's slug, the first portal answers at
-	// the URLs of #29.
 	rt := &router{sites: sites}
-	s := sites[0]
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", rt.home)
-	mux.HandleFunc("GET /specs/{slug}", s.viewerPage)
-	mux.HandleFunc("GET /api/specs/{slug}", s.rawSpec)
+	mux.HandleFunc("GET /portals/{portal}/{$}", rt.serve((*site).index))
+	mux.HandleFunc("GET /portals/{portal}/specs/{slug}", rt.serve((*site).viewerPage))
+	mux.HandleFunc("GET /portals/{portal}/api/specs/{slug}", rt.serve((*site).rawSpec))
+	mux.HandleFunc("GET /portals/{portal}/docs/{slug}", rt.serve((*site).docsRoot))
+	mux.HandleFunc("GET /portals/{portal}/docs/{slug}/{$}", rt.serve((*site).docList))
+	mux.HandleFunc("GET /portals/{portal}/docs/{slug}/{path...}", rt.serve((*site).docPage))
+	mux.HandleFunc("GET /portals/{portal}/raw/{slug}/{path...}", rt.serve((*site).rawFile))
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
-	mux.HandleFunc("GET /docs/{slug}", s.docsRoot)
-	mux.HandleFunc("GET /docs/{slug}/{$}", s.docList)
-	mux.HandleFunc("GET /docs/{slug}/{path...}", s.docPage)
-	mux.HandleFunc("GET /raw/{slug}/{path...}", s.rawFile)
 	for _, r := range cfg.Chat {
 		if err := handle(mux, r); err != nil {
 			return nil, err
@@ -103,16 +101,41 @@ type router struct {
 
 // portalFor returns the site of the portal whose slug is slug, or false.
 func (rt *router) portalFor(slug string) (*site, bool) {
-	// HOLE(1): find the portal
+	for _, s := range rt.sites {
+		if s.slug == slug {
+			return s, true
+		}
+	}
 	return nil, false
+}
+
+// serve returns the handler that answers a request under
+// /portals/{portal}/ with h and the site of the portal, or with a 404 error
+// page that links the home page for a slug of no portal.
+func (rt *router) serve(h func(*site, http.ResponseWriter, *http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		slug := r.PathValue("portal")
+		s, ok := rt.portalFor(slug)
+		if !ok {
+			render(w, http.StatusNotFound, "error.html", page{Title: "Portal not found", Message: "No portal has the slug " + slug + ".", Nav: []navLink{{Label: "Portals", URL: "/"}}})
+			return
+		}
+		h(s, w, r)
+	}
 }
 
 // home redirects to the first section of the only portal, or writes the home
 // page, which links the first section of each portal under its name.
 func (rt *router) home(w http.ResponseWriter, r *http.Request) {
-	// HOLE(1): write the home page. Until then, the first portal's first
-	// section.
-	rt.sites[0].index(w, r)
+	if len(rt.sites) == 1 {
+		rt.sites[0].index(w, r)
+		return
+	}
+	links := make([]navLink, 0, len(rt.sites))
+	for _, s := range rt.sites {
+		links = append(links, navLink{Label: s.name, URL: s.url()})
+	}
+	render(w, http.StatusOK, "home.html", page{Title: "Portals", Portals: links})
 }
 
 // handle adds r to mux, and returns as an error what ServeMux.Handle panics

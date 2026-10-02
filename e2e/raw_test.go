@@ -27,7 +27,7 @@ func TestRawSVGRunsNoScript(t *testing.T) {
 	var root string
 	var ran bool
 	err = chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/raw/documents/evil.svg"),
+		chromedp.Navigate(srv.URL+"/portals/pets/raw/documents/evil.svg"),
 		chromedp.Evaluate(`document.documentElement.localName`, &root),
 		chromedp.Evaluate(`document.documentElement.hasAttribute("data-ran")`, &ran),
 	)
@@ -67,12 +67,12 @@ func TestDocSidebarMatchesElements(t *testing.T) {
 	defer srv.Close()
 
 	browser := newBrowser(t)
-	pageText(t, browser, srv.URL+"/specs/api#/operations/showPetById", "microchipId")
+	pageText(t, browser, srv.URL+"/portals/pets/specs/api#/operations/showPetById", "microchipId")
 	var elements, docs string
 	if err := chromedp.Run(browser, chromedp.Evaluate(sidebarStyle, &elements)); err != nil {
 		t.Fatal(err)
 	}
-	pageText(t, browser, srv.URL+"/docs/documents/guide/intro.md", "Introduction")
+	pageText(t, browser, srv.URL+"/portals/pets/docs/documents/guide/intro.md", "Introduction")
 	if err := chromedp.Run(browser, chromedp.Evaluate(sidebarStyle, &docs)); err != nil {
 		t.Fatal(err)
 	}

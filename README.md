@@ -34,23 +34,28 @@ variable: `-addr` to `DOCPORTAL_ADDR` (default `:8080`), `-config` to
 handler passes the portals in `portal.Config`, or reads them with
 `portal.ReadConfig`.
 
-The URLs of a section carry its slug: its title in lower case, with each run
-of characters other than letters and digits as one dash, such as `store-api`
-for Store API. A spec section's viewer page is at `/specs/{slug}`, and its raw
-spec at `/api/specs/{slug}`; `/` opens the first section's page. docportal
-does not start without sections, with a section that has no title, input or
-known type, with two sections of one slug, with a path outside the
-documentation root, or with a toc on a spec section.
+Portals and sections have slugs: the name or the title in lower case, with
+each run of characters other than letters and digits as one dash, such as
+`store-api` for Store API. Every page of a portal is under
+`/portals/{portal}/`, where `{portal}` is the portal's slug: a spec section's
+viewer page is at `/portals/{portal}/specs/{slug}` and its raw spec at
+`/portals/{portal}/api/specs/{slug}`, and `/portals/{portal}/` opens the
+portal's first section. With one portal, `/` opens it; with several, `/` lists
+them. Links and toc entries stay within their portal. docportal does not start
+without portals, with a portal that has no name, with two portals of one slug,
+or with a problem in a portal's sections: a section that has no title, input
+or known type, two sections of one slug in a portal, a path outside the
+documentation root, or a toc on a spec section.
 
 The viewer page shows the Try It console of Stoplight Elements, which sends
 requests from the reader's browser to the servers of the spec, so those
 servers must allow the portal's origin through CORS. `-hide-try-it` hides the
 console.
 
-A docs section's document list at `/docs/{slug}/` lists the markdown files
-of its content directory, `/docs/{slug}/{path}` renders one as HTML without
-scripts, and `/raw/{slug}/{path}` serves its PNG, JPEG, GIF, WebP and SVG
-images. A relative link in a markdown file resolves against the
+A docs section's document list at `/portals/{portal}/docs/{slug}/` lists the
+markdown files of its content directory, `/portals/{portal}/docs/{slug}/{path}`
+renders one as HTML without scripts, and `/portals/{portal}/raw/{slug}/{path}`
+serves its PNG, JPEG, GIF, WebP and SVG images. A relative link in a markdown file resolves against the
 documentation root, as on Stoplight, and then against the file's own
 directory, and it shows as plain text when no page serves its target. A link
 to a markdown file opens its document page in the section of the page that
@@ -60,8 +65,8 @@ spec opens its section's viewer page, and a link to one of its operations in
 Stoplight's form, such as `openapi.yaml/paths/~1pets/get`, opens the viewer at
 that operation. Of two spec sections with one spec, links open the first. The
 portal reads nothing outside the documentation root, follows no symlink in a
-content directory, and under `/specs/` and `/api/specs/` serves no file of
-the root except the specs of the spec sections.
+content directory, and under a portal's `/specs/` and `/api/specs/` serves no
+file of the root except the specs of its spec sections.
 
 A docs section's `toc` names a Stoplight `toc.json` inside the documentation
 root, such as `toc.json`. The section's document sidebar then shows its

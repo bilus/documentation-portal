@@ -132,7 +132,7 @@ func TestRawImageURL(t *testing.T) {
 		"https://example.com/a.png": "https://example.com/a.png",
 		"data:image/png;base64,AA":  "data:image/png;base64,AA",
 	} {
-		if got := string(rawImageURL("documents", "guide", []byte(dest))); got != want {
+		if got := string(rawImageURL(docsOf("guide", nil, ""), "guide", []byte(dest))); got != want {
 			t.Errorf("%s: got %s, want %s", dest, got, want)
 		}
 	}
@@ -821,5 +821,17 @@ func TestTocSidebarListsOtherSectionsOnce(t *testing.T) {
 	// One listing opens the directory twice: fs.WalkDir stats it, then reads it.
 	if n := ops.opens["."]; n > 2 {
 		t.Errorf("one sidebar listed Ops %d times over, want once", n)
+	}
+}
+
+func TestPortalFor(t *testing.T) {
+	rt := &router{sites: []*site{{name: "Pet Shop", slug: "pet-shop"}, {name: "Store", slug: "store"}}}
+	if s, ok := rt.portalFor("store"); !ok || s != rt.sites[1] {
+		t.Errorf("store: %+v, %v", s, ok)
+	}
+	for _, slug := range []string{"Store", "", "pet shop", "other"} {
+		if s, ok := rt.portalFor(slug); ok {
+			t.Errorf("%q: %+v, want no portal", slug, s)
+		}
 	}
 }

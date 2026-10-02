@@ -74,16 +74,32 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 // or with the slug of another portal, and the sections that openSections
 // refuses.
 func openPortals(cfg Config) ([]*site, error) {
-	// HOLE(1): check every portal and open its sections. Until then, the
-	// first portal alone, as #29 opened the sections.
+	if cfg.Root == nil {
+		return nil, errors.New("no documentation root")
+	}
 	if len(cfg.Portals) == 0 {
 		return nil, errors.New("no portals")
 	}
-	sections, err := openSections(cfg.Root, cfg.Portals[0].Sections)
-	if err != nil {
-		return nil, err
+	sites := make([]*site, 0, len(cfg.Portals))
+	names := map[string]string{} // the name of the portal with each slug
+	for i, p := range cfg.Portals {
+		slug := slugOf(p.Name)
+		switch other, taken := names[slug]; {
+		case p.Name == "":
+			return nil, fmt.Errorf("portal %d has no name", i+1)
+		case slug == "":
+			return nil, fmt.Errorf("portal %q: the name gives an empty slug", p.Name)
+		case taken:
+			return nil, fmt.Errorf("portals %q and %q share the slug %q", other, p.Name, slug)
+		}
+		names[slug] = p.Name
+		sections, err := openSections(cfg.Root, p.Sections)
+		if err != nil {
+			return nil, fmt.Errorf("portal %q: %w", p.Name, err)
+		}
+		sites = append(sites, newSite(cfg, p, sections))
 	}
-	return []*site{newSite(cfg, cfg.Portals[0], sections)}, nil
+	return sites, nil
 }
 
 // section is a section of the portal configuration after openSections has
@@ -91,7 +107,8 @@ func openPortals(cfg Config) ([]*site, error) {
 type section struct {
 	Section
 	slug string
-	docs fs.FS // a docs section's content directory handle, else nil
+	base string // the URL path of its portal, such as /portals/pets, or empty
+	docs fs.FS  // a docs section's content directory handle, else nil
 
 	tocMu      sync.Mutex
 	tocProblem string // the toc file's problem that the log named last, or empty

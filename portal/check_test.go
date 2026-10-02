@@ -222,3 +222,35 @@ func TestOpenSectionsRefusesTwoTrailingSlashes(t *testing.T) {
 		t.Errorf("docs//: err = %v, want a refusal", err)
 	}
 }
+
+func TestOpenPortals(t *testing.T) {
+	root := fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.1.0\n")}, "docs/a.md": {Data: []byte("# A\n")}}
+	api := []Section{specSection("api.yaml")}
+	sites, err := openPortals(Config{Root: root, Portals: []Portal{
+		{Name: "Pet Shop", Sections: api},
+		{Name: "Store", Sections: []Section{specSection("api.yaml"), docsSection("docs", "")}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sites) != 2 || sites[0].name != "Pet Shop" || sites[0].slug != "pet-shop" || len(sites[0].sections) != 1 ||
+		sites[1].slug != "store" || len(sites[1].sections) != 2 || sites[1].sections[1].docs == nil {
+		t.Errorf("sites: %+v", sites)
+	}
+	for name, tc := range map[string]struct {
+		cfg  Config
+		want string
+	}{
+		"no root":        {Config{Portals: []Portal{{Name: "Pets", Sections: api}}}, "documentation root"},
+		"no portals":     {Config{Root: root}, "no portals"},
+		"no name":        {Config{Root: root, Portals: []Portal{{Name: "Pets", Sections: api}, {Sections: api}}}, "portal 2 has no name"},
+		"an empty slug":  {Config{Root: root, Portals: []Portal{{Name: "--", Sections: api}}}, `"--"`},
+		"one slug twice": {Config{Root: root, Portals: []Portal{{Name: "Pets", Sections: api}, {Name: "PETS", Sections: api}}}, `"pets"`},
+		"a later section": {Config{Root: root, Portals: []Portal{{Name: "Pets", Sections: api}, {Name: "Store", Sections: []Section{docsSection("missing", "")}}}},
+			`portal "Store": section "Documents"`},
+	} {
+		if _, err := openPortals(tc.cfg); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want one naming %s", name, err, tc.want)
+		}
+	}
+}

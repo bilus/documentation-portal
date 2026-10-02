@@ -19,7 +19,7 @@ func TestViewerTryIt(t *testing.T) {
 			t.Fatal(err)
 		}
 		srv := httptest.NewServer(h)
-		page := srv.URL + "/specs/api#/operations/showPetById"
+		page := srv.URL + "/portals/pets/specs/api#/operations/showPetById"
 		if hide {
 			if text := pageText(t, browser, page, "microchipId"); strings.Contains(text, "Send API Request") {
 				t.Error("the Try It console shows with HideTryIt")

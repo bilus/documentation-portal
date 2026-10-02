@@ -40,7 +40,6 @@ func shopAndStore() (fstest.MapFS, []portal.Portal) {
 }
 
 func TestPortalURLs(t *testing.T) {
-	t.Skip("HOLE(1): serve each portal under /portals/{portal slug}/")
 	root, portals := shopAndStore()
 	h := newPortals(t, root, portals...)
 	for path, want := range map[string]int{
@@ -91,7 +90,6 @@ func TestPortalURLs(t *testing.T) {
 }
 
 func TestPortalChecks(t *testing.T) {
-	t.Skip("HOLE(1): check every portal")
 	root := fstest.MapFS{"api.yaml": {Data: []byte(pets)}}
 	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
 	for name, tc := range map[string]struct {
@@ -114,7 +112,6 @@ func TestPortalChecks(t *testing.T) {
 }
 
 func TestHomePage(t *testing.T) {
-	t.Skip("HOLE(1): the home page")
 	root, portals := shopAndStore()
 	if rec := get(newPortals(t, root, portals[1]), "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/portals/store/specs/api" {
 		t.Errorf("/ with one portal: %d to %q, want its first section", rec.Code, rec.Header().Get("Location"))

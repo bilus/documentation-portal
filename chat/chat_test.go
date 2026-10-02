@@ -58,13 +58,13 @@ func newChat(t *testing.T, m model.LLM, limits Limits) *Chat {
 func TestAskLooksUpTheAnswer(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "the Pets API", Call: &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}},
-		{Match: `"url":"/docs/documents/a.md","where":"docs/a.md:3"`, Reply: "Call GET /pets, as [Getting started](/docs/documents/a.md) shows."},
+		{Match: `"url":"/portals/pets/docs/documents/a.md","where":"docs/a.md:3"`, Reply: "Call GET /pets, as [Getting started](/portals/pets/docs/documents/a.md) shows."},
 	})
 	answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "pets", "client", "conv", "How do I list pets?")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(answer, "GET /pets") || !strings.Contains(answer, "(/docs/documents/a.md)") || !m.Exhausted() {
+	if !strings.Contains(answer, "GET /pets") || !strings.Contains(answer, "(/portals/pets/docs/documents/a.md)") || !m.Exhausted() {
 		t.Errorf("answer %q, script exhausted: %v", answer, m.Exhausted())
 	}
 }
@@ -318,14 +318,14 @@ func TestChatToolsNameTheSpec(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "How do I list orders?", Call: &fakemodel.Call{Name: "list_operations", Args: map[string]any{}}},
 		{Match: `"spec":"store"`, Call: &fakemodel.Call{Name: "read_spec", Args: map[string]any{"spec": "store", "pointer": "paths/~1orders/get"}}},
-		{Match: "operationId: listOrders", Reply: "Call [List the orders](/specs/store#/operations/listOrders)."},
+		{Match: "operationId: listOrders", Reply: "Call [List the orders](/portals/pets/specs/store#/operations/listOrders)."},
 	})
 	c, err := New(Config{Model: m, Libraries: []*portal.Library{lib}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	answer, err := c.Ask(t.Context(), "pets", "client", "conv", "How do I list orders?")
-	if err != nil || !strings.Contains(answer, "/specs/store#/operations/listOrders") || !m.Exhausted() {
+	if err != nil || !strings.Contains(answer, "/portals/pets/specs/store#/operations/listOrders") || !m.Exhausted() {
 		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
 	}
 }

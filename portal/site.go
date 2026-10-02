@@ -25,9 +25,23 @@ type site struct {
 }
 
 // newSite returns the site of the portal p of cfg, with sections, p's
-// sections after openSections has checked them.
+// sections after openSections has checked them, whose URLs it puts under the
+// portal's URL path.
 func newSite(cfg Config, p Portal, sections []*section) *site {
-	return &site{root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
+	s := &site{root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt, chat: len(cfg.Chat) > 0}
+	for _, sec := range sections {
+		sec.base = "/portals/" + s.slug
+	}
+	return s
+}
+
+// url returns the URL that opens the site's portal: the page of its first
+// section, or the portal's path without a section.
+func (s *site) url() string {
+	if len(s.sections) == 0 {
+		return (&url.URL{Path: "/portals/" + s.slug + "/"}).String()
+	}
+	return s.sections[0].pageURL()
 }
 
 // menu returns the links of the portal menu: the first section of every
@@ -64,19 +78,24 @@ func (sec *section) pageURL() string {
 	if sec.Type == SpecSection {
 		return sec.viewerURL("")
 	}
-	return (&url.URL{Path: "/docs/" + sec.slug + "/"}).String()
+	return (&url.URL{Path: sec.base + "/docs/" + sec.slug + "/"}).String()
 }
 
 // docURL returns the URL of the document page of the markdown file at doc,
 // a path in the docs section's content directory, with query and fragment.
 func (sec *section) docURL(doc, query, fragment string) string {
-	return (&url.URL{Path: "/docs/" + sec.slug + "/" + doc, RawQuery: query, Fragment: fragment}).String()
+	return (&url.URL{Path: sec.base + "/docs/" + sec.slug + "/" + doc, RawQuery: query, Fragment: fragment}).String()
 }
 
 // viewerURL returns the URL of the spec section's viewer page with fragment,
 // an operation route or "".
 func (sec *section) viewerURL(fragment string) string {
-	return (&url.URL{Path: "/specs/" + sec.slug, Fragment: fragment}).String()
+	return (&url.URL{Path: sec.base + "/specs/" + sec.slug, Fragment: fragment}).String()
+}
+
+// rawSpecURL returns the URL of the spec section's raw spec.
+func (sec *section) rawSpecURL() string {
+	return (&url.URL{Path: sec.base + "/api/specs/" + sec.slug}).String()
 }
 
 // docsFor returns the docs section whose slug is slug, or false.
@@ -118,7 +137,7 @@ func (s *site) viewerPage(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
-		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: (&url.URL{Path: "/api/specs/" + sec.slug}).String(), HideTryIt: s.hideTryIt, Nav: s.nav()})
+		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: sec.rawSpecURL(), HideTryIt: s.hideTryIt, Nav: s.nav()})
 	}
 }
 
@@ -131,6 +150,7 @@ type page struct {
 	Section   string         // the docs section's title: document pages and lists only
 	Sidebar   []sidebarGroup // document pages and lists only
 	Docs      []docLink      // document list only
+	Portals   []navLink      // home page only
 	Body      template.HTML  // document page only
 }
 

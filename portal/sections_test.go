@@ -28,27 +28,27 @@ func TestSpecSections(t *testing.T) {
 		portal.Section{Title: "Store API", Type: portal.SpecSection, Input: "store.yaml"},
 		portal.Section{Title: "Gone", Type: portal.SpecSection, Input: "gone.yaml"},
 	)
-	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/specs/pets" {
+	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/portals/pets/specs/pets" {
 		t.Errorf("/: %d to %q, want the first section's page", rec.Code, rec.Header().Get("Location"))
 	}
 	for slug, want := range map[string]struct{ title, raw string }{"pets": {"Pets", pets}, "store-api": {"Store", store}} {
-		page := get(h, "/specs/"+slug).Body.String()
-		if !strings.Contains(page, "<title>"+want.title+"</title>") || !strings.Contains(page, `apiDescriptionUrl="/api/specs/`+slug+`"`) {
-			t.Errorf("/specs/%s: %q", slug, page)
+		page := get(h, "/portals/pets/specs/"+slug).Body.String()
+		if !strings.Contains(page, "<title>"+want.title+"</title>") || !strings.Contains(page, `apiDescriptionUrl="/portals/pets/api/specs/`+slug+`"`) {
+			t.Errorf("/portals/pets/specs/%s: %q", slug, page)
 		}
-		if raw := get(h, "/api/specs/"+slug); raw.Code != http.StatusOK || raw.Body.String() != want.raw {
-			t.Errorf("/api/specs/%s: %d %q", slug, raw.Code, raw.Body)
+		if raw := get(h, "/portals/pets/api/specs/"+slug); raw.Code != http.StatusOK || raw.Body.String() != want.raw {
+			t.Errorf("/portals/pets/api/specs/%s: %d %q", slug, raw.Code, raw.Body)
 		}
 	}
-	nav := get(h, "/specs/store-api").Body.String()
-	p, s, g := strings.Index(nav, `<a href="/specs/pets">Pets</a>`), strings.Index(nav, `<a href="/specs/store-api">Store API</a>`), strings.Index(nav, `<a href="/specs/gone">Gone</a>`)
+	nav := get(h, "/portals/pets/specs/store-api").Body.String()
+	p, s, g := strings.Index(nav, `<a href="/portals/pets/specs/pets">Pets</a>`), strings.Index(nav, `<a href="/portals/pets/specs/store-api">Store API</a>`), strings.Index(nav, `<a href="/portals/pets/specs/gone">Gone</a>`)
 	if p < 0 || s < p || g < s {
 		t.Errorf("the navigation bar does not link the sections in order: %q", nav)
 	}
-	if rec := get(h, "/specs/gone"); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "gone.yaml") {
+	if rec := get(h, "/portals/pets/specs/gone"); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "gone.yaml") {
 		t.Errorf("a spec section without its file: %d %q", rec.Code, rec.Body)
 	}
-	for _, path := range []string{"/specs/apis/pets.yaml", "/specs/store.yaml", "/api/specs/store.yaml", "/specs/other", "/api/specs/other", "/specs/Pets"} {
+	for _, path := range []string{"/portals/pets/specs/apis/pets.yaml", "/portals/pets/specs/store.yaml", "/portals/pets/api/specs/store.yaml", "/portals/pets/specs/other", "/portals/pets/api/specs/other", "/portals/pets/specs/Pets"} {
 		if rec := get(h, path); rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "openapi") {
 			t.Errorf("%s: %d %q", path, rec.Code, rec.Body)
 		}
@@ -90,7 +90,7 @@ func TestSectionChecks(t *testing.T) {
 		with(docs, func(s *portal.Section) { s.Input, s.Toc = "./docs/", "./toc.json" }),
 		with(spec, func(s *portal.Section) { s.Input = "./api.yaml" }),
 	)
-	if rec := get(h, "/specs/api"); rec.Code != http.StatusOK {
+	if rec := get(h, "/portals/pets/specs/api"); rec.Code != http.StatusOK {
 		t.Errorf("a spec input with ./ in front: %d", rec.Code)
 	}
 	newSections(t, root, docs)
@@ -110,19 +110,19 @@ func TestLinksToSpecSections(t *testing.T) {
 		portal.Section{Title: "Store again", Type: portal.SpecSection, Input: "./store.yaml"},
 		portal.Section{Title: "Documents", Type: portal.DocsSection, Input: "docs", Toc: "toc.json"},
 	)
-	body := get(h, "/docs/documents/links.md").Body.String()
+	body := get(h, "/portals/pets/docs/documents/links.md").Body.String()
 	hrefs := linkHrefs(body)
 	for text, want := range map[string]string{
-		"pets":   "/specs/pets",
-		"store":  "/specs/store",
-		"orders": "/specs/store#/operations/listOrders",
-		"up":     "/specs/store",
+		"pets":   "/portals/pets/specs/pets",
+		"store":  "/portals/pets/specs/store",
+		"orders": "/portals/pets/specs/store#/operations/listOrders",
+		"up":     "/portals/pets/specs/store",
 	} {
 		if hrefs[text] != want {
 			t.Errorf("%s: href %q, want %q", text, hrefs[text], want)
 		}
 	}
-	if !strings.Contains(body, `href="/specs/store#/operations/listOrders"><div title="Orders"`) {
+	if !strings.Contains(body, `href="/portals/pets/specs/store#/operations/listOrders"><div title="Orders"`) {
 		t.Errorf("the toc entry does not open the operation in its spec section: %q", body)
 	}
 }
@@ -141,30 +141,30 @@ func TestDocsSections(t *testing.T) {
 		portal.Section{Title: "API", Type: portal.SpecSection, Input: "api.yaml"},
 		portal.Section{Title: "Operations Manual", Type: portal.DocsSection, Input: "ops", Toc: "ops-toc.json"},
 	)
-	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/docs/guides/" {
+	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/portals/pets/docs/guides/" {
 		t.Errorf("/: %d to %q, want the first section's document list", rec.Code, rec.Header().Get("Location"))
 	}
-	guides := get(h, "/docs/guides/").Body.String()
-	if !strings.Contains(guides, `href="/docs/guides/start.md"`) || strings.Contains(guides, "runbook") || !strings.Contains(guides, ">Guides</h4>") {
+	guides := get(h, "/portals/pets/docs/guides/").Body.String()
+	if !strings.Contains(guides, `href="/portals/pets/docs/guides/start.md"`) || strings.Contains(guides, "runbook") || !strings.Contains(guides, ">Guides</h4>") {
 		t.Errorf("the Guides list: %q", guides)
 	}
-	if page := get(h, "/docs/guides/start.md").Body.String(); !strings.Contains(page, `src="/raw/guides/img/flow.png"`) {
+	if page := get(h, "/portals/pets/docs/guides/start.md").Body.String(); !strings.Contains(page, `src="/portals/pets/raw/guides/img/flow.png"`) {
 		t.Errorf("the image of a guide: %q", page)
 	}
-	if raw := get(h, "/raw/guides/img/flow.png"); raw.Code != http.StatusOK || raw.Header().Get("Content-Type") != "image/png" {
-		t.Errorf("/raw/guides/img/flow.png: %d %s", raw.Code, raw.Header().Get("Content-Type"))
+	if raw := get(h, "/portals/pets/raw/guides/img/flow.png"); raw.Code != http.StatusOK || raw.Header().Get("Content-Type") != "image/png" {
+		t.Errorf("/portals/pets/raw/guides/img/flow.png: %d %s", raw.Code, raw.Header().Get("Content-Type"))
 	}
-	ops := get(h, "/docs/operations-manual/").Body.String()
-	if !strings.Contains(ops, `href="/docs/operations-manual/runbook.md"><div title="The runbook"`) || !strings.Contains(ops, ">Operations Manual</h4>") || strings.Contains(ops, "start.md") {
+	ops := get(h, "/portals/pets/docs/operations-manual/").Body.String()
+	if !strings.Contains(ops, `href="/portals/pets/docs/operations-manual/runbook.md"><div title="The runbook"`) || !strings.Contains(ops, ">Operations Manual</h4>") || strings.Contains(ops, "start.md") {
 		t.Errorf("the Operations Manual list: %q", ops)
 	}
-	nav := get(h, "/docs/operations-manual/runbook.md").Body.String()
-	g, a, o := strings.Index(nav, `<a href="/docs/guides/">Guides</a>`), strings.Index(nav, `<a href="/specs/api">API</a>`), strings.Index(nav, `<a href="/docs/operations-manual/">Operations Manual</a>`)
+	nav := get(h, "/portals/pets/docs/operations-manual/runbook.md").Body.String()
+	g, a, o := strings.Index(nav, `<a href="/portals/pets/docs/guides/">Guides</a>`), strings.Index(nav, `<a href="/portals/pets/specs/api">API</a>`), strings.Index(nav, `<a href="/portals/pets/docs/operations-manual/">Operations Manual</a>`)
 	if g < 0 || a < g || o < a {
 		t.Errorf("the navigation bar does not link the sections in order: %q", nav)
 	}
-	for _, path := range []string{"/docs/", "/docs/start.md", "/raw/img/flow.png", "/docs/api/", "/docs/guides/runbook.md", "/docs/operations-manual/start.md",
-		"/raw/operations-manual/img/flow.png", "/docs/operations-manual/.draft.md", "/docs/other/", "/raw/other/img/flow.png"} {
+	for _, path := range []string{"/portals/pets/docs/", "/portals/pets/docs/start.md", "/portals/pets/raw/img/flow.png", "/portals/pets/docs/api/", "/portals/pets/docs/guides/runbook.md", "/portals/pets/docs/operations-manual/start.md",
+		"/portals/pets/raw/operations-manual/img/flow.png", "/portals/pets/docs/operations-manual/.draft.md", "/portals/pets/docs/other/", "/portals/pets/raw/other/img/flow.png"} {
 		if rec := get(h, path); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: %d", path, rec.Code)
 		}
@@ -186,21 +186,21 @@ func TestLinksAcrossDocsSections(t *testing.T) {
 		portal.Section{Title: "Ops", Type: portal.DocsSection, Input: "ops"},
 		portal.Section{Title: "Deep", Type: portal.DocsSection, Input: "guides/deep"},
 	)
-	hrefs := linkHrefs(get(h, "/docs/guides/links.md").Body.String())
+	hrefs := linkHrefs(get(h, "/portals/pets/docs/guides/links.md").Body.String())
 	for text, want := range map[string]string{
-		"runbook": "/docs/ops/runbook.md",
-		"up":      "/docs/ops/runbook.md",
-		"sibling": "/docs/guides/next.md",
-		"inner":   "/docs/guides/deep/inner.md",
+		"runbook": "/portals/pets/docs/ops/runbook.md",
+		"up":      "/portals/pets/docs/ops/runbook.md",
+		"sibling": "/portals/pets/docs/guides/next.md",
+		"inner":   "/portals/pets/docs/guides/deep/inner.md",
 	} {
 		if hrefs[text] != want {
 			t.Errorf("%s: href %q, want %q", text, hrefs[text], want)
 		}
 	}
-	if href := linkHrefs(get(h, "/docs/deep/inner.md").Body.String())["back"]; href != "/docs/guides/links.md" {
+	if href := linkHrefs(get(h, "/portals/pets/docs/deep/inner.md").Body.String())["back"]; href != "/portals/pets/docs/guides/links.md" {
 		t.Errorf("back: href %q, want /docs/guides/links.md", href)
 	}
-	if list := get(h, "/docs/deep/").Body.String(); !strings.Contains(list, `href="/docs/deep/inner.md"`) {
+	if list := get(h, "/portals/pets/docs/deep/").Body.String(); !strings.Contains(list, `href="/portals/pets/docs/deep/inner.md"`) {
 		t.Errorf("a docs section inside another does not list its own files: %q", list)
 	}
 }
@@ -219,20 +219,20 @@ func TestTocAcrossSections(t *testing.T) {
 		portal.Section{Title: "API", Type: portal.SpecSection, Input: "api.yaml"},
 		portal.Section{Title: "Ops", Type: portal.DocsSection, Input: "ops", Toc: "ops.json"},
 	)
-	page := get(h, "/docs/guides/a.md").Body.String()
+	page := get(h, "/portals/pets/docs/guides/a.md").Body.String()
 	for _, want := range []string{
-		`href="/docs/guides/a.md"><div title="A" class="sl-flex sl-items-center sl-h-md sl-pr-4 sl-pl-4 sl-bg-primary-tint`,
-		`href="/docs/ops/b.md"><div title="B"`,
-		`href="/specs/api"><div title="Pets"`,
+		`href="/portals/pets/docs/guides/a.md"><div title="A" class="sl-flex sl-items-center sl-h-md sl-pr-4 sl-pl-4 sl-bg-primary-tint`,
+		`href="/portals/pets/docs/ops/b.md"><div title="B"`,
+		`href="/portals/pets/specs/api"><div title="Pets"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the Guides sidebar lacks %s", want)
 		}
 	}
-	if page := get(h, "/docs/guides/b.md").Body.String(); !strings.Contains(page, `href="/docs/ops/b.md"><div title="B" class="sl-flex sl-items-center sl-h-md sl-pr-4 sl-pl-4 sl-bg-canvas-100`) {
+	if page := get(h, "/portals/pets/docs/guides/b.md").Body.String(); !strings.Contains(page, `href="/portals/pets/docs/ops/b.md"><div title="B" class="sl-flex sl-items-center sl-h-md sl-pr-4 sl-pl-4 sl-bg-canvas-100`) {
 		t.Errorf("Ops' b.md is marked current on the page of Guides' b.md: %q", page)
 	}
-	if page := get(h, "/docs/ops/b.md").Body.String(); !strings.Contains(page, `title="Only B"`) || strings.Contains(page, `title="Pets"`) {
+	if page := get(h, "/portals/pets/docs/ops/b.md").Body.String(); !strings.Contains(page, `title="Only B"`) || strings.Contains(page, `title="Pets"`) {
 		t.Errorf("the Ops sidebar is not its own toc file's: %q", page)
 	}
 }
@@ -254,14 +254,14 @@ func TestLibraryReadsEverySection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := lib.Sections(), []portal.SectionLink{{Title: "Pets", URL: "/specs/pets"}, {Title: "Guides", URL: "/docs/guides/"}, {Title: "Store", URL: "/specs/store"}, {Title: "Ops", URL: "/docs/ops/"}}; !reflect.DeepEqual(got, want) {
+	if got, want := lib.Sections(), []portal.SectionLink{{Title: "Pets", URL: "/portals/pets/specs/pets"}, {Title: "Guides", URL: "/portals/pets/docs/guides/"}, {Title: "Store", URL: "/portals/pets/specs/store"}, {Title: "Ops", URL: "/portals/pets/docs/ops/"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("sections: %+v, want %+v", got, want)
 	}
 	if lib.Title() != "Pets" {
 		t.Errorf("title %q, want the first spec section's", lib.Title())
 	}
 	docs, err := lib.Documents()
-	if want := []portal.Document{{Path: "guides/a.md", Title: "Start", URL: "/docs/guides/a.md"}, {Path: "ops/b.md", Title: "Runbook", URL: "/docs/ops/b.md"}}; err != nil || !reflect.DeepEqual(docs, want) {
+	if want := []portal.Document{{Path: "guides/a.md", Title: "Start", URL: "/portals/pets/docs/guides/a.md"}, {Path: "ops/b.md", Title: "Runbook", URL: "/portals/pets/docs/ops/b.md"}}; err != nil || !reflect.DeepEqual(docs, want) {
 		t.Errorf("documents: %+v, %v, want %+v", docs, err, want)
 	}
 	if text, err := lib.ReadDocument("ops/b.md"); err != nil || !strings.Contains(text, "Runbook") {
@@ -272,8 +272,8 @@ func TestLibraryReadsEverySection(t *testing.T) {
 	}
 	ops, err := lib.Operations()
 	want := []portal.Operation{
-		{Spec: "pets", Method: "get", Path: "/pets", OperationID: "listPets", Pointer: "paths/~1pets/get", URL: "/specs/pets#/operations/listPets"},
-		{Spec: "store", Method: "get", Path: "/orders", OperationID: "listOrders", Summary: "List the orders", Pointer: "paths/~1orders/get", URL: "/specs/store#/operations/listOrders"},
+		{Spec: "pets", Method: "get", Path: "/pets", OperationID: "listPets", Pointer: "paths/~1pets/get", URL: "/portals/pets/specs/pets#/operations/listPets"},
+		{Spec: "store", Method: "get", Path: "/orders", OperationID: "listOrders", Summary: "List the orders", Pointer: "paths/~1orders/get", URL: "/portals/pets/specs/store#/operations/listOrders"},
 	}
 	if err != nil || !reflect.DeepEqual(ops, want) {
 		t.Errorf("operations: %+v, %v, want %+v", ops, err, want)
@@ -292,8 +292,8 @@ func TestLibraryReadsEverySection(t *testing.T) {
 	}
 	var inGuide, inStore bool
 	for _, m := range matches {
-		inGuide = inGuide || m.Spec == "" && m.Where == "guides/a.md:3" && m.URL == "/docs/guides/a.md"
-		inStore = inStore || m.Spec == "store" && strings.HasPrefix(m.Where, "paths/~1orders") && m.URL == "/specs/store"
+		inGuide = inGuide || m.Spec == "" && m.Where == "guides/a.md:3" && m.URL == "/portals/pets/docs/guides/a.md"
+		inStore = inStore || m.Spec == "store" && strings.HasPrefix(m.Where, "paths/~1orders") && m.URL == "/portals/pets/specs/store"
 		if m.Spec == "store" {
 			if _, err := lib.SpecPart(m.Spec, m.Where); err != nil {
 				t.Errorf("a match's place does not read back: %+v: %v", m, err)
@@ -316,19 +316,19 @@ func TestNestedSectionsKeepTheirOwnPages(t *testing.T) {
 		portal.Section{Title: "Guides", Type: portal.DocsSection, Input: "guides"},
 		portal.Section{Title: "Deep", Type: portal.DocsSection, Input: "guides/deep", Toc: "deep.json"},
 	)
-	page := get(h, "/docs/deep/inner.md").Body.String()
-	if hrefs := linkHrefs(page); hrefs["sibling"] != "/docs/deep/sibling.md" || hrefs["up"] != "/docs/guides/a.md" {
+	page := get(h, "/portals/pets/docs/deep/inner.md").Body.String()
+	if hrefs := linkHrefs(page); hrefs["sibling"] != "/portals/pets/docs/deep/sibling.md" || hrefs["up"] != "/portals/pets/docs/guides/a.md" {
 		t.Errorf("links on Deep's page: %q", hrefs)
 	}
 	for _, want := range []string{
-		`href="/docs/deep/inner.md"><div title="Inner" class="sl-flex sl-items-center sl-h-md sl-pr-4 sl-pl-4 sl-bg-primary-tint`,
-		`href="/docs/guides/a.md"><div title="A"`,
+		`href="/portals/pets/docs/deep/inner.md"><div title="Inner" class="sl-flex sl-items-center sl-h-md sl-pr-4 sl-pl-4 sl-bg-primary-tint`,
+		`href="/portals/pets/docs/guides/a.md"><div title="A"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("Deep's sidebar lacks %s", want)
 		}
 	}
-	if href := linkHrefs(get(h, "/docs/guides/a.md").Body.String())["inner"]; href != "/docs/guides/deep/inner.md" {
+	if href := linkHrefs(get(h, "/portals/pets/docs/guides/a.md").Body.String())["inner"]; href != "/portals/pets/docs/guides/deep/inner.md" {
 		t.Errorf("inner on Guides' page: href %q, want Guides' own page", href)
 	}
 }
