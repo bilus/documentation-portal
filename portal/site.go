@@ -163,7 +163,8 @@ type page struct {
 	Nav       navBar
 	Section   string         // the docs section's title: document pages and lists only
 	Sidebar   []sidebarGroup // document pages and lists only
-	Docs      []docLink      // document list only
+	Contents  []sidebarGroup // document list only: the toc file's groups, or none
+	Docs      []docLink      // document list only: the markdown files outside Contents
 	Portals   []navLink      // home page only
 	Body      template.HTML  // document page only
 }

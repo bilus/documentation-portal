@@ -399,3 +399,58 @@ func TestUnknownSlugPagesShowTheNavigationBar(t *testing.T) {
 		}
 	}
 }
+
+func TestDocListFollowsToc(t *testing.T) {
+	toc := `{"items": [{"type": "item", "title": "Start", "uri": "docs/start.md"},` +
+		` {"type": "group", "title": "Guides", "items": [{"type": "item", "title": "OAuth", "uri": "docs/guides/oauth.md#scopes"}]},` +
+		` {"type": "divider", "title": "Reference"}, {"type": "item", "title": "API", "uri": "apis/pets.yaml"},` +
+		` {"type": "item", "title": "Status", "uri": "https://status.example.com/"}]}`
+	root := fstest.MapFS{
+		"apis/pets.yaml":         {Data: []byte(pets)},
+		"toc.json":               {Data: []byte(toc)},
+		"docs/start.md":          {Data: []byte("# Start\n")},
+		"docs/guides/oauth.md":   {Data: []byte("# OAuth\n")},
+		"docs/guides/devices.md": {Data: []byte("# Devices\n")},
+		"docs/unlisted.md":       {Data: []byte("# Unlisted\n")},
+	}
+	h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("apis/pets.yaml", "docs", "toc.json"))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(h, "/portals/pets/docs/documents/").Body.String()
+	main := page[max(strings.Index(page, "<h1>"), 0):]
+	at := 0
+	for _, want := range []string{
+		`<a href="/portals/pets/docs/documents/start.md">Start</a>`,
+		"<h2>Guides</h2>",
+		`<a href="/portals/pets/docs/documents/guides/oauth.md#scopes">OAuth</a>`,
+		"<h2>Reference</h2>",
+		`<a href="/portals/pets/specs/api">API</a>`,
+		`<a href="https://status.example.com/">Status</a>`,
+		"<h2>Other documents</h2>",
+		`<a href="/portals/pets/docs/documents/guides/devices.md">guides/devices.md</a>`,
+		`<a href="/portals/pets/docs/documents/unlisted.md">unlisted.md</a>`,
+	} {
+		i := strings.Index(main[at:], want)
+		if i < 0 {
+			t.Fatalf("the document list lacks %s after %q", want, main[:at])
+		}
+		at += i + len(want)
+	}
+	if strings.Contains(main, ">start.md</a>") || strings.Contains(main, ">guides/oauth.md</a>") {
+		t.Errorf("the document list repeats a file of the toc under its path: %q", main)
+	}
+}
+
+func TestDocListWithoutAWorkingToc(t *testing.T) {
+	root := fstest.MapFS{"apis/pets.yaml": {Data: []byte(pets)}, "docs/a.md": {Data: []byte("# A\n")}, "broken.json": {Data: []byte("{")}}
+	for name, toc := range map[string]string{"no toc": "", "a missing toc": "missing.json", "an invalid toc": "broken.json"} {
+		h, err := portal.New(portal.Config{Root: root, Portals: petsPortal(sections("apis/pets.yaml", "docs", toc))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if list := get(h, "/portals/pets/docs/documents/").Body.String(); !strings.Contains(list, `<li><a href="/portals/pets/docs/documents/a.md">a.md</a></li>`) || strings.Contains(list, "<h2>") {
+			t.Errorf("%s: %q", name, list)
+		}
+	}
+}
