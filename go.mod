@@ -7,10 +7,14 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.73.0
 	github.com/bilus/live-templ v0.0.0-20261002132858-24bc1a2d4396
 	github.com/chromedp/chromedp v0.16.0
+	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/oauth2-proxy/mockoidc v0.0.0-20240214162133-caebfff84d25
 	github.com/yuin/goldmark v1.8.6
 	gocloud.dev v0.46.0
 	golang.org/x/net v0.59.0
+	golang.org/x/oauth2 v0.36.0
 	google.golang.org/adk/v2 v2.4.0
 	google.golang.org/genai v1.71.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -58,6 +62,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -97,7 +102,6 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
