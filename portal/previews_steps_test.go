@@ -159,3 +159,16 @@ func TestRenderShowsTheBanner(t *testing.T) {
 		}
 	}
 }
+
+func TestValidFolder(t *testing.T) {
+	for _, name := range []string{"pr-1", "PR_1.x", "a.b-c", "0"} {
+		if !validFolder(name) {
+			t.Errorf("%q is refused", name)
+		}
+	}
+	for _, name := range []string{"", ".", "..", "a/b", "a b", "a%2Fb", "a[b", "a\\b", "a]b", "a^b", "a`b", "a~b", "caf\u00e9"} {
+		if validFolder(name) {
+			t.Errorf("%q is accepted", name)
+		}
+	}
+}

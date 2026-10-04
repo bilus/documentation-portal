@@ -217,8 +217,13 @@ var templates = template.Must(template.ParseFS(templateFiles, "templates/*.html"
 // the notice cookie.
 func render(w http.ResponseWriter, r *http.Request, status int, name string, p page) {
 	p.Nav.Account = viewOf(r).account
-	if p.Banner = bannerOf(r); p.Banner != nil && p.Banner.Ended != "" {
-		http.SetCookie(w, expired(endedCookie))
+	p.Banner = bannerOf(r)
+	if p.Banner != nil && p.Banner.Ended != "" {
+		// The notice ends its cookie: the one this response set, and the request's.
+		_, err := r.Cookie(endedCookie)
+		if dropped := dropCookie(w.Header(), endedCookie); !dropped || err == nil {
+			http.SetCookie(w, expired(endedCookie))
+		}
 	}
 	var buf bytes.Buffer
 	if err := templates.ExecuteTemplate(&buf, name, p); err != nil {

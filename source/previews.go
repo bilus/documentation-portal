@@ -60,8 +60,16 @@ type Previews struct {
 	idle     time.Duration // 0 keeps an unused snapshot
 	max      int           // 0 keeps any number
 
-	mu      sync.Mutex
-	folders map[string]*preview // in memory or loading, by name
+	mu       sync.Mutex
+	folders  map[string]*preview // in memory or loading, by name
+	failures map[string]failure  // the failed loads of folders with objects, by name
+}
+
+// failure is a failed load of a folder with objects, which the folder's
+// requests get until a time.
+type failure struct {
+	err   error
+	until time.Time
 }
 
 // preview is a preview folder in memory, or loading.
@@ -87,41 +95,54 @@ type preview struct {
 // time of zero or less keeps an unused snapshot, and a maxSnapshots of zero
 // or less keeps any number.
 func NewPreviews(ctx context.Context, folder func(name string) (Source, error), build func(fs.FS) (http.Handler, error), interval, idle time.Duration, maxSnapshots int) *Previews {
-	return &Previews{ctx: ctx, folder: folder, build: build, interval: interval, idle: idle, max: maxSnapshots, folders: map[string]*preview{}}
+	return &Previews{ctx: ctx, folder: folder, build: build, interval: interval, idle: idle, max: maxSnapshots, folders: map[string]*preview{}, failures: map[string]failure{}}
 }
 
 // Handler returns the portal handler of the preview folder name: the
 // reloader of the folder's snapshot, loaded at the folder's first request.
 // It answers a name that is not one path element, and a folder without
 // objects, with an error that wraps fs.ErrNotExist, and a failed load with
-// its error; neither stays in memory.
+// its error; neither stays in memory. A failed load of a folder with
+// objects stays remembered for the refresh interval, so that the requests
+// in that time get its error without reading the folder. The requests of a
+// folder share its load, which runs on the preview snapshots' context, and
+// the end of ctx ends only this request's wait.
 func (p *Previews) Handler(ctx context.Context, name string) (http.Handler, error) {
 	if name == "." || strings.Contains(name, "/") || !fs.ValidPath(name) {
 		return nil, fmt.Errorf("preview %q: not a folder name: %w", name, fs.ErrNotExist)
 	}
 	p.mu.Lock()
-	f, loading := p.folders[name]
-	if !loading {
+	if fl, ok := p.failures[name]; ok {
+		if time.Now().Before(fl.until) {
+			p.mu.Unlock()
+			return nil, fl.err
+		}
+		delete(p.failures, name)
+	}
+	f, ok := p.folders[name]
+	if !ok {
 		f = &preview{name: name, loaded: make(chan struct{})}
 		p.folders[name] = f
+		go p.fill(f)
 	}
 	f.used = time.Now()
 	p.mu.Unlock()
-	if loading {
-		select {
-		case <-f.loaded:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	select {
+	case <-f.loaded:
 		return f.h, f.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-	f.h, f.err = p.load(ctx, f)
+}
+
+// fill loads the snapshot of f's folder, on the preview snapshots' context,
+// which no request ends, for every request of the folder.
+func (p *Previews) fill(f *preview) {
+	f.h, f.err = p.load(p.ctx, f)
 	close(f.loaded)
 	if f.err != nil {
 		p.drop(f)
-		return nil, f.err
 	}
-	return f.h, nil
 }
 
 // load reads the snapshot of the folder of f, builds its portal handler and
@@ -133,23 +154,27 @@ func (p *Previews) load(ctx context.Context, f *preview) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("preview %q: %w", f.name, err)
 	}
-	snap, err := Load(ctx, src)
+	listing, err := src.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("preview %q: %w", f.name, err)
 	}
-	if len(snap.Listing) == 0 {
+	if len(listing) == 0 {
 		return nil, fmt.Errorf("preview %q: no objects: %w", f.name, fs.ErrNotExist)
 	}
-	h, err := p.build(snap.Root)
+	root, err := src.Read(ctx, listing)
 	if err != nil {
-		return nil, fmt.Errorf("preview %q: %w", f.name, err)
+		return nil, p.remember(f.name, fmt.Errorf("preview %q: %w", f.name, err))
+	}
+	h, err := p.build(root)
+	if err != nil {
+		return nil, p.remember(f.name, fmt.Errorf("preview %q: %w", f.name, err))
 	}
 	checks, stop := context.WithCancel(p.ctx)
 	watched := &emptyWatch{Source: src, empty: func() {
 		log.Printf("preview %s: the folder is empty, and its snapshot leaves memory", f.name)
 		p.drop(f)
 	}}
-	r := newReloader(checks, "preview "+f.name, watched, snap.Listing, h, p.interval, p.build)
+	r := newReloader(checks, "preview "+f.name, watched, listing, h, p.interval, p.build)
 	p.mu.Lock()
 	if f.dropped {
 		p.mu.Unlock()
@@ -166,6 +191,17 @@ func (p *Previews) load(ctx context.Context, f *preview) (http.Handler, error) {
 		p.drop(v)
 	}
 	return r, nil
+}
+
+// remember keeps err as the result of the folder name's loads for the
+// refresh interval, and returns it.
+func (p *Previews) remember(name string, err error) error {
+	if p.interval > 0 {
+		p.mu.Lock()
+		p.failures[name] = failure{err: err, until: time.Now().Add(p.interval)}
+		p.mu.Unlock()
+	}
+	return err
 }
 
 // beyondMax takes the least recently used snapshots other than f's out of

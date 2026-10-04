@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -77,7 +78,7 @@ func (p *previews) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type previewRequest struct {
 	leave  bool   // at /previews/: to leave the preview
 	enter  string // the folder named in a longer /previews/ path, unchecked, or ""
-	path   string // with enter, the clean path to open after the switch
+	path   string // with enter, the URL to open after the switch: a clean, escaped path and the query
 	folder string // the reader's preview: the folder of the preview cookie, or ""
 	ended  string // the folder of an ended preview, from the notice cookie, or ""
 }
@@ -89,19 +90,18 @@ type previewRequest struct {
 // without a valid folder name counts as none.
 func readPreviewRequest(r *http.Request) previewRequest {
 	var req previewRequest
-	switch p := r.URL.EscapedPath(); {
-	case p == "/previews" || p == "/previews/":
-		req.leave = true
-	case strings.HasPrefix(p, "/previews/") && !strings.HasPrefix(p, "/previews//"):
-		// One escaped segment names the folder, as for ServeMux's wildcards.
-		segment, rest, _ := strings.Cut(strings.TrimPrefix(p, "/previews/"), "/")
-		req.enter = segment
-		if name, err := url.PathUnescape(segment); err == nil {
-			req.enter = name
-		}
-		req.path = "/"
-		if rest, err := url.PathUnescape(rest); err == nil {
-			req.path = cleanTarget(rest)
+	// ServeMux unescapes each segment of the escaped path on its own.
+	segments := strings.Split(strings.TrimPrefix(r.URL.EscapedPath(), "/"), "/")
+	if first, err := url.PathUnescape(segments[0]); err == nil && first == "previews" {
+		switch {
+		case len(segments) == 1 || len(segments) == 2 && segments[1] == "":
+			req.leave = true
+		case segments[1] != "":
+			req.enter = segments[1]
+			if name, err := url.PathUnescape(segments[1]); err == nil {
+				req.enter = name
+			}
+			req.path = cleanTarget(strings.Join(segments[2:], "/"), r.URL.RawQuery)
 		}
 	}
 	if c, err := r.Cookie(previewCookie); err == nil && validFolder(c.Value) {
@@ -113,15 +113,18 @@ func readPreviewRequest(r *http.Request) previewRequest {
 	return req
 }
 
-// cleanTarget returns the URL of the path p of this site, cleaned of dot
-// segments and of repeated slashes, which would name another host, with a
-// trailing slash kept.
-func cleanTarget(p string) string {
+// cleanTarget returns the URL of the escaped path p of this site with the
+// query, the path cleaned of dot segments and of repeated slashes, which
+// would name another host, with a trailing slash kept.
+func cleanTarget(p, query string) string {
 	clean := path.Clean("/" + p)
 	if strings.HasSuffix(p, "/") && clean != "/" {
 		clean += "/"
 	}
-	return (&url.URL{Path: clean}).String()
+	if query != "" {
+		clean += "?" + query
+	}
+	return clean
 }
 
 // validFolder reports whether name is a folder name: one path segment of
@@ -224,7 +227,7 @@ func (p *previews) send(w http.ResponseWriter, r *http.Request, req previewReque
 		private(h).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
 	case req.folder != "":
 		http.SetCookie(w, expired(previewCookie))
-		// The first page with the notice clears this cookie, after it in the response.
+		// A page with the notice takes this cookie out of its response.
 		http.SetCookie(w, &http.Cookie{Name: endedCookie, Value: req.folder, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		private(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.folder}))
 	case req.ended != "":
@@ -260,6 +263,21 @@ func bannerOf(r *http.Request) *banner {
 		return &b
 	}
 	return nil
+}
+
+// dropCookie takes the Set-Cookie lines of the cookie name out of h, and
+// reports whether h held one.
+func dropCookie(h http.Header, name string) bool {
+	lines := h.Values("Set-Cookie")
+	kept := slices.DeleteFunc(slices.Clone(lines), func(line string) bool { return strings.HasPrefix(line, name+"=") })
+	if len(kept) == len(lines) {
+		return false
+	}
+	h.Del("Set-Cookie")
+	for _, line := range kept {
+		h.Add("Set-Cookie", line)
+	}
+	return true
 }
 
 // expired returns the cookie name with the path /, expired, so that the

@@ -1,6 +1,7 @@
 package source
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -297,5 +298,176 @@ func TestPreviewsKeepTheirSnapshotsThroughFailedLoads(t *testing.T) {
 	}
 	if n := builds.Load(); n != 2 {
 		t.Errorf("%d builds, want the 2 of the first loads", n)
+	}
+}
+
+// blockingSource is a fake source whose Read waits for release, or for the
+// end of its context, as a bucket's read does.
+type blockingSource struct {
+	*fakeSource
+	release chan struct{}
+}
+
+func (s *blockingSource) Read(ctx context.Context, listing Listing) (fs.FS, error) {
+	select {
+	case <-s.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return s.fakeSource.Read(ctx, listing)
+}
+
+func TestPreviewsShareALoadThatOneRequestLeaves(t *testing.T) {
+	slow := &blockingSource{fakeSource: folderOf("slow"), release: make(chan struct{})}
+	var builds atomic.Int64
+	p := NewPreviews(t.Context(), func(string) (Source, error) { return slow, nil }, pageOf(&builds), 0, 0, 0)
+	leaving, leave := context.WithCancel(t.Context())
+	first := make(chan error)
+	go func() {
+		_, err := p.Handler(leaving, "slow")
+		first <- err
+	}()
+	waitFor(t, "the load of slow", func() bool { return slow.lists.Load() == 1 })
+	// The reader who started the load leaves before its end.
+	leave()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Errorf("the reader who left: %v, want the end of its request", err)
+	}
+	close(slow.release)
+	// The load goes on for the folder's other readers.
+	if h, err := p.Handler(t.Context(), "slow"); err != nil || body(h) != "slow" {
+		t.Fatalf("the next reader: %v", err)
+	}
+	if lists, n := slow.lists.Load(), builds.Load(); lists != 1 || n != 1 {
+		t.Errorf("%d listings and %d builds, want one load", lists, n)
+	}
+}
+
+func TestPreviewsRefreshAfterTheirFirstRequestEnds(t *testing.T) {
+	one := folderOf("one")
+	var opened, builds atomic.Int64
+	p := NewPreviews(t.Context(), folders(map[string]*fakeSource{"pr-1": one}, &opened), pageOf(&builds), time.Millisecond, 0, 0)
+	request, end := context.WithCancel(t.Context())
+	h, err := p.Handler(request, "pr-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The request ends, as a server's request does when its handler returns.
+	end()
+	one.set("v2", map[string]string{"index.md": "two"})
+	waitFor(t, "the second snapshot of pr-1", func() bool { return body(h) == "two" })
+}
+
+func TestPreviewsRememberAFailedLoadForTheRefreshInterval(t *testing.T) {
+	broken, empty := folderOf("broken"), &fakeSource{}
+	broken.readErr = errors.New("bucket unreachable")
+	var opened, builds atomic.Int64
+	p := NewPreviews(t.Context(), folders(map[string]*fakeSource{"broken": broken, "empty": empty}, &opened), pageOf(&builds), 200*time.Millisecond, 0, 0)
+	for range 3 {
+		if _, err := p.Handler(t.Context(), "broken"); err == nil || !strings.Contains(err.Error(), "bucket unreachable") {
+			t.Fatalf("the broken folder: %v", err)
+		}
+	}
+	if n := broken.lists.Load(); n != 1 {
+		t.Errorf("three requests within the refresh interval listed the broken folder %d times, want 1", n)
+	}
+	// After the refresh interval, a request loads the folder again.
+	broken.mu.Lock()
+	broken.readErr = nil
+	broken.mu.Unlock()
+	waitFor(t, "the load after the refresh interval", func() bool {
+		h, err := p.Handler(t.Context(), "broken")
+		return err == nil && body(h) == "broken"
+	})
+	// A folder without objects costs a listing, and stays unremembered.
+	for range 3 {
+		if _, err := p.Handler(t.Context(), "empty"); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("the empty folder: %v", err)
+		}
+	}
+	if n := empty.lists.Load(); n != 3 {
+		t.Errorf("three requests listed the empty folder %d times, want 3", n)
+	}
+}
+
+func TestPreviewsCountNoLoadingFolderAsASnapshot(t *testing.T) {
+	slow := &blockingSource{fakeSource: folderOf("slow"), release: make(chan struct{})}
+	fast := folderOf("fast")
+	var builds atomic.Int64
+	p := NewPreviews(t.Context(), func(name string) (Source, error) {
+		if name == "slow" {
+			return slow, nil
+		}
+		return fast, nil
+	}, pageOf(&builds), 0, 0, 1)
+	done := make(chan error)
+	go func() {
+		_, err := p.Handler(t.Context(), "slow")
+		done <- err
+	}()
+	waitFor(t, "the load of slow", func() bool { return slow.lists.Load() == 1 })
+	// The fast folder loads while the slow one holds no snapshot yet.
+	if _, err := p.Handler(t.Context(), "fast"); err != nil {
+		t.Fatal(err)
+	}
+	close(slow.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	// The slow folder's snapshot, the last to load, stays, and the fast
+	// one, the least recently used beyond the limit of one, leaves.
+	if h, err := p.Handler(t.Context(), "slow"); err != nil || body(h) != "slow" || builds.Load() != 2 {
+		t.Errorf("slow after both loads: %v, %d builds, want 2", err, builds.Load())
+	}
+	if _, err := p.Handler(t.Context(), "fast"); err != nil || builds.Load() != 3 {
+		t.Errorf("fast after both loads: %v, %d builds, want 3", err, builds.Load())
+	}
+}
+
+func TestBucketWithoutLeavesTheFolderOutOfAFolder(t *testing.T) {
+	b := memBucket(t, map[string]string{
+		"site/environment.yaml":   "portals: []\n",
+		"site/previews/pr-1/a.md": "# A\n",
+		"previews/b.md":           "# B\n",
+	})
+	site, err := NewBucket(b, 0).Folder("site")
+	if err != nil {
+		t.Fatal(err)
+	}
+	published, err := site.Without("previews")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listing, err := published.List(t.Context()); err != nil || keysOf(listing) != "environment.yaml" {
+		t.Errorf("site without its previews: %s, %v", keysOf(listing), err)
+	}
+}
+
+// failingList is a fake source whose List fails while fail is set.
+type failingList struct {
+	*fakeSource
+	fail atomic.Bool
+}
+
+func (f *failingList) List(ctx context.Context) (Listing, error) {
+	if f.fail.Load() {
+		f.lists.Add(1)
+		return nil, errors.New("bucket unreachable")
+	}
+	return f.fakeSource.List(ctx)
+}
+
+func TestPreviewsKeepASnapshotWhoseListingFails(t *testing.T) {
+	src := &failingList{fakeSource: folderOf("one")}
+	var builds atomic.Int64
+	p := NewPreviews(t.Context(), func(string) (Source, error) { return src, nil }, pageOf(&builds), time.Millisecond, 0, 0)
+	if _, err := p.Handler(t.Context(), "pr-1"); err != nil {
+		t.Fatal(err)
+	}
+	src.fail.Store(true)
+	lists := src.lists.Load()
+	waitFor(t, "three failed checks", func() bool { return src.lists.Load() >= lists+3 })
+	if h, err := p.Handler(t.Context(), "pr-1"); err != nil || body(h) != "one" || builds.Load() != 1 {
+		t.Errorf("after failed checks: %v, %d builds, want the snapshot of the first", err, builds.Load())
 	}
 }

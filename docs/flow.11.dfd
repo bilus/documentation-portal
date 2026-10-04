@@ -6,12 +6,14 @@
 # passes unchanged from the HTTP server to box 11.4. Box 11.3 calls Open,
 # which in docportal is source.Previews.Handler: it finds the folder's
 # snapshot in the preview snapshots, or loads it from the bucket folder at
-# the folder's first request, and drops the least recently used snapshot
-# beyond the preview limit. Each preview folder in memory has a reloader of
-# its own, process 9, whose checks list the folder through a listing that
-# drops the snapshot from the preview snapshots when it finds the folder
-# empty; a timer drops a snapshot unused for the idle time. These drops run
-# inside source.Previews, behind Open, so no box of this diagram draws them.
+# the folder's first request, on a context that no request ends, and drops
+# the least recently used snapshot beyond the preview limit; a failed load
+# of a folder with objects stays there for the refresh interval. Each
+# preview folder in memory has a reloader of its own, process 9, whose
+# checks list the folder through a listing that drops the snapshot from the
+# preview snapshots when it finds the folder empty; a timer drops a snapshot
+# unused for the idle time. These drops run inside source.Previews, behind
+# Open, so no box of this diagram draws them.
 # Box 11.4 sends the request on to the preview's portal handler or to the
 # published one, with the banner in the request's context, for the pages of
 # box 3.4.3, where a page with the notice clears the notice cookie.
