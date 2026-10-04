@@ -59,6 +59,11 @@ docportal refuses, keeps the old snapshot and writes the cause to the log, and
 the next check tries again. The chat keeps its conversations and its question
 counts across snapshots. A local directory is read live, as before.
 
+The `file://` form serves local tests of the bucket flow. Unlike the local
+directory of `-config` alone, which follows no symlink out of the root, it
+reads through a symlink to a file outside the folder, as Go CDK's file driver
+does, so keep it to folders that nobody else can write to.
+
 A program that uses the library opens the folder with `source.OpenBucket`,
 after a blank import of the Go CDK drivers it needs, such as
 `gocloud.dev/blob/gcsblob`; loads the first snapshot with `source.Load`;

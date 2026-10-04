@@ -504,3 +504,62 @@ func TestAddChatKeepsTheChatOnAFailure(t *testing.T) {
 		t.Errorf("the next good snapshot: err %v, chat %v, want the same chat", err, again)
 	}
 }
+
+func TestParseConfigReadsTheBucketSettings(t *testing.T) {
+	env := map[string]string{"DOCPORTAL_ROOT": "gs://docs?prefix=portal/", "DOCPORTAL_REFRESH": "30s", "DOCPORTAL_MAX_SIZE": "64"}
+	cfg, err := parseConfig(nil, func(k string) string { return env[k] })
+	if err != nil || cfg.Root != "gs://docs?prefix=portal/" || cfg.Refresh != 30*time.Second || cfg.MaxSize != 64<<20 {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
+	cfg, err = parseConfig([]string{"-root", "s3://docs?prefix=p/", "-refresh", "2m", "-max-size", "0"}, func(k string) string { return env[k] })
+	if err != nil || cfg.Root != "s3://docs?prefix=p/" || cfg.Refresh != 2*time.Minute || cfg.MaxSize != 0 {
+		t.Errorf("the flags over the environment: %+v, %v", cfg, err)
+	}
+	for name, bad := range map[string]map[string]string{
+		"a refresh that is not a duration": {"DOCPORTAL_REFRESH": "soon"},
+		"a size that is not a number":      {"DOCPORTAL_MAX_SIZE": "big"},
+		"a size the limit cannot hold":     {"DOCPORTAL_MAX_SIZE": "17592186044417"},
+	} {
+		if _, err := parseConfig(nil, func(k string) string { return bad[k] }); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	for _, args := range [][]string{{"-max-size", "-1"}, {"-max-size", "9223372036854775807"}} {
+		if _, err := parseConfig(args, noEnv); err == nil {
+			t.Errorf("%v: no error", args)
+		}
+	}
+}
+
+func TestStartupReadsTheConfigurationFileAtItsPath(t *testing.T) {
+	dir, url := bucketFolder(t)
+	site := filepath.Join(dir, "site")
+	if err := os.MkdirAll(filepath.Join(site, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(site, "environment.yaml"), filepath.Join(site, "sub", "environment.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "sub/environment.yaml", "-refresh", "0"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(h, "/portals/pets/docs/guides/a.md"); rec.Code != http.StatusOK {
+		t.Errorf("the document page: %d", rec.Code)
+	}
+}
+
+func TestBuilderKeepsOneChatAcrossSnapshots(t *testing.T) {
+	root := os.DirFS("../../testdata")
+	b := &builder{cfg: config{ChatModel: "claude-opus-5-5"}, configPath: "environment.yaml"}
+	if _, err := b.build(root); err != nil {
+		t.Fatal(err)
+	}
+	first := b.chat
+	if first == nil {
+		t.Fatal("the first build made no chat")
+	}
+	if _, err := b.build(root); err != nil || b.chat != first {
+		t.Errorf("the second build: err %v, same chat %v", err, b.chat == first)
+	}
+}

@@ -73,3 +73,14 @@ The plan gate changes `main.startup` inline: it takes a context, box 2 becomes `
 - Holes: `3 source.reloader.swap`, `3 source.reloader.check`, `3 source.reloader.rebuild`, `3 source.reloader.ServeHTTP`, `3 chat.Chat.Reload`.
 - Acceptance: `TestReloaderSwapsASettledChange`, `TestChatReloadKeepsConversations`, `TestStartupRefreshesTheBucket`, and the browser test `TestRefreshShowsTheNewDocument` in `e2e`.
 - Size: 300 lines.
+
+### Stage 4: the defect review's findings
+
+Added after the defect review of AGENTS.md; the ledger records a decision on each finding.
+
+- Goal: findings 1, 3, 4 and 5 are fixed, each from a failing test; finding 2 is documented; the reviewer's wrong implementations W1 to W8 each fail a test.
+- Requirement: 1, 3, 4, 5, 6 and 7.
+- Dependencies: stage 3.
+- Holes: none; each fix changes a function body, and the builder closure of startup becomes the type `main.builder`, whose `build` method runs boxes 7, 5, 6 and 3 and keeps the chat as a field, the Chat store of box 6.
+- Acceptance: the new tests of the ledger's decisions.
+- Size: 200 lines.
