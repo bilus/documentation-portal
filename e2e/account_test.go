@@ -46,12 +46,13 @@ func TestReaderSeesTheAccountLinks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(browser, 30*time.Second)
 	defer cancel()
 	// atTheEnd reports whether the account links end the navigation bar,
-	// at its right edge, past the portal menu.
+	// at its right edge, right after the portal menu, which stays on the
+	// right as without links.
 	const atTheEnd = `(() => {
 		const nav = document.querySelector('.portal-nav').getBoundingClientRect();
 		const links = document.querySelector('.portal-account').getBoundingClientRect();
 		const menu = document.querySelector('.portal-menu').getBoundingClientRect();
-		return nav.right - links.right < 40 && links.left >= menu.right;
+		return nav.right - links.right < 40 && links.left >= menu.right && links.left - menu.right < 40;
 	})()`
 	var docLinks, chatLinks, signOut string
 	var docEnd, chatEnd, ok bool

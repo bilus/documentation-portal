@@ -65,3 +65,14 @@ The plan gate declares the account hook, `Config.Account`, the type `AccountLink
 - Holes: `2 portal_test.ExampleNew`, the example's output.
 - Acceptance: `ExampleNew` with its output, and `make lint`, which passes on the tree and fails in scratch copies whose `portal` or docportal imports `golang.org/x/oauth2` (an experiment, recorded in the ledger).
 - Size: 250 lines, with the README.
+
+### Stage 3: the defect review's findings
+
+Added after the defect review of AGENTS.md; the ledger records a decision on each finding.
+
+- Goal: make lint fails when go list fails, the tests pin the home page's bytes and its bar's place, a private response with a hook that returns no links, a partial decode of the chat tab's links and the portal menu's place, and the documentation names the URLs that work on every page; the reviewer's wrong implementations each fail a test or the lint experiment.
+- Requirement: 3, 4, 5, 6, 7 and 9.
+- Dependencies: stage 2.
+- Holes: none; each fix changes a recipe, a test or a doc comment.
+- Acceptance: the new tests and the experiment of the ledger's decisions.
+- Size: 100 lines.

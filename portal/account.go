@@ -7,7 +7,9 @@ import (
 
 // AccountLink is an account link: a link at the right end of the navigation
 // bar, such as the reader's name or a sign-out link, as the account hook
-// returns it. A link without a URL shows its label as text.
+// returns it. A link without a URL shows its label as text. A relative URL,
+// or one of http, https or mailto, works on every page; the portal's pages
+// write any other URL as #ZgotmplZ, as html/template does.
 type AccountLink struct {
 	Label string
 	URL   string

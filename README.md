@@ -181,7 +181,8 @@ Request hooks, optional functions of the request, read that identity:
   reader's name and a sign-out link, which end the navigation bar of every
   page and of the chat page. A link without a URL shows its text alone,
   and the home page shows the links in a bar of their own, so that a reader
-  who sees no portal can still sign out.
+  who sees no portal can still sign out. Relative URLs and http, https and
+  mailto URLs work on every page.
 - `chat.Config.Reader` returns the reader's ID for the chat's question limit
   (see The chat's question limit per reader).
 
