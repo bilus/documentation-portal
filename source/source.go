@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -140,10 +141,12 @@ func OpenBucket(ctx context.Context, rawURL string, limit int64) (*Bucket, error
 
 // List lists the folder's objects in key order, with each one's size,
 // modification time and MD5 sum as the bucket reports them. It leaves out
-// the zero-byte objects whose keys end in a slash, and refuses a key that is
-// not a valid io/fs path.
+// the zero-byte objects whose keys end in a slash or are empty, which the
+// console writes for a folder and for the folder itself, and refuses a key
+// that is not a valid io/fs path or that is also a directory of another key.
 func (b *Bucket) List(ctx context.Context) (Listing, error) {
 	var listing Listing
+	dirs := map[string]bool{} // every directory of a key
 	it := b.bucket.List(nil)
 	for {
 		o, err := it.Next(ctx)
@@ -153,13 +156,21 @@ func (b *Bucket) List(ctx context.Context) (Listing, error) {
 		if err != nil {
 			return nil, fmt.Errorf("list the bucket folder: %w", err)
 		}
-		if o.Size == 0 && strings.HasSuffix(o.Key, "/") {
+		if o.Size == 0 && (o.Key == "" || strings.HasSuffix(o.Key, "/")) {
 			continue
 		}
 		if !fs.ValidPath(o.Key) {
 			return nil, fmt.Errorf("list the bucket folder: the key %q is not a valid path", o.Key)
 		}
+		for dir := path.Dir(o.Key); dir != "."; dir = path.Dir(dir) {
+			dirs[dir] = true
+		}
 		listing = append(listing, Object{Key: o.Key, Size: o.Size, ModTime: o.ModTime, MD5: o.MD5})
+	}
+	for _, o := range listing {
+		if dirs[o.Key] {
+			return nil, fmt.Errorf("list the bucket folder: the key %q names both an object and a folder", o.Key)
+		}
 	}
 	// The drivers list in key order; sorting keeps Equal exact without them.
 	slices.SortFunc(listing, func(a, b Object) int { return strings.Compare(a.Key, b.Key) })
@@ -211,9 +222,10 @@ type reloader struct {
 	build func(fs.FS) (http.Handler, error)
 
 	inService atomic.Pointer[snapshotInService]
-	// run alone touches last and problem, after the first swap.
-	last    Listing // the last check's listing, when it differed from the snapshot in service
-	problem string  // the last problem logged, so that a check logs it once
+	// run alone touches these, after the first swap.
+	last     Listing // the last check's listing, when it differed from the snapshot in service
+	lastSeen bool    // whether last holds a listing, which may be empty
+	problem  string  // the last problem logged, so that a check logs it once
 }
 
 // snapshotInService is the listing of the snapshot in service and its portal
@@ -278,12 +290,12 @@ func (r *reloader) check(ctx context.Context) (Listing, bool) {
 		return nil, false
 	}
 	if listing.Equal(r.inService.Load().listing) {
-		r.last = nil
+		r.last, r.lastSeen = nil, false
 		return nil, false
 	}
 	// A listing seen for the first time may be an upload in progress.
-	if r.last == nil || !listing.Equal(r.last) {
-		r.last = listing
+	if !r.lastSeen || !listing.Equal(r.last) {
+		r.last, r.lastSeen = listing, true
 		return nil, false
 	}
 	return listing, true

@@ -1,6 +1,6 @@
 # docportal starts up: main.startup runs these steps in order, and main hands
-# the address and the reloader to the HTTP server. The builder, a closure of
-# startup, runs boxes 7, 5, 6 and 3 again for each new snapshot.
+# the address and the reloader to the HTTP server. The builder, the build
+# method of main.builder, runs boxes 7, 5, 6 and 3 again for each new snapshot.
 # By hand: dfd --box 300x150 --per-row 5 --number docs/flow.dfd -o flow.svg
 
 {Operator}

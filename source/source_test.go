@@ -380,3 +380,169 @@ func TestReloaderSmoke(t *testing.T) {
 		t.Errorf("%d builds, want 2", n)
 	}
 }
+
+func TestBucketListingLeavesOutTheFolderItself(t *testing.T) {
+	// The console's "Create folder" writes a zero-byte object at the prefix,
+	// which the prefix strips to an empty key.
+	b := memBucket(t, map[string]string{"portal/": "", "portal/environment.yaml": "portals: []\n", "portal/docs/": "", "portal/docs/a.md": "# A\n"})
+	listing, err := NewBucket(blob.PrefixedBucket(b, "portal/"), 0).List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, o := range listing {
+		keys = append(keys, o.Key)
+	}
+	if want := "docs/a.md environment.yaml"; strings.Join(keys, " ") != want {
+		t.Errorf("keys = %v, want %s", keys, want)
+	}
+}
+
+func TestBucketListingRefusesAnObjectNamedLikeAFolder(t *testing.T) {
+	src := NewBucket(memBucket(t, map[string]string{"docs": "a file", "docs/a.md": "# A\n"}), 0)
+	_, err := src.List(t.Context())
+	if err == nil || !strings.Contains(err.Error(), `"docs"`) {
+		t.Errorf("err = %v, want one naming docs", err)
+	}
+	// A non-empty object whose key ends in a slash is no placeholder.
+	src = NewBucket(memBucket(t, map[string]string{"a.md": "# A\n", "docs/": "x"}), 0)
+	if _, err := src.List(t.Context()); err == nil || !strings.Contains(err.Error(), `"docs/"`) {
+		t.Errorf("err = %v, want one naming docs/", err)
+	}
+}
+
+func TestBucketReadCountsAnObjectThatGrew(t *testing.T) {
+	b := memBucket(t, folder)
+	src := NewBucket(b, 0)
+	listing, err := src.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.WriteAll(t.Context(), "docs/a.md", []byte(strings.Repeat("# A\n", 100)), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewBucket(b, listing.Size()).Read(t.Context(), listing); err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Errorf("err = %v, want one naming the size limit", err)
+	}
+}
+
+// drive returns the reloader of src's first snapshot without a timer, so
+// that a test calls its steps by hand.
+func drive(t *testing.T, src *fakeSource, builds *atomic.Int64) *reloader {
+	t.Helper()
+	snap, err := Load(t.Context(), src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := pageOf(builds)(snap.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewReloader(t.Context(), src, snap.Listing, first, 0, pageOf(builds)).(*reloader)
+}
+
+func TestCheckSettlesAnEmptiedFolder(t *testing.T) {
+	var logged safeBuffer
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	src := &fakeSource{}
+	src.set("v1", map[string]string{"index.md": "one"})
+	var builds atomic.Int64
+	r := drive(t, src, &builds)
+	src.mu.Lock()
+	src.listing, src.files = nil, nil
+	src.mu.Unlock()
+	if _, ok := r.check(t.Context()); ok {
+		t.Error("an emptied folder settled at first sight")
+	}
+	settled, ok := r.check(t.Context())
+	if !ok || len(settled) != 0 {
+		t.Fatalf("the emptied folder did not settle at the second check: %v, %v", settled, ok)
+	}
+	if _, err := r.rebuild(t.Context(), settled); err == nil || !strings.Contains(logged.String(), "index.md") {
+		t.Errorf("the failed build of the emptied folder: err %v, log %q", err, logged.String())
+	}
+}
+
+func TestCheckForgetsAChangeThatReverts(t *testing.T) {
+	src := &fakeSource{}
+	src.set("v1", map[string]string{"index.md": "one"})
+	var builds atomic.Int64
+	r := drive(t, src, &builds)
+	src.set("v2", map[string]string{"index.md": "two"})
+	if _, ok := r.check(t.Context()); ok {
+		t.Fatal("a change settled at first sight")
+	}
+	src.set("v1", map[string]string{"index.md": "one"})
+	if _, ok := r.check(t.Context()); ok {
+		t.Fatal("the snapshot in service counted as a change")
+	}
+	// The change comes back: it is a first sight again.
+	src.set("v2", map[string]string{"index.md": "two"})
+	if _, ok := r.check(t.Context()); ok {
+		t.Error("a change that came back after a revert was loaded at first sight")
+	}
+	if _, ok := r.check(t.Context()); !ok {
+		t.Error("the change did not settle at its second check")
+	}
+}
+
+func TestReloaderLogsAProblemThatComesBack(t *testing.T) {
+	var logged safeBuffer
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	src := &fakeSource{}
+	src.set("v1", map[string]string{"index.md": "one"})
+	var builds atomic.Int64
+	r := drive(t, src, &builds)
+	fail := func(version string) {
+		t.Helper()
+		src.set(version, map[string]string{"index.md": version})
+		src.mu.Lock()
+		src.readErr = errors.New("bucket unreachable")
+		src.mu.Unlock()
+		r.check(t.Context())
+		settled, ok := r.check(t.Context())
+		if !ok {
+			t.Fatalf("%s did not settle", version)
+		}
+		if _, err := r.rebuild(t.Context(), settled); err == nil {
+			t.Fatalf("%s: the read did not fail", version)
+		}
+		src.mu.Lock()
+		src.readErr = nil
+		src.mu.Unlock()
+		h, err := r.rebuild(t.Context(), settled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.swap(settled, h)
+	}
+	fail("v2")
+	fail("v3")
+	if n := strings.Count(logged.String(), "bucket unreachable"); n != 2 {
+		t.Errorf("a problem that came back after a swap was logged %d times, want 2:\n%s", n, logged.String())
+	}
+}
+
+func TestRebuildLogsAFailedBuild(t *testing.T) {
+	var logged safeBuffer
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	src := &fakeSource{}
+	src.set("v1", map[string]string{"index.md": "one"})
+	var builds atomic.Int64
+	r := drive(t, src, &builds)
+	src.set("v2", map[string]string{"readme.md": "no index"})
+	r.check(t.Context())
+	settled, ok := r.check(t.Context())
+	if !ok {
+		t.Fatal("v2 did not settle")
+	}
+	if _, err := r.rebuild(t.Context(), settled); err == nil || !strings.Contains(logged.String(), "index.md") {
+		t.Errorf("a failed build: err %v, log %q", err, logged.String())
+	}
+}

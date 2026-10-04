@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -51,10 +52,7 @@ func main() {
 // startup reads the configuration, opens the documentation source, loads its
 // snapshot, builds the portal handler from it, and wraps it in the reloader,
 // which rebuilds it for each settled change of the source until ctx ends.
-// It returns the address to listen on and the reloader. The builder, which
-// reads the portal configuration from the configuration file, adds the Try
-// It setting and the chat, and builds the portal handler, runs for the first
-// snapshot and for every new one, with one chat across them.
+// It returns the address to listen on and the reloader.
 func startup(ctx context.Context, args []string, getenv func(string) string) (string, http.Handler, error) {
 	cfg, err := parseConfig(args, getenv)
 	if err != nil {
@@ -68,24 +66,37 @@ func startup(ctx context.Context, args []string, getenv func(string) string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	var c *chat.Chat
-	build := func(root fs.FS) (http.Handler, error) {
-		pcfg, err := portal.ReadConfig(root, configPath)
-		if err != nil {
-			return nil, err
-		}
-		pcfg = setTryIt(pcfg, cfg.HideTryIt)
-		pcfg, c, err = addChat(pcfg, cfg.ChatModel, c)
-		if err != nil {
-			return nil, err
-		}
-		return portal.New(pcfg)
-	}
-	h, err := build(snap.Root)
+	b := &builder{cfg: cfg, configPath: configPath}
+	h, err := b.build(snap.Root)
 	if err != nil {
 		return "", nil, err
 	}
-	return cfg.Addr, source.NewReloader(ctx, src, snap.Listing, h, cfg.Refresh, build), nil
+	return cfg.Addr, source.NewReloader(ctx, src, snap.Listing, h, cfg.Refresh, b.build), nil
+}
+
+// builder builds the portal handler of each snapshot of the documentation
+// source, with one chat across the snapshots.
+type builder struct {
+	cfg        config
+	configPath string     // the configuration file's path inside the snapshot
+	chat       *chat.Chat // nil until the first build with a chat model
+}
+
+// build builds the portal handler of the snapshot at root: it reads the
+// portal configuration from the configuration file, adds the Try It setting
+// and the chat, and builds the handler, as startup's boxes do for the first
+// snapshot. A build that fails leaves the chat as it was.
+func (b *builder) build(root fs.FS) (http.Handler, error) {
+	pcfg, err := portal.ReadConfig(root, b.configPath)
+	if err != nil {
+		return nil, err
+	}
+	pcfg = setTryIt(pcfg, b.cfg.HideTryIt)
+	pcfg, b.chat, err = addChat(pcfg, b.cfg.ChatModel, b.chat)
+	if err != nil {
+		return nil, err
+	}
+	return portal.New(pcfg)
 }
 
 // parseConfig reads the configuration from the flags and the environment.
@@ -144,8 +155,8 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	if flags.NArg() > 0 {
 		return config{}, fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
-	if maxSizeMiB < 0 {
-		return config{}, fmt.Errorf("-max-size: %d MiB is negative", maxSizeMiB)
+	if maxSizeMiB < 0 || maxSizeMiB > math.MaxInt64>>20 {
+		return config{}, fmt.Errorf("-max-size: %d MiB is not a size between 0 and %d", maxSizeMiB, math.MaxInt64>>20)
 	}
 	cfg.MaxSize = maxSizeMiB << 20
 	return cfg, nil
@@ -154,7 +165,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 // openSource opens the documentation source of cfg: the directory of the
 // configuration file, so that the portal cannot read outside it, or the
 // bucket folder that cfg.Root names, with cfg's size limit. It returns the
-// source with the configuration file's path inside it.
+// source with the configuration file's path inside it. A file:// bucket
+// folder, unlike the directory, reads through a symlink to a file outside
+// it, as the file driver does.
 func openSource(ctx context.Context, cfg config) (source.Source, string, error) {
 	if cfg.Root != "" {
 		bucket, err := source.OpenBucket(ctx, cfg.Root, cfg.MaxSize)
