@@ -1,8 +1,8 @@
 # portalapp: an example application on the portal library
 
 portalapp embeds the portal library of this repository in a program of its
-own. It serves the documentation of a bucket folder, refreshed as the folder
-changes, with previews of pull requests; it signs readers in through Auth0
+own. It serves the documentation of a bucket folder, refreshed after each
+change of the folder, with previews of pull requests; it signs readers in through Auth0
 or GitHub; and it opens portals, sections and previews to each reader by an
 access file, which maps the reader's claims to the labels of the
 configuration file. With an Anthropic API key, it runs the chat, with one

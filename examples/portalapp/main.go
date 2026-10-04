@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"os"
 
-	// The drivers of the bucket folder URLs that PORTAL_BUCKET accepts.
+	// The drivers of the bucket folder URLs accepted in PORTAL_BUCKET.
 	_ "gocloud.dev/blob/fileblob"
 	_ "gocloud.dev/blob/gcsblob"
 	_ "gocloud.dev/blob/s3blob"

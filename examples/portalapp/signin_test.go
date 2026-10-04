@@ -78,7 +78,7 @@ func send(t *testing.T, c *http.Client, method, url string, form url.Values, hea
 	return resp
 }
 
-// choiceCookie returns the choice cookie that resp sets, or nil.
+// choiceCookie returns the choice cookie set by resp, or nil.
 func choiceCookie(resp *http.Response) *http.Cookie {
 	for _, c := range resp.Cookies() {
 		if c.Name == "signin_provider" {

@@ -229,7 +229,7 @@ func (g *stubGitHub) authorized(r *http.Request) (ok, readOrg bool) {
 	return ok && known, slices.Contains(strings.Fields(strings.ReplaceAll(scope, ",", " ")), "read:org")
 }
 
-// user serves the reader, as GET /user of GitHub's API does.
+// user serves the reader, as in GET /user of GitHub's API.
 func (g *stubGitHub) user(w http.ResponseWriter, r *http.Request) {
 	if ok, _ := g.authorized(r); !ok {
 		badCredentials(w)
@@ -238,7 +238,7 @@ func (g *stubGitHub) user(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"id": g.reader.ID, "login": g.reader.Login, "name": g.reader.Name, "email": g.reader.Email})
 }
 
-// orgs serves the reader's organizations, as GET /user/orgs does.
+// orgs serves the reader's organizations, as in GET /user/orgs.
 func (g *stubGitHub) orgs(w http.ResponseWriter, r *http.Request) {
 	var list []any
 	for _, org := range g.reader.Orgs {
@@ -247,7 +247,7 @@ func (g *stubGitHub) orgs(w http.ResponseWriter, r *http.Request) {
 	g.page(w, r, list)
 }
 
-// teams serves the reader's teams, as GET /user/teams does.
+// teams serves the reader's teams, as in GET /user/teams.
 func (g *stubGitHub) teams(w http.ResponseWriter, r *http.Request) {
 	var list []any
 	for _, team := range g.reader.Teams {

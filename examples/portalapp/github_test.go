@@ -19,7 +19,7 @@ import (
 )
 
 // stubToken runs the authorization code flow with PKCE at the stub GitHub
-// at base, as the sign-in middleware does, and returns the access token.
+// at base, like the sign-in middleware, and returns the access token.
 func stubToken(t *testing.T, base string) *oauth2.Token {
 	t.Helper()
 	conf := oauth2.Config{
@@ -317,7 +317,7 @@ func TestNextPage(t *testing.T) {
 	}
 }
 
-// fail answers with status when when holds, and reports whether it did.
+// fail answers with status if when is true, and returns when.
 func fail(w http.ResponseWriter, when bool, status int) bool {
 	if when {
 		http.Error(w, http.StatusText(status), status)
