@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -221,11 +222,32 @@ func (cfg Config) check() error {
 		if !localPath(cfg.LogoutURL) && (err != nil || !webURL(u)) {
 			return fmt.Errorf("signin: the logout URL %q is neither an http or https URL nor a path", cfg.LogoutURL)
 		}
-		if (u.Host == "" || u.Host == callback.Host) && u.Path == signOut {
+		if leadsBack(u, callback, signOut) {
 			return fmt.Errorf("signin: the logout URL %q leads back to the sign-out path", cfg.LogoutURL)
 		}
 	}
 	return nil
+}
+
+// leadsBack reports whether the logout URL u, a path or an http or https
+// URL, may send the browser back to the sign-out path signOut of the portal
+// at the callback URL c. It compares the hosts in any letter case, with or
+// without a trailing dot, on any port and over either scheme. It compares
+// the paths decoded, with each backslash as a slash and without dot segments
+// or empty segments, keeping a trailing slash, so that neither
+// http.Redirect's cleaning nor the browser's resolution turns an accepted
+// logout URL into the sign-out path.
+func leadsBack(u, c *url.URL, signOut string) bool {
+	host := func(u *url.URL) string { return strings.TrimSuffix(strings.ToLower(u.Hostname()), ".") }
+	if u.Host != "" && host(u) != host(c) {
+		return false
+	}
+	slashed := strings.ReplaceAll(u.Path, `\`, "/")
+	p := path.Clean(slashed)
+	if strings.HasSuffix(slashed, "/") && p != "/" {
+		p += "/"
+	}
+	return p == signOut
 }
 
 // routePath reports whether p can be a route of the middleware, which

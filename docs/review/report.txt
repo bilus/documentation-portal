@@ -4,7 +4,7 @@ items at home flow.9.dfd, level 1
   Reloader: snapshot in service  live range 4  read distance 1  writers 9.1  readers 9.2, 9.4
 
 items at home flow.12.2.dfd, level 2
-  Revoked sessions: revoked sessions  live range 2  read distance 2  writers 12.2.1          readers 12.2.1, 12.2.3
+  Revoked sessions: revoked sessions  live range 3  read distance 3  writers 12.2.1          readers 12.2.1, 12.2.3, 12.2.4
   Held connections: held connections  live range 2  read distance 0  writers 12.2.1, 12.2.4  readers 12.2.1
 
 private items
@@ -21,7 +21,7 @@ pressure
   flow.9.dfd     max 1 in 4 gaps, first between 9.1 and 9.2
   flow.11.dfd    max 0 in 3 gaps, first between 11.1 and 11.2
   flow.12.dfd    max 0 in 1 gaps, first between 12.1 and 12.2
-  flow.12.2.dfd  max 1 in 4 gaps, first between 12.2.1 and 12.2.2
+  flow.12.2.dfd  max 1 in 5 gaps, first between 12.2.1 and 12.2.2
 
 findings
   none

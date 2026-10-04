@@ -578,6 +578,13 @@ func TestNewRefusesAConfigurationThatCannotSignIn(t *testing.T) {
 		"a callback URL ending in #":          func(c *Config) { c.CallbackURL = "https://docs.example/auth/callback#" },
 		"a logout path at the sign-out path":  func(c *Config) { c.LogoutURL = "/auth/sign-out" },
 		"a logout URL at the sign-out path":   func(c *Config) { c.LogoutURL = "https://docs.example/auth/sign-out" },
+		"a logout path with a dot segment":    func(c *Config) { c.LogoutURL = "/x/../auth/sign-out" },
+		"a logout path with a double slash":   func(c *Config) { c.LogoutURL = "/auth//sign-out" },
+		"a logout URL with an escaped dot":    func(c *Config) { c.LogoutURL = "https://docs.example/x/%2e%2e/auth/sign-out" },
+		"a logout URL with a backslash":       func(c *Config) { c.LogoutURL = `https://docs.example/auth\sign-out` },
+		"a logout URL in capital letters":     func(c *Config) { c.LogoutURL = "https://DOCS.example/auth/sign-out" },
+		"a logout URL with the default port":  func(c *Config) { c.LogoutURL = "https://docs.example:443/auth/sign-out" },
+		"a logout URL with a trailing dot":    func(c *Config) { c.LogoutURL = "https://docs.example./auth/sign-out" },
 		"a provider without endpoints": func(c *Config) {
 			c.Issuer, c.Provider = "", endpointProvider{newStubProvider(t), oauth2.Endpoint{}}
 		},
@@ -612,6 +619,15 @@ func TestNewRefusesAConfigurationThatCannotSignIn(t *testing.T) {
 	under.SignOutPath = "/auth/callback/out"
 	if _, err := New(t.Context(), under, http.NotFoundHandler()); err != nil {
 		t.Errorf("a sign-out path under the callback's: %v", err)
+	}
+	// New accepts a logout URL elsewhere on the portal's host, even at the
+	// sign-out path with a slash, and at another host's sign-out path.
+	for _, logout := range []string{"/", "https://DOCS.example/", "/auth/sign-out/", "https://idp.example/auth/sign-out"} {
+		cfg := good
+		cfg.LogoutURL = logout
+		if _, err := New(t.Context(), cfg, http.NotFoundHandler()); err != nil {
+			t.Errorf("the logout URL %q: %v", logout, err)
+		}
 	}
 }
 
