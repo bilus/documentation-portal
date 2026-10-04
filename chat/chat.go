@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,11 +26,11 @@ import (
 	"github.com/bilus/documentation-portal/portal"
 )
 
-// Limits bound what one client and one conversation may cost.
+// Limits bound what one asker and one conversation may cost.
 type Limits struct {
 	QuestionLength int           // characters in one question; 0 means 2000
 	ToolCalls      int           // per answer; 0 means 12
-	Questions      int           // per client in Window; 0 means 20
+	Questions      int           // per asker in Window; 0 means 20
 	Window         time.Duration // 0 means an hour
 	Turns          int           // questions in one conversation; 0 means 20
 	History        int           // bytes of messages and lookups in one conversation; 0 means 512 KiB
@@ -65,13 +66,23 @@ type Config struct {
 	Model     model.LLM
 	Libraries []*portal.Library // one for each portal, whose chat page the chat serves
 	Limits    Limits
+
+	// Reader is the reader hook: it returns the reader ID of r's reader,
+	// such as the subject of the reader's verified token, or "" for a reader
+	// who is not signed in. The question limit counts a signed-in reader's
+	// questions by the reader ID, from any client, and any other reader's by
+	// the client. A chat page keeps the reader ID of its load in its page
+	// session, which the reader's browser can read, and answers with
+	// Cache-Control: private. Without the hook, the chat counts every
+	// reader's questions by the client.
+	Reader func(r *http.Request) string
 }
 
 // The errors that Ask returns for a question it does not answer.
 var (
 	ErrEmpty        = errors.New("chat: the question is empty")
 	ErrTooLong      = errors.New("chat: the question is too long")
-	ErrRateLimited  = errors.New("chat: too many questions from this client")
+	ErrRateLimited  = errors.New("chat: too many questions from this asker")
 	ErrTurns        = errors.New("chat: the conversation has reached its length")
 	ErrTooManyTools = errors.New("chat: the answer needed too many lookups")
 	ErrNoAnswer     = errors.New("chat: the model returned no answer")
@@ -92,10 +103,11 @@ type Chat struct {
 	agents   []*portalAgent // one for each library, in order
 	sessions session.Service
 	limits   Limits
+	reader   func(*http.Request) string // the reader hook, or nil
 	now      func() time.Time
 
 	mu    sync.Mutex
-	asked map[string][]time.Time // client: when its recent questions came
+	asked map[Asker][]time.Time // when each asker's recent questions came
 	convs map[string]*conversation
 }
 
@@ -122,8 +134,9 @@ func New(cfg Config) (*Chat, error) {
 		model:    cfg.Model,
 		sessions: session.InMemoryService(),
 		limits:   cfg.Limits.withDefaults(),
+		reader:   cfg.Reader,
 		now:      time.Now,
-		asked:    map[string][]time.Time{},
+		asked:    map[Asker][]time.Time{},
 		convs:    map[string]*conversation{},
 	}
 	agents, err := newAgents(cfg.Model, cfg.Libraries, c.sessions)
@@ -227,10 +240,11 @@ func (c *Chat) currentAgents() []*portalAgent {
 	return c.agents
 }
 
-// Ask answers question, asked by client in conversation conv on the chat
-// page of the portal whose slug is portalSlug, in markdown, from the sections
-// of that portal visible to the reader with access. It answers a portal
-// hidden from the reader as a missing one, with ErrNoPortal.
+// Ask answers question, asked by asker in conversation conv on the chat page
+// of the portal whose slug is portalSlug, in markdown, from the sections of
+// that portal visible to the reader with access, and counts it against the
+// asker's question limit. It answers a portal hidden from the reader as a
+// missing one, with ErrNoPortal.
 //
 // The conversation keeps a separate history for each view of the portal, so
 // that no answer reads an earlier lookup from a section hidden from its
@@ -238,7 +252,7 @@ func (c *Chat) currentAgents() []*portalAgent {
 // without an access hook, stays the same across snapshots. The view of any
 // other reader changes with the set of its visible sections and with their
 // configuration.
-func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access, client, conv, question string) (string, error) {
+func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access, asker Asker, conv, question string) (string, error) {
 	a, ok := c.agentFor(portalSlug)
 	if !ok {
 		return "", fmt.Errorf("%w %q", ErrNoPortal, portalSlug)
@@ -256,7 +270,7 @@ func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access,
 	case utf8.RuneCountInString(question) > c.limits.QuestionLength:
 		return "", ErrTooLong
 	}
-	cv, err := c.admit(ctx, client, conv)
+	cv, err := c.admit(ctx, asker, conv)
 	if err != nil {
 		return "", err
 	}
@@ -309,14 +323,14 @@ func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access,
 	return answer.String(), nil
 }
 
-// admit counts the question against client's rate and the conversation's
-// length, and returns the conversation.
-func (c *Chat) admit(ctx context.Context, client, conv string) (*conversation, error) {
+// admit counts the question against the asker's question limit and the
+// conversation's length, and returns the conversation.
+func (c *Chat) admit(ctx context.Context, asker Asker, conv string) (*conversation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
 	c.sweep(ctx, now)
-	if len(c.asked[client]) >= c.limits.Questions {
+	if len(c.asked[asker]) >= c.limits.Questions {
 		return nil, ErrRateLimited
 	}
 	cv := c.convs[conv]
@@ -329,14 +343,14 @@ func (c *Chat) admit(ctx context.Context, client, conv string) (*conversation, e
 	}
 	cv.turns++
 	cv.lastUsed = now
-	c.asked[client] = append(c.asked[client], now)
+	c.asked[asker] = append(c.asked[asker], now)
 	return cv, nil
 }
 
 // sweep forgets the questions older than Window, and drops the conversations
 // that nobody used for Idle, with their sessions. The caller holds c.mu.
 func (c *Chat) sweep(ctx context.Context, now time.Time) {
-	for client, times := range c.asked {
+	for asker, times := range c.asked {
 		recent := times[:0:0]
 		for _, t := range times {
 			if now.Sub(t) < c.limits.Window {
@@ -344,9 +358,9 @@ func (c *Chat) sweep(ctx context.Context, now time.Time) {
 			}
 		}
 		if len(recent) == 0 {
-			delete(c.asked, client)
+			delete(c.asked, asker)
 		} else {
-			c.asked[client] = recent
+			c.asked[asker] = recent
 		}
 	}
 	for id, cv := range c.convs {

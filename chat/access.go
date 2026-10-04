@@ -107,13 +107,15 @@ func readPageAccess(value string) pageAccess {
 }
 
 // sessionOf returns the session of a chat page for r: the client of r, as
-// clientOf names it, and the page access of r's reader over the chat's
-// portals, from portal.AccessOf.
+// clientOf names it, the reader ID of r's reader, from the reader hook, and
+// the page access of r's reader over the chat's portals, from
+// portal.AccessOf.
 func (c *Chat) sessionOf(r *http.Request) (map[string]string, error) {
 	session, err := clientOf(r)
 	if err != nil {
 		return nil, err
 	}
+	session["readerID"] = c.readerIDOf(r)
 	access, err := json.Marshal(pageAccessOf(portal.AccessOf(r), c.currentAgents()))
 	if err != nil {
 		return nil, err

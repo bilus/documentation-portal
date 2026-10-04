@@ -1,7 +1,13 @@
 # Process 3.4, the body of portal.router.ServeHTTP: the portal handler's
 # answer to each request that box 9.4 sends it. The response writer of the
 # request passes unchanged from box 9.4 to box 3.4.3. Each box reads the
-# router's sites, access hook and routes as its receiver.
+# router's sites, access hook and routes as its receiver. Box 3.4.3 also
+# draws the chat's state and I/O behind its routes: a chat page's GET asks
+# the embedding program for the reader ID and the page access, and with a
+# reader hook the page answers privately (chat.Chat.privatePage); each
+# question over the chat's socket, which lives in the route of its upgrade
+# request, reads and writes the question limit's counts and asks the chat
+# model. The page session's round trip through the browser stays undrawn.
 # By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 3.4. docs/flow.3.4.dfd -o flow.3.4.svg
 
 {9.4 Answer each request with the portal handler of the snapshot in service}
@@ -26,8 +32,17 @@
     > file path
     < file
     <Documentation root>
-    > toc problem
+    > toc problem, chat problem
     <Log>
+    > request, portal, section
+    < reader ID, allowed
+    <Embedding program>
+    < questions by asker
+    > questions by asker
+    |Question limit|
+    > question
+    < answer
+    <Chat model>
     > response
     <HTTP server>
 
@@ -43,4 +58,9 @@
 # type: file path = string
 # type: file = []byte
 # type: toc problem = error
+# type: chat problem = error
+# type: reader ID = string
+# type: questions by asker = map[chat.Asker][]time.Time
+# type: question = string
+# type: answer = string
 # type: response = []byte

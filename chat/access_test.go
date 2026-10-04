@@ -146,7 +146,7 @@ func TestAskAnswersFromTheVisibleSections(t *testing.T) {
 		{Match: "no such document", Reply: "Call GET /orders."},
 	})}
 	c, _ := newAccessChat(t, m)
-	answer, err := c.Ask(t.Context(), "pet-shop", fakeaccess.Parse(customer), "client", "conv", "How do I list the orders?")
+	answer, err := c.Ask(t.Context(), "pet-shop", fakeaccess.Parse(customer), ClientAsker("client"), "conv", "How do I list the orders?")
 	if err != nil || answer != "Call GET /orders." {
 		t.Fatalf("answer %q, %v, script exhausted: %v", answer, err, m.LLM.(*fakemodel.Fake).Exhausted())
 	}
@@ -161,7 +161,7 @@ func TestAskAnswersFromTheVisibleSections(t *testing.T) {
 
 func TestAskAnswersAHiddenPortalAsMissing(t *testing.T) {
 	c, _ := newAccessChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "One."}}))
-	_, missing := c.Ask(t.Context(), "other", portal.Everything, "client", "conv", "Gold?")
+	_, missing := c.Ask(t.Context(), "other", portal.Everything, ClientAsker("client"), "conv", "Gold?")
 	for name, tc := range map[string]struct {
 		slug   string
 		access portal.Access
@@ -170,12 +170,12 @@ func TestAskAnswersAHiddenPortalAsMissing(t *testing.T) {
 		"a portal without a visible section": {"pet-shop", fakeaccess.Parse("Pet Shop/Gone")},
 		"no access":                          {"pet-shop", nil},
 	} {
-		_, err := c.Ask(t.Context(), tc.slug, tc.access, "client", "conv", "Gold?")
+		_, err := c.Ask(t.Context(), tc.slug, tc.access, ClientAsker("client"), "conv", "Gold?")
 		if !errors.Is(err, ErrNoPortal) || err.Error() != strings.Replace(missing.Error(), "other", tc.slug, 1) {
 			t.Errorf("%s: err = %v, want %v, as for a missing portal", name, err, missing)
 		}
 	}
-	if answer, err := c.Ask(t.Context(), "garden", fakeaccess.Parse(customer), "client", "conv", "Plants?"); err != nil || answer != "One." {
+	if answer, err := c.Ask(t.Context(), "garden", fakeaccess.Parse(customer), ClientAsker("client"), "conv", "Plants?"); err != nil || answer != "One." {
 		t.Errorf("a visible portal: %q, %v", answer, err)
 	}
 }
@@ -187,13 +187,13 @@ func TestANarrowerAccessReadsNoEarlierLookups(t *testing.T) {
 		{Match: "And the orders?", Reply: "Call GET /orders."},
 	})}
 	c, _ := newAccessChat(t, m)
-	if _, err := c.Ask(t.Context(), "pet-shop", portal.Everything, "client", "conv", "What do the notes say?"); err != nil {
+	if _, err := c.Ask(t.Context(), "pet-shop", portal.Everything, ClientAsker("client"), "conv", "What do the notes say?"); err != nil {
 		t.Fatal(err)
 	}
 	// The reader's access narrows in the same conversation, as after a
 	// revocation.
 	m.seen = nil
-	if answer, err := c.Ask(t.Context(), "pet-shop", fakeaccess.Parse(customer), "client", "conv", "And the orders?"); err != nil || answer != "Call GET /orders." {
+	if answer, err := c.Ask(t.Context(), "pet-shop", fakeaccess.Parse(customer), ClientAsker("client"), "conv", "And the orders?"); err != nil || answer != "Call GET /orders." {
 		t.Fatalf("the narrower access: %q, %v", answer, err)
 	}
 	for i, seen := range m.seen {
@@ -320,13 +320,13 @@ func TestOpenPageFollowsEachSnapshotWithoutAHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	access := readPageAccess(sessionThroughPortal(t, c)["access"])
-	if _, err := c.Ask(t.Context(), "pets", access, "client", "conv", "Which APIs?"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", access, ClientAsker("client"), "conv", "Which APIs?"); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Reload([]*portal.Library{petsLibrary(t, petsAPI, petsGuides)}); err != nil {
 		t.Fatal(err)
 	}
-	if answer, err := c.Ask(t.Context(), "pets", access, "client", "conv", "Which guides?"); err != nil || answer != "The new guide." {
+	if answer, err := c.Ask(t.Context(), "pets", access, ClientAsker("client"), "conv", "Which guides?"); err != nil || answer != "The new guide." {
 		t.Errorf("a page open before a snapshot that adds a section: %q, %v, want the new section's guide", answer, err)
 	}
 }
@@ -353,7 +353,7 @@ func TestOpenPageClosesAPortalThatAChangeReconfigures(t *testing.T) {
 	if err := c.Reload([]*portal.Library{petsLibrary(t, petsAPI, renamed, staff)}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.Ask(t.Context(), "pets", access, "client", "conv", "What do the notes say?")
+	_, err = c.Ask(t.Context(), "pets", access, ClientAsker("client"), "conv", "What do the notes say?")
 	if !errors.Is(err, ErrNoPortal) {
 		t.Errorf("the open page of a reconfigured portal: %v, want ErrNoPortal", err)
 	}
@@ -369,7 +369,7 @@ func TestOpenPageClosesAPortalThatAChangeReconfigures(t *testing.T) {
 	if err := c2.Reload([]*portal.Library{petsLibrary(t, petsAPI, notes)}); err != nil {
 		t.Fatal(err)
 	}
-	if answer, err := c2.Ask(t.Context(), "pets", same, "client", "conv", "And now?"); err != nil || answer != "Two." {
+	if answer, err := c2.Ask(t.Context(), "pets", same, ClientAsker("client"), "conv", "And now?"); err != nil || answer != "Two." {
 		t.Errorf("the open page of a portal that a snapshot left as it was: %q, %v", answer, err)
 	}
 }
@@ -386,7 +386,7 @@ func TestAReconfiguredPortalStartsTheConversationOver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Ask(t.Context(), "pets", unlabelled{}, "client", "conv", "What do the notes say?"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", unlabelled{}, ClientAsker("client"), "conv", "What do the notes say?"); err != nil {
 		t.Fatal(err)
 	}
 	// The next snapshot keeps the titles of the reader's sections, but gives
@@ -396,7 +396,7 @@ func TestAReconfiguredPortalStartsTheConversationOver(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.seen = nil
-	if answer, err := c.Ask(t.Context(), "pets", unlabelled{}, "client", "conv", "And now?"); err != nil || answer != "Two." {
+	if answer, err := c.Ask(t.Context(), "pets", unlabelled{}, ClientAsker("client"), "conv", "And now?"); err != nil || answer != "Two." {
 		t.Fatalf("after the snapshot: %q, %v", answer, err)
 	}
 	for i, seen := range m.seen {
