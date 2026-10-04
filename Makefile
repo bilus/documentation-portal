@@ -52,7 +52,9 @@ lint:
 	go vet ./...
 	go vet -tags e2e ./e2e/...
 	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
-	@found=$$(go list -deps $(CORE_PACKAGES) $$(go list -f '{{join .Imports " "}}' ./cmd/docportal | tr ' ' '\n' | grep -vxF $(addprefix -e ,$(CLOUD_DRIVERS))) | grep -E '$(SIGN_IN)'); \
+	@imports=$$(go list -f '{{join .Imports "\n"}}' ./cmd/docportal) || exit 1; \
+	deps=$$(go list -deps $(CORE_PACKAGES) $$(echo "$$imports" | grep -vxF $(addprefix -e ,$(CLOUD_DRIVERS)))) || exit 1; \
+	found=$$(echo "$$deps" | grep -E '$(SIGN_IN)'); \
 	test -z "$$found" || { echo "sign-in packages in the core packages:"; echo "$$found"; exit 1; }
 
 test: setup

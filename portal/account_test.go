@@ -82,6 +82,9 @@ func TestTheHomePageShowsTheAccountLinks(t *testing.T) {
 	if nav := navOf(home); nav != `<nav class="portal-nav">`+adasLinks || !strings.Contains(home, `<a href="/portals/store/specs/api">Store</a>`) {
 		t.Errorf("the home page of Ada: %q", home)
 	}
+	if bar, heading := strings.Index(home, "<nav"), strings.Index(home, "<h1>"); bar < 0 || bar > heading || bar > strings.Index(home, "<main>") {
+		t.Errorf("the home page does not start with its navigation bar: %q", home)
+	}
 	// A reader who sees no portal can still sign out.
 	nobody := getWith(newAccountPortal(t, root, portals, fakeaccess.Hook, signedIn), "/", "Reader", "Ada").Body.String()
 	if !strings.Contains(nobody, "No portals are open to you.") || !strings.Contains(nobody, adasLinks) {
@@ -113,10 +116,15 @@ func TestAccountLinksAreText(t *testing.T) {
 
 func TestResponsesArePrivateWithAnAccountHook(t *testing.T) {
 	root, portals := accessRoot()
-	h := newAccountPortal(t, root, portals, nil, signedIn)
-	for _, path := range append(everyRoute, "/assets/elements/styles.min.css", "/assets/elements/missing.css") {
-		if rec := getWith(h, path); rec.Header().Get("Cache-Control") != "private" {
-			t.Errorf("%s with an account hook: %d, Cache-Control %q, want private", path, rec.Code, rec.Header().Get("Cache-Control"))
+	for name, hook := range map[string]func(*http.Request) []portal.AccountLink{
+		"links":    signedIn,
+		"no links": func(*http.Request) []portal.AccountLink { return nil },
+	} {
+		h := newAccountPortal(t, root, portals, nil, hook)
+		for _, path := range append(everyRoute, "/assets/elements/styles.min.css", "/assets/elements/missing.css") {
+			if rec := getWith(h, path); rec.Header().Get("Cache-Control") != "private" {
+				t.Errorf("%s with an account hook that gives %s: %d, Cache-Control %q, want private", path, name, rec.Code, rec.Header().Get("Cache-Control"))
+			}
 		}
 	}
 }
@@ -193,6 +201,14 @@ const (
 	storeBar   = barStyle + "</style>\n" + `<nav class="portal-nav"><a href="/portals/store/specs/api">API</a></nav>`
 )
 
+// The home pages of shopAndStore before account links: with its portals,
+// and for a reader who sees none, as a67f938 wrote them.
+const (
+	homeHead   = "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>Portals</title>\n<style>body { font-family: system-ui, sans-serif; margin: 0; } main { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }</style>\n</head>\n<body>\n<main>\n<h1>Portals</h1>\n"
+	homePage   = homeHead + "<ul>\n<li><a href=\"/portals/pet-shop/specs/api\">Pet Shop</a></li>\n<li><a href=\"/portals/store/specs/api\">Store</a></li>\n</ul>\n</main>\n</body>\n</html>\n"
+	closedHome = homeHead + "<p>No portals are open to you.</p>\n</main>\n</body>\n</html>\n"
+)
+
 // barOf returns the navigation bar of page with its style, or "" for a page
 // without one.
 func barOf(page string) string {
@@ -221,6 +237,19 @@ func TestWithoutAccountLinksEveryBarIsAsBefore(t *testing.T) {
 	} {
 		if got := barOf(get(tc.h, tc.path).Body.String()); got != tc.want {
 			t.Errorf("%s: the navigation bar %q, want %q", tc.path, got, tc.want)
+		}
+	}
+	noLinks := func(*http.Request) []portal.AccountLink { return nil }
+	for name, tc := range map[string]struct {
+		h    http.Handler
+		want string
+	}{
+		"with its portals":                   {two, homePage},
+		"with an account hook without links": {newAccountPortal(t, root, portals, nil, noLinks), homePage},
+		"for a reader who sees no portal":    {newAccountPortal(t, root, portals, fakeaccess.Hook, nil), closedHome},
+	} {
+		if got := get(tc.h, "/").Body.String(); got != tc.want {
+			t.Errorf("the home page %s: %q, want %q", name, got, tc.want)
 		}
 	}
 }

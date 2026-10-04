@@ -118,7 +118,7 @@ func TestReadAccountLinks(t *testing.T) {
 	if got := readAccountLinks(`[{"Label":"Ada"},{"Label":"Sign out","URL":"/auth/sign-out"}]`); !reflect.DeepEqual(got, adasLinks) {
 		t.Errorf("Ada's links read back: %v", got)
 	}
-	for _, value := range []string{"", "null", "[]", "{", `{"Label":"Ada"}`, `"Ada"`} {
+	for _, value := range []string{"", "null", "[]", "{", `{"Label":"Ada"}`, `"Ada"`, `[{"Label":"Ada"},1]`} {
 		if got := readAccountLinks(value); len(got) != 0 {
 			t.Errorf("%q: %v, want no links", value, got)
 		}
