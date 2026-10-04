@@ -16,6 +16,8 @@ import (
 
 // site answers the requests for the pages of one portal.
 type site struct {
+	config    Portal // the portal as the portal configuration gives it, for the access hook
+	whole     *site  // on a reader's site, the site that visibleTo copied, else nil
 	root      fs.FS
 	name      string // the portal's name
 	slug      string // the portal's slug
@@ -30,7 +32,7 @@ type site struct {
 // portal's URL path. The site links its chat page when a route of cfg.Chat
 // serves that page.
 func newSite(cfg Config, p Portal, sections []*section) *site {
-	s := &site{root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt}
+	s := &site{config: p, root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt}
 	for _, sec := range sections {
 		sec.base = "/portals/" + s.slug
 	}

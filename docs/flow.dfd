@@ -44,8 +44,7 @@
     < chat
     |Chat|
 > portal configuration
-[3. Build the portal handler
- or refuse portals that openPortals refuses, or missing Elements assets
+[3. Build the portal handler, which answers each request with the pages of the portals and sections visible to its reader, or refuse portals that openPortals refuses, or missing Elements assets
  (portal.New)]
 > source, listing, portal handler, refresh interval, builder
 [9. Wrap the portal handler in the reloader, which checks the source every refresh interval and, for each settled change, builds the new snapshot's handler with the builder and swaps it in

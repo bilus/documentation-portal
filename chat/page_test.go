@@ -73,7 +73,7 @@ func TestChatPageAsksItsPortal(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := &url.URL{Path: "/portals/store/chat"}
-	lv := interpreter.NewCtx(t.Context(), u.Path, u, map[string]string{"client": "client"}, false)
+	lv := interpreter.NewCtx(t.Context(), u.Path, u, sessionThroughPortal(t, c), false)
 	p, err := c.mount(lv, c.agents[1])
 	if err != nil {
 		t.Fatal(err)

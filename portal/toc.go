@@ -45,8 +45,11 @@ func (s *site) tocSidebar(sec *section, current string) ([]sidebarGroup, map[str
 			}
 		}
 	}
-	return nil, nil, errors.New("names no page that the portal serves")
+	return nil, nil, errNoPage
 }
+
+// errNoPage means a toc file whose entries name no page of the portal.
+var errNoPage = errors.New("names no page that the portal serves")
 
 // readToc reads the toc file at p of fsys and returns its entries, or an
 // error and no entries for a file that is missing, reached through a symlink

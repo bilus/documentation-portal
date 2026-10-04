@@ -825,12 +825,12 @@ func TestTocSidebarListsOtherSectionsOnce(t *testing.T) {
 }
 
 func TestPortalFor(t *testing.T) {
-	rt := &router{sites: []*site{{name: "Pet Shop", slug: "pet-shop"}, {name: "Store", slug: "store"}}}
-	if s, ok := rt.portalFor("store"); !ok || s != rt.sites[1] {
+	v := &view{sites: []*site{{name: "Pet Shop", slug: "pet-shop"}, {name: "Store", slug: "store"}}}
+	if s, ok := v.portalFor("store"); !ok || s != v.sites[1] {
 		t.Errorf("store: %+v, %v", s, ok)
 	}
 	for _, slug := range []string{"Store", "", "pet shop", "other"} {
-		if s, ok := rt.portalFor(slug); ok {
+		if s, ok := v.portalFor(slug); ok {
 			t.Errorf("%q: %+v, want no portal", slug, s)
 		}
 	}

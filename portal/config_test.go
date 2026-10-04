@@ -46,6 +46,36 @@ portals:
 	}
 }
 
+func TestReadConfigReadsLabels(t *testing.T) {
+	root := fstest.MapFS{"environment.yaml": {Data: []byte(`
+portals:
+  - name: Delivery
+    labels: [partner-acme, partner-globex]
+    sections:
+      - {title: API, type: spec, input: api.yaml, labels: [public]}
+      - {title: Internal, type: docs, input: internal}
+`)}}
+	cfg, err := portal.ReadConfig(root, "environment.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []portal.Portal{{Name: "Delivery", Labels: []string{"partner-acme", "partner-globex"}, Sections: []portal.Section{
+		{Title: "API", Type: portal.SpecSection, Input: "api.yaml", Labels: []string{"public"}},
+		{Title: "Internal", Type: portal.DocsSection, Input: "internal"},
+	}}}
+	if !reflect.DeepEqual(cfg.Portals, want) {
+		t.Errorf("portals = %+v, want %+v", cfg.Portals, want)
+	}
+	for _, data := range []string{
+		"portals:\n  - name: Pets\n    labels: partner\n",
+		"portals:\n  - name: Pets\n    sections:\n      - {title: API, type: spec, input: a.yaml, labels: {a: b}}\n",
+	} {
+		if _, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(data)}}, "environment.yaml"); err == nil {
+			t.Errorf("%q: labels that are not a list, and no error", data)
+		}
+	}
+}
+
 func TestReadConfigReadsEmptyFile(t *testing.T) {
 	for _, data := range []string{"", "# nothing yet\n", "portals: []\n"} {
 		cfg, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(data)}}, "environment.yaml")
