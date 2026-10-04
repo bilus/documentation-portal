@@ -1,0 +1,147 @@
+# The example application starts up: main.startup runs boxes 1 to 8 in
+# order, and main hands the address and the handler, the sign-in router, to
+# the HTTP server. startup gives the builder the configuration file path,
+# the access rules of box 2 and the chat's settings as its fields, so the
+# builder runs box 5 again for each settled change of the bucket folder,
+# which the reloader finds, and box 11 for each preview folder. Boxes 9 to
+# 13 answer at request time, each after the entity that calls it: the HTTP
+# server sends each request to box 9, which sends it on to the sign-in
+# middleware of the reader's identity provider; at GitHub's callback, that
+# middleware asks box 10 for the reader's identity; a signed-in reader's
+# request goes on to the previews handler, which builds a preview folder's
+# portal handler with box 11 at the folder's first request, and to the
+# portal handler. The previews handler and the portal handler ask box 12,
+# the access hook, for the reader's access, and that access, box 13,
+# whether the reader may see each portal and section and open a preview.
+# The access rules of box 2 come back as the receiver of box 12, and the
+# GitHub provider of box 8 as the receiver of box 10. The library is outside
+# the example's module, so a box names its functions by import path.
+# By hand: dfd --box 300x150 --per-row 4 --number examples/portalapp/docs/flow.dfd -o flow.svg
+
+{Operator}
+> environment
+[1. Read the settings from the environment: the address, the bucket folder, the previews location, the refresh interval, the access file, the provider settings and the chat, or refuse incomplete settings
+ (main.readSettings)]
+> access file path
+[2. Read the access rules from the access file, or refuse an invalid file
+ so that boxes 5, 7 and 11 add the access hook of box 12
+ (main.readAccessFile)]
+    > access file path
+    < access file
+    <Access file>
+> bucket folder URL, previews location path
+[3. Open the bucket folder of the bucket folder URL, and return the published documentation, which is the bucket folder without its previews location, and the previews location
+ (main.openBucket)]
+    > bucket folder URL
+    < bucket
+    <Bucket folder>
+> published documentation
+[4. Load the published documentation's snapshot: list it and read the listing's files into memory
+ (github.com/bilus/documentation-portal/source.Load)]
+    > keys
+    < listing, files
+    <Bucket folder>
+> documentation root handle
+[5. Build the portal handler of a snapshot: read the portal configuration from the configuration file, and add the access hook of the access rules, the account hook of the sign-in and, with an API key, the chat with the reader hook of the sign-in, kept from the last snapshot
+ (main.builder.build)]
+    < chat
+    > chat
+    |Chat|
+> published documentation, listing, portal handler, refresh interval, builder
+[6. Wrap the portal handler in the reloader, which checks the bucket folder every refresh interval and builds the portal handler of each settled change with the builder
+ (github.com/bilus/documentation-portal/source.NewReloader)]
+    > keys
+    < listing, files
+    <Bucket folder>
+> reloader, previews location, refresh interval, access rules, preview builder
+[7. Wrap the reloader in the previews handler, which opens the preview folders of the previews location, each loaded at its first request with the preview builder and checked every refresh interval, to the readers whom the access rules allow
+ (main.withPreviews)]
+    > keys
+    < listing, files
+    <Bucket folder>
+> provider settings, previews handler
+[8. Put the sign-in in front of the previews handler: a sign-in middleware for each configured identity provider, Auth0 by its issuer and GitHub through the GitHub provider, each with its provider's name in the context of each request, and the sign-in router before them
+ (main.signIn, main.newGitHub, main.githubProvider.Endpoint)]
+    > issuer
+    < provider metadata
+    <Auth0>
+> address, handler
+{HTTP server}
+> response writer, request
+[9. Answer each request: show the sign-in page, keep the reader's choice of identity provider in the choice cookie, send a callback or a sign-out to the middleware of its path's provider, with the choice cleared at a sign-out, and any other request to the middleware of the reader's provider, or without one to the sign-in page
+ (main.router.ServeHTTP)]
+    < choice cookie, return target
+    > sign-in page, choice cookie, redirect, refusal
+    <Browser>
+> response writer, request
+{Sign-in middleware}
+> access token
+[10. Identify the reader to whom GitHub gave the access token: the subject, the name and the email from GET /user, and the claims login, orgs and teams from GET /user/orgs and GET /user/teams, or fail the sign-in
+ (main.githubProvider.Identity)]
+    > access token
+    < user, organizations, teams
+    <GitHub API>
+> identity
+{Sign-in middleware}
+> request
+{Previews handler}
+> documentation root handle
+[11. Build the portal handler of a preview folder's snapshot like box 5, without the chat: read the portal configuration from the configuration file, and add the access hook and the account hook
+ (main.builder.buildPreview)]
+> portal handler
+{Previews handler}
+> request
+{Portal handler}
+> request
+[12. Return the access of the request's reader under the access rules of box 2: the labels whose rules match the provider of the reader's sign-in and the reader's claims, and whether a rule of the previews matches the reader
+ (main.accessRules.access, main.accessRules.accessOf)]
+> access
+{Portal handler}
+> portal, section, folder
+[13. Report whether the reader may see a portal or a section: one without labels, or one with a label of the reader's, for a signed-in reader; and whether the reader may open a preview
+ (main.readerAccess.Portal, main.readerAccess.Section, main.readerAccess.Preview)]
+> allowed
+{Portal handler}
+
+# type: environment = func(string) string
+# type: access file path = string
+# type: access file = []byte
+# type: bucket folder URL = string
+# type: previews location path = string
+# type: bucket = *gocloud.dev/blob.Bucket
+# type: published documentation = github.com/bilus/documentation-portal/source.Source
+# type: keys = []string
+# type: listing = github.com/bilus/documentation-portal/source.Listing
+# type: files = [][]byte
+# type: documentation root handle = io/fs.FS
+# type: chat = *github.com/bilus/documentation-portal/chat.Chat
+# type: portal handler = net/http.Handler
+# type: refresh interval = time.Duration
+# type: builder = func(io/fs.FS) (net/http.Handler, error)
+# type: reloader = net/http.Handler
+# type: previews location = *github.com/bilus/documentation-portal/source.Bucket
+# type: access rules = main.accessRules
+# type: preview builder = func(io/fs.FS) (net/http.Handler, error)
+# type: provider settings = main.providerSettings
+# type: previews handler = net/http.Handler
+# type: issuer = string
+# type: provider metadata = []byte
+# type: address = string
+# type: handler = net/http.Handler
+# type: response writer = net/http.ResponseWriter
+# type: request = *net/http.Request
+# type: choice cookie = *net/http.Cookie
+# type: return target = string
+# type: sign-in page = []byte
+# type: redirect = string
+# type: refusal = []byte
+# type: access token = *golang.org/x/oauth2.Token
+# type: user = []byte
+# type: organizations = []byte
+# type: teams = []byte
+# type: identity = github.com/bilus/documentation-portal/signin.Identity
+# type: access = github.com/bilus/documentation-portal/portal.Access
+# type: portal = github.com/bilus/documentation-portal/portal.Portal
+# type: section = github.com/bilus/documentation-portal/portal.Section
+# type: folder = string
+# type: allowed = bool
