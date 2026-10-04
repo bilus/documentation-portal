@@ -126,6 +126,8 @@ func (d *Directory) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 // CDK bucket, whose keys the bucket's prefix, if any, has already stripped.
 type Bucket struct {
 	bucket *blob.Bucket
+	prefix string        // the keys' prefix of the folder in bucket, ending in a slash, or empty
+	skip   []string      // the keys' prefixes in bucket of the folders that the listing leaves out
 	limit  int64         // the size limit in bytes; 0 means none
 	read   func(n int64) // called with the bytes read of each object, for tests
 }
@@ -155,7 +157,7 @@ func OpenBucket(ctx context.Context, rawURL string, limit int64) (*Bucket, error
 func (b *Bucket) List(ctx context.Context) (Listing, error) {
 	var listing Listing
 	dirs := map[string]bool{} // every directory of a key
-	it := b.bucket.List(nil)
+	it := b.bucket.List(&blob.ListOptions{Prefix: b.prefix})
 	for {
 		o, err := it.Next(ctx)
 		if errors.Is(err, io.EOF) {
@@ -164,16 +166,20 @@ func (b *Bucket) List(ctx context.Context) (Listing, error) {
 		if err != nil {
 			return nil, fmt.Errorf("list the bucket folder: %w", err)
 		}
-		if o.Size == 0 && (o.Key == "" || strings.HasSuffix(o.Key, "/")) {
+		if slices.ContainsFunc(b.skip, func(skip string) bool { return strings.HasPrefix(o.Key, skip) }) {
 			continue
 		}
-		if !fs.ValidPath(o.Key) {
-			return nil, fmt.Errorf("list the bucket folder: the key %q is not a valid path", o.Key)
+		key := strings.TrimPrefix(o.Key, b.prefix)
+		if o.Size == 0 && (key == "" || strings.HasSuffix(key, "/")) {
+			continue
 		}
-		for dir := path.Dir(o.Key); dir != "."; dir = path.Dir(dir) {
+		if !fs.ValidPath(key) {
+			return nil, fmt.Errorf("list the bucket folder: the key %q is not a valid path", key)
+		}
+		for dir := path.Dir(key); dir != "."; dir = path.Dir(dir) {
 			dirs[dir] = true
 		}
-		listing = append(listing, Object{Key: o.Key, Size: o.Size, ModTime: o.ModTime, MD5: o.MD5})
+		listing = append(listing, Object{Key: key, Size: o.Size, ModTime: o.ModTime, MD5: o.MD5})
 	}
 	for _, o := range listing {
 		if dirs[o.Key] {
@@ -219,7 +225,7 @@ func (b *Bucket) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 
 // readObject reads at most max bytes of the object at key.
 func (b *Bucket) readObject(ctx context.Context, key string, max int64) ([]byte, error) {
-	r, err := b.bucket.NewReader(ctx, key, nil)
+	r, err := b.bucket.NewReader(ctx, b.prefix+key, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +251,12 @@ func sumOf(data []byte) []byte {
 // next check tries again. An interval of zero or less turns the checks off,
 // and ctx stops them.
 func NewReloader(ctx context.Context, src Source, listing Listing, first http.Handler, interval time.Duration, build func(fs.FS) (http.Handler, error)) http.Handler {
-	r := &reloader{src: src, build: build}
+	return newReloader(ctx, "documentation source", src, listing, first, interval, build)
+}
+
+// newReloader is NewReloader with the name of the source in the log.
+func newReloader(ctx context.Context, name string, src Source, listing Listing, first http.Handler, interval time.Duration, build func(fs.FS) (http.Handler, error)) *reloader {
+	r := &reloader{name: name, src: src, build: build}
 	r.swap(listing, first)
 	if interval > 0 {
 		go r.run(ctx, interval)
@@ -256,6 +267,7 @@ func NewReloader(ctx context.Context, src Source, listing Listing, first http.Ha
 // reloader answers each request with the portal handler of the snapshot in
 // service, and swaps in the handler of each settled change of its source.
 type reloader struct {
+	name  string // the source's name in the log
 	src   Source
 	build func(fs.FS) (http.Handler, error)
 
@@ -303,7 +315,7 @@ func (r *reloader) run(ctx context.Context, interval time.Duration) {
 func (r *reloader) swap(listing Listing, h http.Handler) {
 	r.inService.Store(&snapshotInService{listing: listing, handler: h})
 	if len(listing) > 0 {
-		log.Printf("documentation source: %d objects in service", len(listing))
+		log.Printf("%s: %d objects in service", r.name, len(listing))
 	}
 	r.problem = ""
 }
@@ -311,7 +323,7 @@ func (r *reloader) swap(listing Listing, h http.Handler) {
 // note logs problem, unless the log already named the same problem last.
 func (r *reloader) note(problem string) {
 	if problem != r.problem {
-		log.Printf("documentation source: %s", problem)
+		log.Printf("%s: %s", r.name, problem)
 	}
 	r.problem = problem
 }

@@ -34,7 +34,6 @@ func keysOf(listing Listing) string {
 }
 
 func TestBucketFolderReadsItsOwnKeys(t *testing.T) {
-	t.Skip("HOLE(2): a folder of a bucket folder as a bucket folder of its own")
 	b := memBucket(t, bucketWithPreviews)
 	pr1, err := NewBucket(b, 0).Folder("previews/pr-1")
 	if err != nil {
@@ -78,7 +77,6 @@ func TestBucketFolderReadsItsOwnKeys(t *testing.T) {
 }
 
 func TestBucketWithoutLeavesTheFolderOut(t *testing.T) {
-	t.Skip("HOLE(2): a bucket folder that leaves a folder out")
 	b := memBucket(t, bucketWithPreviews)
 	published, err := NewBucket(b, 0).Without("previews")
 	if err != nil {
@@ -134,7 +132,6 @@ func folderOf(text string) *fakeSource {
 }
 
 func TestPreviewsLoadAFolderAtItsFirstRequest(t *testing.T) {
-	t.Skip("HOLE(2): load a preview folder at its first request")
 	one, two, three := folderOf("one"), folderOf("two"), folderOf("three")
 	three.readErr = errors.New("bucket unreachable")
 	var opened, builds atomic.Int64
@@ -176,7 +173,6 @@ func TestPreviewsLoadAFolderAtItsFirstRequest(t *testing.T) {
 }
 
 func TestPreviewsRefreshAFolder(t *testing.T) {
-	t.Skip("HOLE(2): refresh a preview folder as a reloader does")
 	one := folderOf("one")
 	var opened, builds atomic.Int64
 	p := NewPreviews(t.Context(), folders(map[string]*fakeSource{"pr-1": one}, &opened), pageOf(&builds), time.Millisecond, 0, 0)
@@ -189,7 +185,6 @@ func TestPreviewsRefreshAFolder(t *testing.T) {
 }
 
 func TestPreviewsDropAnIdleFolder(t *testing.T) {
-	t.Skip("HOLE(2): drop a preview snapshot after the idle time")
 	one := folderOf("one")
 	var opened, builds atomic.Int64
 	p := NewPreviews(t.Context(), folders(map[string]*fakeSource{"pr-1": one}, &opened), pageOf(&builds), 0, 100*time.Millisecond, 0)
@@ -211,7 +206,6 @@ func TestPreviewsDropAnIdleFolder(t *testing.T) {
 }
 
 func TestPreviewsKeepAtMostTheMaximum(t *testing.T) {
-	t.Skip("HOLE(2): keep at most the maximum of preview snapshots")
 	srcs := map[string]*fakeSource{"pr-1": folderOf("pr-1"), "pr-2": folderOf("pr-2"), "pr-3": folderOf("pr-3")}
 	var opened, builds atomic.Int64
 	p := NewPreviews(t.Context(), folders(srcs, &opened), pageOf(&builds), 0, 0, 2)
@@ -235,7 +229,6 @@ func TestPreviewsKeepAtMostTheMaximum(t *testing.T) {
 }
 
 func TestPreviewsDropADeletedFolderAtTheNextCheck(t *testing.T) {
-	t.Skip("HOLE(2): drop a preview snapshot at the check that finds its folder empty")
 	one := folderOf("one")
 	var opened, builds atomic.Int64
 	p := NewPreviews(t.Context(), folders(map[string]*fakeSource{"pr-1": one}, &opened), pageOf(&builds), time.Millisecond, 0, 0)
@@ -259,7 +252,6 @@ func TestPreviewsDropADeletedFolderAtTheNextCheck(t *testing.T) {
 }
 
 func TestPreviewsRefuseANameOfNoFolder(t *testing.T) {
-	t.Skip("HOLE(2): refuse a name of no preview folder")
 	var opened, builds atomic.Int64
 	p := NewPreviews(t.Context(), folders(map[string]*fakeSource{"empty": {}}, &opened), pageOf(&builds), 0, 0, 0)
 	for _, name := range []string{"", ".", "..", "a/b", "/a", "a/"} {
@@ -277,5 +269,33 @@ func TestPreviewsRefuseANameOfNoFolder(t *testing.T) {
 	// A folder that does not open gives its error.
 	if _, err := p.Handler(t.Context(), "unknown"); err == nil || !strings.Contains(err.Error(), `no source for "unknown"`) {
 		t.Errorf("an unknown folder: %v", err)
+	}
+}
+
+func TestPreviewsKeepTheirSnapshotsThroughFailedLoads(t *testing.T) {
+	srcs := map[string]*fakeSource{"pr-1": folderOf("pr-1"), "pr-2": folderOf("pr-2"), "empty": {}}
+	var opened, builds atomic.Int64
+	p := NewPreviews(t.Context(), folders(srcs, &opened), pageOf(&builds), 0, 0, 2)
+	for _, name := range []string{"pr-1", "pr-2"} {
+		if _, err := p.Handler(t.Context(), name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Folders that load no snapshot, such as names a stranger tries, take no
+	// snapshot's place.
+	for range 5 {
+		for _, name := range []string{"empty", "unknown", "pr-3"} {
+			if _, err := p.Handler(t.Context(), name); err == nil {
+				t.Fatalf("%s opened", name)
+			}
+		}
+	}
+	for _, name := range []string{"pr-1", "pr-2"} {
+		if h, err := p.Handler(t.Context(), name); err != nil || body(h) != name {
+			t.Errorf("%s after the failed loads: %v", name, err)
+		}
+	}
+	if n := builds.Load(); n != 2 {
+		t.Errorf("%d builds, want the 2 of the first loads", n)
 	}
 }

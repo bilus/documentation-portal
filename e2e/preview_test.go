@@ -20,7 +20,6 @@ import (
 )
 
 func TestReaderOpensAPreviewAndLeavesIt(t *testing.T) {
-	t.Skip("HOLE(2): the previews of a bucket folder")
 	dir := t.TempDir()
 	writeFolder(t, dir, "# Guide\n\nThe published version of the guide.\n")
 	writeFolder(t, filepath.Join(dir, "previews", "pr-1"), "# Guide\n\nThe preview version of the guide.\n")
