@@ -209,6 +209,10 @@ func (cfg Config) check() error {
 	if err != nil || !webURL(callback) {
 		return fmt.Errorf("signin: the callback URL %q is not an absolute http or https URL", cfg.CallbackURL)
 	}
+	if strings.Contains(cfg.CallbackURL, "#") {
+		// url.Parse drops an empty fragment, so the check reads the text.
+		return fmt.Errorf("signin: the callback URL %q has a fragment, which OAuth forbids in a redirect URI", cfg.CallbackURL)
+	}
 	if !routePath(callback.EscapedPath()) || callback.Path == signOut {
 		return fmt.Errorf("signin: the callback URL %q needs a route of its own: a path other than / and the sign-out path, of letters, digits, -, ., _, ~ and /", cfg.CallbackURL)
 	}

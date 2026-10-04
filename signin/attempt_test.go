@@ -574,6 +574,8 @@ func TestNewRefusesAConfigurationThatCannotSignIn(t *testing.T) {
 		"a callback URL with an escape":       func(c *Config) { c.CallbackURL = "https://docs.example/auth/call%2Dback" },
 		"a callback URL with a space":         func(c *Config) { c.CallbackURL = "https://docs.example/auth/call%20back" },
 		"a callback URL with a dot segment":   func(c *Config) { c.CallbackURL = "https://docs.example/auth/./callback" },
+		"a callback URL with a fragment":      func(c *Config) { c.CallbackURL = "https://docs.example/auth/callback#fragment" },
+		"a callback URL ending in #":          func(c *Config) { c.CallbackURL = "https://docs.example/auth/callback#" },
 		"a logout path at the sign-out path":  func(c *Config) { c.LogoutURL = "/auth/sign-out" },
 		"a logout URL at the sign-out path":   func(c *Config) { c.LogoutURL = "https://docs.example/auth/sign-out" },
 		"a provider without endpoints": func(c *Config) {
