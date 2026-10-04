@@ -288,6 +288,91 @@ func TestAReaderInManyTeamsSignsIn(t *testing.T) {
 	}
 }
 
+func TestASignOutGoesToItsPathsProvider(t *testing.T) {
+	p := newPortalTest(t)
+	p.serveSignIn(t, echo)
+	resp, err := noRedirects.Do(func() *http.Request {
+		req, err := http.NewRequest("GET", p.srv.URL+"/auth/github/sign-out", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.AddCookie(&http.Cookie{Name: "signin_provider", Value: "auth0"})
+		return req
+	}())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "You have signed out") {
+		t.Errorf("GitHub's sign-out with the choice of Auth0: %d %q, want GitHub's signed-out page", resp.StatusCode, body)
+	}
+}
+
+func TestReturnTarget(t *testing.T) {
+	for target, want := range map[string]string{
+		"/portals/pets/?q=1":   "/portals/pets/?q=1",
+		"/%2F%2Fevil.example":  "/%2F%2Fevil.example",
+		"//evil.example/x":     "/",
+		"///evil.example/x":    "/",
+		`/\evil.example`:       "/",
+		"/evil\x00":            "/",
+		"https://evil.example": "/",
+		"evil":                 "/",
+		"":                     "/",
+	} {
+		if got := returnTarget(target); got != want {
+			t.Errorf("the return target of %q is %q, want %q", target, got, want)
+		}
+	}
+}
+
+// TestTheAccessHookNeedsTheProvider signs a reader in through a sign-in
+// middleware that puts no provider name into the context, and checks that
+// the access hook allows nothing to the request.
+func TestTheAccessHookNeedsTheProvider(t *testing.T) {
+	rules, err := readAccessFile("demo/access.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	github := httptest.NewServer(mocks.GitHub(mocks.Grace))
+	defer github.Close()
+	srv := httptest.NewUnstartedServer(nil)
+	defer srv.Close()
+	access := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a, err := rules.access(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		previews, _ := a.(portal.PreviewAccess)
+		fmt.Fprintf(w, "pets %v, previews %v", a.Portal(pets), previews != nil && previews.Preview("pr-1"))
+	})
+	h, err := signin.New(t.Context(), signin.Config{
+		Provider:     newGitHub(githubSettings{webURL: github.URL, apiURL: github.URL}, nil),
+		ClientID:     mocks.ClientID,
+		ClientSecret: mocks.ClientSecret,
+		Scopes:       []string{"read:org"},
+		CallbackURL:  "http://" + srv.Listener.Addr().String() + "/auth/github/callback",
+		Key:          []byte(testKey),
+	}, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Config.Handler = h
+	srv.Start()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page := get(t, &http.Client{Jar: jar, Timeout: 10 * time.Second}, srv.URL+"/"); page.body != "pets false, previews false" {
+		t.Errorf("a signed-in request without its provider: %d %q, want nothing", page.status, page.body)
+	}
+}
+
 func TestTheChoiceCookieOverHTTPS(t *testing.T) {
 	for _, app := range []string{"https://docs.example.com", "HTTPS://docs.example.com"} {
 		h, err := signIn(t.Context(), providerSettings{appURL: app, sessionKey: testKey,

@@ -55,7 +55,9 @@ type builder struct {
 // portal configuration from the configuration file, and adds the access
 // hook of the access rules, the account hook of the sign-in and, with an API
 // key, the chat with the reader hook of the sign-in, kept from the last
-// snapshot. A build that fails leaves the chat as it was.
+// snapshot and given its libraries before its routes. A build whose portal
+// configuration, libraries or chat fail leaves the chat as it was; after
+// them, portal.New refuses nothing that NewLibraries took.
 func (b *builder) build(root fs.FS) (http.Handler, error) {
 	cfg, err := b.portalConfig(root)
 	if err != nil {
@@ -68,29 +70,22 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := b.chat
-	if c == nil {
+	if b.chat == nil {
 		m, err := anthropicmodel.New(b.model.model, anthropicmodel.Config{APIKey: b.model.apiKey, BaseURL: b.model.baseURL})
 		if err != nil {
 			return nil, err
 		}
-		if c, err = chat.New(chat.Config{Model: m, Libraries: libs, Reader: signin.ReaderID}); err != nil {
+		c, err := chat.New(chat.Config{Model: m, Libraries: libs, Reader: signin.ReaderID})
+		if err != nil {
 			return nil, err
 		}
-	}
-	cfg.Chat = c.Routes()
-	h, err := portal.New(cfg)
-	if err != nil {
+		b.chat = c
+	} else if err := b.chat.Reload(libs); err != nil {
 		return nil, err
 	}
-	// The kept chat takes the new libraries once their portal handler exists.
-	if c == b.chat {
-		if err := c.Reload(libs); err != nil {
-			return nil, err
-		}
-	}
-	b.chat = c
-	return h, nil
+	// Routes binds each chat page to the libraries of this snapshot.
+	cfg.Chat = b.chat.Routes()
+	return portal.New(cfg)
 }
 
 // portalConfig reads the portal configuration of the snapshot at root, with
