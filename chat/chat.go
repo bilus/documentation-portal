@@ -88,6 +88,7 @@ const appName, userID, agentName = "docportal", "reader", "support"
 // Chat answers questions in conversations, each an ADK session, on the chat
 // page of each portal.
 type Chat struct {
+	model    model.LLM
 	agents   []*portalAgent // one for each library, in order
 	sessions session.Service
 	limits   Limits
@@ -118,6 +119,7 @@ func New(cfg Config) (*Chat, error) {
 		return nil, errors.New("chat: a model and a library are required")
 	}
 	c := &Chat{
+		model:    cfg.Model,
 		sessions: session.InMemoryService(),
 		limits:   cfg.Limits.withDefaults(),
 		now:      time.Now,
@@ -167,6 +169,16 @@ func newAgent(m model.LLM, lib *portal.Library, sessions session.Service) (*port
 		return nil, err
 	}
 	return &portalAgent{lib: lib, runner: r}, nil
+}
+
+// Reload replaces the chat's agents with agents for libs, one for each, over
+// the chat's model, and keeps its sessions, conversations and question
+// counts, so that a new snapshot of the documentation answers the
+// conversations in progress. It refuses what New refuses: no library, a nil
+// library and two libraries with one slug, and then keeps the old agents.
+func (c *Chat) Reload(libs []*portal.Library) error {
+	// HOLE(3): rebuild the agents for libs over the chat's model and sessions, keeping the counters
+	return nil
 }
 
 // agentFor returns the agent of the portal whose slug is slug, or false.
