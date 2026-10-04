@@ -1,10 +1,12 @@
 package portal
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -215,5 +217,31 @@ func TestPrivateWriterWritesOneStatus(t *testing.T) {
 	w.Write([]byte("please"))
 	if under.statuses != 1 {
 		t.Errorf("two writes wrote %d statuses, want one", under.statuses)
+	}
+}
+
+// hijackingWriter is a countingWriter that lets a handler hijack the connection.
+type hijackingWriter struct{ countingWriter }
+
+func (*hijackingWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) { return nil, nil, nil }
+
+func TestPrivateWritesOnlyAMissingStatus(t *testing.T) {
+	for name, tc := range map[string]struct {
+		handler  http.HandlerFunc
+		statuses int // written to the writer under private
+	}{
+		"nothing written": {func(http.ResponseWriter, *http.Request) {}, 1},
+		"a write":         {func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("tea")) }, 1},
+		"a hijack": {func(w http.ResponseWriter, _ *http.Request) {
+			if _, _, err := http.NewResponseController(w).Hijack(); err != nil {
+				t.Error(err)
+			}
+		}, 0},
+	} {
+		under := &hijackingWriter{countingWriter{ResponseWriter: httptest.NewRecorder()}}
+		private(tc.handler).ServeHTTP(under, httptest.NewRequest(http.MethodGet, "/", nil))
+		if under.statuses != tc.statuses {
+			t.Errorf("%s: %d statuses, want %d", name, under.statuses, tc.statuses)
+		}
 	}
 }

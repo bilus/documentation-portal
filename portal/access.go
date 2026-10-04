@@ -120,20 +120,28 @@ func (s *site) visibleTo(access Access) (*site, bool) {
 	return &v, true
 }
 
-// privateWriter writes each response with Cache-Control: private, even when
-// the response's handler deleted the header first, as Go's file server does
-// for an error.
-type privateWriter struct {
-	http.ResponseWriter
-	wrote bool // whether the final status went out
+// private returns h with Cache-Control: private on each response, even when h
+// deletes or replaces the header, as Go's file server does for an error. h
+// writes through a privateWriter, and after h, private writes the status 200
+// through it for a response without a final status, in place of net/http,
+// unless h took the connection. A status that h writes below the
+// privateWriter, through Unwrap, goes out as h left the header.
+func private(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pw := &privateWriter{ResponseWriter: w}
+		h.ServeHTTP(pw, r)
+		if !pw.wrote && !pw.hijacked {
+			pw.WriteHeader(http.StatusOK)
+		}
+	})
 }
 
-// newPrivateWriter returns w in a privateWriter, with Cache-Control: private
-// set already for a response whose handler writes nothing, whose status
-// net/http writes below the privateWriter.
-func newPrivateWriter(w http.ResponseWriter) *privateWriter {
-	w.Header().Set("Cache-Control", "private")
-	return &privateWriter{ResponseWriter: w}
+// privateWriter writes each status through it with Cache-Control: private,
+// even when the response's handler deleted the header first.
+type privateWriter struct {
+	http.ResponseWriter
+	wrote    bool // whether the final status went out
+	hijacked bool // whether the handler took the connection
 }
 
 // WriteHeader writes the status code with Cache-Control: private. As in
@@ -172,7 +180,11 @@ func (w *privateWriter) Flush() { _ = w.FlushError() }
 
 // Hijack hands the connection to the caller, for the chat's socket.
 func (w *privateWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	return http.NewResponseController(w.ResponseWriter).Hijack()
+	conn, rw, err := http.NewResponseController(w.ResponseWriter).Hijack()
+	if err == nil {
+		w.hijacked = true
+	}
+	return conn, rw, err
 }
 
 // Unwrap returns the response writer under w, for the other methods of

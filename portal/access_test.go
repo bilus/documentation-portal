@@ -503,23 +503,40 @@ func TestGuardChecksEveryRouteOfAPortal(t *testing.T) {
 	}
 }
 
-func TestASilentResponseIsPrivate(t *testing.T) {
+// wantPrivate serves routes as the Chat of a portal handler with the stub
+// access hook, through a real server, and fails the test for each route whose
+// response is not 200 with Cache-Control: private.
+func wantPrivate(t *testing.T, routes map[string]http.HandlerFunc) {
+	t.Helper()
+	var chat []portal.Route
+	for path, h := range routes {
+		chat = append(chat, portal.Route{Pattern: "GET " + path, Handler: h})
+	}
 	root, portals := accessRoot()
-	silent := portal.Route{Pattern: "GET /silent", Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}
-	h, err := portal.New(portal.Config{Root: root, Portals: portals, Chat: []portal.Route{silent}, Access: fakeaccess.Hook})
+	h, err := portal.New(portal.Config{Root: root, Portals: portals, Chat: chat, Access: fakeaccess.Hook})
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(h)
 	defer srv.Close()
-	resp, err := http.Get(srv.URL + "/silent")
-	if err != nil {
-		t.Fatal(err)
+	for path := range routes {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Cache-Control") != "private" {
+			t.Errorf("%s: %d with Cache-Control %q, want 200 with private", path, resp.StatusCode, resp.Header.Get("Cache-Control"))
+		}
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("Cache-Control") != "private" {
-		t.Errorf("a route that writes nothing: %d with Cache-Control %q, want private", resp.StatusCode, resp.Header.Get("Cache-Control"))
-	}
+}
+
+func TestASilentResponseIsPrivate(t *testing.T) {
+	wantPrivate(t, map[string]http.HandlerFunc{
+		"/silent":  func(http.ResponseWriter, *http.Request) {},
+		"/public":  func(w http.ResponseWriter, _ *http.Request) { w.Header().Set("Cache-Control", "public, max-age=60") },
+		"/deleted": func(w http.ResponseWriter, _ *http.Request) { w.Header().Del("Cache-Control") },
+	})
 }
 
 func TestAFlushedResponseIsPrivate(t *testing.T) {
@@ -528,7 +545,7 @@ func TestAFlushedResponseIsPrivate(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
-	routes := map[string]http.HandlerFunc{
+	wantPrivate(t, map[string]http.HandlerFunc{
 		"/controller": func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Del("Cache-Control")
 			flush(w)
@@ -552,28 +569,7 @@ func TestAFlushedResponseIsPrivate(t *testing.T) {
 			w.Header().Del("Cache-Control")
 			w.Write([]byte("tea"))
 		},
-	}
-	var chat []portal.Route
-	for path, h := range routes {
-		chat = append(chat, portal.Route{Pattern: "GET " + path, Handler: h})
-	}
-	root, portals := accessRoot()
-	h, err := portal.New(portal.Config{Root: root, Portals: portals, Chat: chat, Access: fakeaccess.Hook})
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(h)
-	defer srv.Close()
-	for path := range routes {
-		resp, err := http.Get(srv.URL + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK || resp.Header.Get("Cache-Control") != "private" {
-			t.Errorf("%s: %d with Cache-Control %q, want 200 with private", path, resp.StatusCode, resp.Header.Get("Cache-Control"))
-		}
-	}
+	})
 }
 
 func TestATocProblemComesBackAfterARestrictedReader(t *testing.T) {

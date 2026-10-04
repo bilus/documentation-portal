@@ -156,10 +156,11 @@ func (rt *router) viewFor(access Access) *view {
 // route sends r with the reader's view v through the routes to its page, and
 // with an access hook writes the response with Cache-Control: private.
 func (rt *router) route(w http.ResponseWriter, r *http.Request, v *view) {
+	var h http.Handler = rt.mux
 	if rt.access != nil {
-		w = newPrivateWriter(w)
+		h = private(h)
 	}
-	rt.mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viewKey{}, v)))
+	h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viewKey{}, v)))
 }
 
 // guard returns route as it is, or, for a route under /portals/, such as a
