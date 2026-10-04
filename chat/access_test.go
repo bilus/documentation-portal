@@ -135,7 +135,6 @@ func (r *recording) GenerateContent(ctx context.Context, req *model.LLMRequest, 
 var hiddenFromCustomer = []string{"Pets", "listPets", "/pets", "Secret plans", "a secret", "internal/x.md", "Vault", "Garden"}
 
 func TestAskAnswersFromTheVisibleSections(t *testing.T) {
-	t.Skip("HOLE(2): answer each reader from its visible sections")
 	m := &recording{LLM: fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "questions from customers about the Store API.", Call: &fakemodel.Call{Name: "search", Args: map[string]any{"query": "orders"}}},
 		{Match: `"where":"guides/a.md:3"`, Call: &fakemodel.Call{Name: "list_operations", Args: map[string]any{}}},
@@ -159,7 +158,6 @@ func TestAskAnswersFromTheVisibleSections(t *testing.T) {
 }
 
 func TestAskAnswersAHiddenPortalAsMissing(t *testing.T) {
-	t.Skip("HOLE(2): answer each reader from its visible sections")
 	c, _ := newAccessChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "One."}}))
 	_, missing := c.Ask(t.Context(), "other", portal.Everything, "client", "conv", "Gold?")
 	for name, tc := range map[string]struct {
@@ -181,7 +179,6 @@ func TestAskAnswersAHiddenPortalAsMissing(t *testing.T) {
 }
 
 func TestChatPageShowsTheVisibleSections(t *testing.T) {
-	t.Skip("HOLE(2): answer each reader from its visible sections")
 	_, h := newAccessChat(t, fakemodel.New("opus", nil))
 	r := httptest.NewRequest(http.MethodGet, "/portals/pet-shop/chat", nil)
 	r.Header.Set(fakeaccess.Header, customer)
@@ -208,7 +205,6 @@ func TestChatPageShowsTheVisibleSections(t *testing.T) {
 }
 
 func TestChatPageKeepsTheAccessOfItsLoad(t *testing.T) {
-	t.Skip("HOLE(2): answer each reader from its visible sections")
 	m := &recording{LLM: fakemodel.New("opus", []fakemodel.Exchange{
 		{Match: "questions from customers about the Store API.", Call: &fakemodel.Call{Name: "list_documents", Args: map[string]any{}}},
 		{Match: `"path":"guides/a.md"`, Reply: "One guide: Getting started."},

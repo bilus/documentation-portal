@@ -114,26 +114,33 @@ type questionForm struct {
 // heading, navigation bar and portal menu show only the APIs, sections and
 // portals visible to the reader. It refuses a portal hidden from the reader.
 func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
-	// HOLE(2): read the page access with readPageAccess, refuse a portal hidden by it, and build the page from the library limited by Library.For
+	access := readPageAccess(lv.Session("access"))
+	lib, ok := a.lib.For(access)
+	if !ok {
+		return nil, fmt.Errorf("chat: the page's reader may not see the portal %q", a.lib.Slug())
+	}
 	id := make([]byte, 16)
 	// crypto/rand.Read is documented never to fail.
 	_, _ = rand.Read(id)
 	heading := "Ask about the API"
-	if names := apis(a.lib.Titles()); names != "" {
+	if names := apis(lib.Titles()); names != "" {
 		heading = "Ask about " + names
 	}
 	var nav []navLink
-	for _, s := range a.lib.Sections() {
+	for _, s := range lib.Sections() {
 		nav = append(nav, navLink{Label: s.Title, URL: s.URL})
 	}
 	nav = append(nav, navLink{Label: "Chat", URL: a.lib.ChatURL(), Current: true})
 	var menu []navLink
-	if agents := c.currentAgents(); len(agents) > 1 {
-		for _, other := range agents {
-			menu = append(menu, navLink{Label: other.lib.Name(), URL: other.lib.URL()})
+	for _, other := range c.currentAgents() {
+		if visible, ok := other.lib.For(access); ok {
+			menu = append(menu, navLink{Label: visible.Name(), URL: visible.URL()})
 		}
 	}
-	return &page{chat: c, portal: a.lib.Slug(), access: portal.Everything, client: lv.Session("client"), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
+	if len(menu) < 2 {
+		menu = nil
+	}
+	return &page{chat: c, portal: a.lib.Slug(), access: access, client: lv.Session("client"), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
 }
 
 // FormID changes with every message, so the page renders a new, empty form.

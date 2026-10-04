@@ -236,8 +236,10 @@ func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access,
 	if !ok {
 		return "", fmt.Errorf("%w %q", ErrNoPortal, portalSlug)
 	}
-	// HOLE(2): limit the portal's library with Library.For(access), and answer a hidden portal with ErrNoPortal
-	lib := a.lib
+	lib, ok := a.lib.For(access)
+	if !ok {
+		return "", fmt.Errorf("%w %q", ErrNoPortal, portalSlug)
+	}
 	// A conversation lives in one portal, so its session is the portal's.
 	conv = portalSlug + "/" + conv
 	question = strings.TrimSpace(question)

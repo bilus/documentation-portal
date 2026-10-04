@@ -20,7 +20,6 @@ import (
 )
 
 func TestReaderSeesOnlyTheVisibleSections(t *testing.T) {
-	t.Skip("HOLE(2): answer each reader from its visible sections")
 	cfg := portal.Config{Root: os.DirFS("../testdata"), Portals: []portal.Portal{
 		{Name: "Pets", Sections: sections("specs/petstore-3.1.yaml", "docs", "")},
 		{Name: "Store", Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "specs/petstore-3.0.yaml"}}},
