@@ -298,6 +298,30 @@ func Model() http.Handler {
 // auth0Addr and githubAddr until the end of ctx, and writes the example
 // application's settings for them to out, a line NAME=value each.
 func Serve(ctx context.Context, auth0Addr, githubAddr string, out io.Writer) error {
-	// HOLE(5): listen on both addresses, start the mocks, write their settings, and serve until ctx ends
+	auth0Listener, err := net.Listen("tcp", auth0Addr)
+	if err != nil {
+		return err
+	}
+	githubListener, err := net.Listen("tcp", githubAddr)
+	if err != nil {
+		auth0Listener.Close()
+		return err
+	}
+	auth0, err := StartAuth0(auth0Listener, Ada)
+	if err != nil {
+		auth0Listener.Close()
+		githubListener.Close()
+		return err
+	}
+	defer auth0.Shutdown()
+	github := &http.Server{Handler: GitHub(Grace)}
+	go github.Serve(githubListener)
+	defer github.Shutdown(context.Background())
+	githubURL := "http://" + githubListener.Addr().String()
+	if _, err := fmt.Fprintf(out, "AUTH0_ISSUER=%s\nAUTH0_CLIENT_ID=%s\nAUTH0_CLIENT_SECRET=%s\nGITHUB_CLIENT_ID=%s\nGITHUB_CLIENT_SECRET=%s\nGITHUB_URL=%s\nGITHUB_API_URL=%s\n",
+		auth0.Issuer(), ClientID, ClientSecret, ClientID, ClientSecret, githubURL, githubURL); err != nil {
+		return err
+	}
+	<-ctx.Done()
 	return nil
 }

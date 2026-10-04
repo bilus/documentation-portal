@@ -221,7 +221,13 @@ The packages `portal`, `chat`, `source` and `signin` make up the embedding
 API, which is not stable yet. A program builds the portal handler with `portal.New` from a
 `portal.Config`, whose portals `portal.ReadConfig` can read from a
 configuration file, wraps the handler in its own middleware and mounts it in
-its own server, beside routes of its own. docportal is such a program.
+its own server, beside routes of its own. docportal is such a program, and
+so is the example application in `examples/portalapp`, a module of its own,
+which serves a bucket folder with previews, signs readers in through Auth0
+or GitHub, and maps their claims to portals, sections and previews; its
+README lists its setup. A chat takes its model as ADK's `model.LLM`, which
+the package `anthropicmodel` makes of an Anthropic model with
+`anthropicmodel.New`, as in both programs.
 
     cfg, err := portal.ReadConfig(os.DirFS("docs"), "environment.yaml")
     if err != nil {
@@ -553,13 +559,14 @@ A provider without OpenID Connect, such as GitHub, plugs in through a
 reads the reader from the provider's API with the access token, such as
 GitHub's `GET /user`, and the organizations from `GET /user/orgs` with the
 scope `read:org`. The sign-in checks the state and uses PKCE with it too.
-The example application of issue 37 will show GitHub.
+The example application, `examples/portalapp`, signs readers in through
+GitHub this way, beside Auth0 by its issuer.
 
 ## Tests
 
     devbox run make lint       # go vet, gofmt and the core packages' imports
-    devbox run make test       # unit and acceptance tests
-    devbox run make test-e2e   # renders the sample specs in headless Chrome
+    devbox run make test       # unit and acceptance tests, the example's included
+    devbox run make test-e2e   # the browser tests in headless Chrome, the example's included
 
 The browser test needs Chrome or Chromium. Set `CHROME_BIN` if chromedp does
 not find it.
@@ -569,4 +576,5 @@ child diagrams `flow.3.dfd`, `flow.3.4.dfd`, `flow.9.dfd`, `flow.11.dfd`,
 `flow.12.dfd` and `flow.12.2.dfd`), the vocabulary, and the plans and
 ledgers of the changes. `make diagram` draws the packages and their imports
 into `docs/diagrams/packages.svg`, against the layers that
-`docs/diagrams/layers.toml` asserts, with go-depgraph.
+`docs/diagrams/layers.toml` asserts, with go-depgraph. The example
+application's design lives in `examples/portalapp/docs`, with its review page.
