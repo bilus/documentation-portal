@@ -35,7 +35,8 @@ import (
 // the socket and the scripts that they need. A chat page keeps the access of
 // its reader from its load, as portal.AccessOf finds it, so the routes
 // belong in the Chat of the portal configuration, whose access hook they
-// follow.
+// follow. It keeps the reader ID from the reader hook too, and with the hook
+// answers with Cache-Control: private.
 func (c *Chat) Routes() []portal.Route {
 	app := live.NewApp()
 	var routes []portal.Route
@@ -44,15 +45,17 @@ func (c *Chat) Routes() []portal.Route {
 	}
 	for _, a := range c.currentAgents() {
 		mount := func(lv live.Ctx) (*page, error) { return c.mount(lv, a) }
-		add(app.Handler(a.lib.ChatURL(), chatComponent, mount, live.WithSession(c.sessionOf)))
+		pattern, h := app.Handler(a.lib.ChatURL(), chatComponent, mount, live.WithSession(c.sessionOf))
+		add(pattern, c.privatePage(h))
 	}
 	add(app.Assets())
 	add(app.Socket())
 	return routes
 }
 
-// clientOf names the client of r for the rate limit: its IPv4 address, or the
-// /64 network of its IPv6 address, since one IPv6 host often holds a whole /64.
+// clientOf names the client of r for the question limit: its IPv4 address,
+// or the /64 network of its IPv6 address, since one IPv6 host often holds a
+// whole /64.
 func clientOf(r *http.Request) (map[string]string, error) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -81,7 +84,7 @@ type page struct {
 	chat     *Chat
 	portal   string        // the slug of the page's portal
 	access   portal.Access // the page access, from the page's session
-	client   string
+	asker    Asker         // whose question limit counts the page's questions
 	conv     string
 	next     int // the ID of the next message
 	Heading  string
@@ -110,9 +113,11 @@ type questionForm struct {
 }
 
 // mount starts a conversation in a new tab of the chat page of a's portal,
-// for the reader whose page access the page's session holds: the page's
-// heading, navigation bar and portal menu show only the APIs, sections and
-// portals visible to the reader. It refuses a portal hidden from the reader.
+// for the reader whose page access, reader ID and client the page's session
+// holds: the page's heading, navigation bar and portal menu show only the
+// APIs, sections and portals visible to the reader, and the page's questions
+// count against the asker of the reader ID and the client. It refuses a
+// portal hidden from the reader.
 func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 	access := readPageAccess(lv.Session("access"))
 	lib, ok := a.lib.For(access)
@@ -140,7 +145,7 @@ func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 	if len(menu) < 2 {
 		menu = nil
 	}
-	return &page{chat: c, portal: a.lib.Slug(), access: access, client: lv.Session("client"), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
+	return &page{chat: c, portal: a.lib.Slug(), access: access, asker: AskerOf(readerIDIn(lv.Session("readerID")), lv.Session("client")), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
 }
 
 // FormID changes with every message, so the page renders a new, empty form.
@@ -150,7 +155,7 @@ func (p *page) FormID() string { return "ask-" + strconv.Itoa(p.next) }
 func (p *page) Ask(lv live.Ctx) {
 	question := p.Form.Question
 	p.add(message{Mine: true, HTML: "<p>" + strings.ReplaceAll(html.EscapeString(strings.TrimSpace(question)), "\n", "<br>") + "</p>"})
-	answer, err := p.chat.Ask(lv, p.portal, p.access, p.client, p.conv, question)
+	answer, err := p.chat.Ask(lv, p.portal, p.access, p.asker, p.conv, question)
 	if err != nil {
 		p.add(message{Error: true, HTML: "<p>" + html.EscapeString(p.chat.explain(err)) + "</p>"})
 		return

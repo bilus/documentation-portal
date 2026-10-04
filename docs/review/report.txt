@@ -4,8 +4,10 @@ items at home flow.9.dfd, level 1
   Reloader: snapshot in service  live range 4  read distance 1  writers 9.1  readers 9.2, 9.4
 
 private items
-  Chat: chat              writers 6    readers 6
-  Reloader: last listing  writers 9.2  readers 9.2
+  Chat: chat                          writers 6      readers 6
+  Conversations: conversations        writers 3.4.3  readers 3.4.3
+  Question limit: questions by asker  writers 3.4.3  readers 3.4.3
+  Reloader: last listing              writers 9.2    readers 9.2
 
 pressure
   flow.dfd      max 0 in 7 gaps, first between 1 and 2
@@ -24,7 +26,7 @@ design packages
 
 totals
   shared items by level                               1: 1
-  private items                                       2
+  private items                                       4
   unlabeled arrow                                     0
   dead item                                           0
   orphan item                                         0

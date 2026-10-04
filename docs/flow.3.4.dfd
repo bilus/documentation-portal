@@ -1,7 +1,17 @@
 # Process 3.4, the body of portal.router.ServeHTTP: the portal handler's
 # answer to each request that box 9.4 sends it. The response writer of the
 # request passes unchanged from box 9.4 to box 3.4.3. Each box reads the
-# router's sites, access hook and routes as its receiver.
+# router's sites, access hook and routes as its receiver. Box 3.4.3 also
+# draws the chat's state and I/O behind its routes. A chat page's GET asks
+# the embedding program for the reader ID and the page access, and with a
+# reader hook the page answers privately (chat.Chat.privatePage). The page
+# session leaves in the page's response and comes back at the join, over the
+# chat's socket, which lives in the route of its upgrade request; each
+# question that arrives there reads and writes the question limit's counts
+# and the conversations, and asks the chat model. The counts and the
+# conversations belong to the chat that box 6 of flow.dfd keeps across
+# snapshots. The exchanges with the embedding program happen only in a
+# program that sets the hooks; docportal sets none.
 # By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 3.4. docs/flow.3.4.dfd -o flow.3.4.svg
 
 {9.4 Answer each request with the portal handler of the snapshot in service}
@@ -26,9 +36,22 @@
     > file path
     < file
     <Documentation root>
-    > toc problem
+    > toc problem, chat problem
     <Log>
+    > request, portal, section
+    < reader ID, allowed
+    <Embedding program>
+    < questions by asker
+    > questions by asker
+    |Question limit|
+    < conversations
+    > conversations
+    |Conversations|
+    > model request
+    < model response
+    <Chat model>
     > response
+    < page session, question
     <HTTP server>
 
 # type: request = *net/http.Request
@@ -43,4 +66,12 @@
 # type: file path = string
 # type: file = []byte
 # type: toc problem = error
+# type: chat problem = error
+# type: reader ID = string
+# type: questions by asker = map[chat.Asker][]time.Time
+# type: conversations = map[string]*chat.conversation
+# type: model request = *google.golang.org/adk/v2/model.LLMRequest
+# type: model response = *google.golang.org/adk/v2/model.LLMResponse
+# type: page session = map[string]string
+# type: question = string
 # type: response = []byte
