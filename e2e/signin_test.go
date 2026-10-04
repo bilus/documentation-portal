@@ -20,7 +20,6 @@ import (
 )
 
 func TestReaderSignsInAndReturnsToTheFirstPage(t *testing.T) {
-	t.Skip("HOLE(2): sign the reader in through the mock OpenID Connect provider and return to the first page")
 	o, err := mockoidc.Run()
 	if err != nil {
 		t.Fatal(err)

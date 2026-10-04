@@ -20,9 +20,12 @@ import (
 	"cmp"
 	"context"
 	"crypto/cipher"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -126,38 +129,102 @@ func (c Claims) Strings(name string) []string {
 // discovers an OpenID Connect provider's endpoints at its issuer, or refuses
 // a configuration that cannot sign in a reader.
 func New(ctx context.Context, cfg Config, next http.Handler) (http.Handler, error) {
-	// HOLE(2): refuse a configuration that cannot sign in a reader, and discover an Issuer's endpoints and the verifier of its ID tokens
-	callback, err := url.Parse(cfg.CallbackURL)
-	if err != nil {
-		callback = &url.URL{}
+	if err := cfg.check(); err != nil {
+		return nil, err
 	}
+	if next == nil {
+		return nil, errors.New("signin: no handler to wrap")
+	}
+	aead, err := cookieCipher(cfg.Key, cfg.CallbackURL)
+	if err != nil {
+		return nil, err
+	}
+	callback, _ := url.Parse(cfg.CallbackURL) // check parsed it
 	m := &middleware{
 		next:         next,
 		oauth:        &oauth2.Config{ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, RedirectURL: cfg.CallbackURL, Scopes: cfg.Scopes},
 		provider:     cfg.Provider,
 		audience:     cfg.Audience,
 		callbackPath: callback.Path,
-		signOutPath:  "/auth/sign-out",
+		signOutPath:  cmp.Or(cfg.SignOutPath, defaultSignOutPath),
 		sessionName:  sessionCookie,
 		attemptName:  attemptCookie,
 		logoutURL:    cfg.LogoutURL,
 		secure:       callback.Scheme == "https",
-		lifetime:     8 * time.Hour,
+		lifetime:     cmp.Or(cfg.Lifetime, 8*time.Hour),
+		aead:         aead,
 		client:       &http.Client{Timeout: 30 * time.Second},
 		now:          time.Now,
 		revoked:      map[string]time.Time{},
 	}
+	if m.secure {
+		// Prefixes that keep the cookies to this origin over https.
+		m.sessionName, m.attemptName = "__Host-"+sessionCookie, "__Secure-"+attemptCookie
+	}
 	if cfg.Provider != nil {
 		m.oauth.Endpoint = cfg.Provider.Endpoint()
+		return m, nil
 	}
-	if cfg.SignOutPath != "" {
-		m.signOutPath = cfg.SignOutPath
+	provider, err := oidc.NewProvider(oidc.ClientContext(ctx, m.client), cfg.Issuer)
+	if err != nil {
+		return nil, fmt.Errorf("signin: discover the issuer %s: %w", cfg.Issuer, err)
 	}
-	if cfg.Lifetime > 0 {
-		m.lifetime = cfg.Lifetime
-	}
-	m.aead, _ = cookieCipher(cfg.Key, cfg.CallbackURL)
+	m.oauth.Endpoint = provider.Endpoint()
+	m.oauth.Scopes = withOpenID(cfg.Scopes)
+	m.verifier = provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
 	return m, nil
+}
+
+// defaultSignOutPath is the sign-out path of a Config without one.
+const defaultSignOutPath = "/auth/sign-out"
+
+// check refuses a configuration that cannot sign in a reader, with an error
+// that names the setting and never the client secret's value.
+func (cfg Config) check() error {
+	switch {
+	case (cfg.Issuer == "") == (cfg.Provider == nil):
+		return errors.New("signin: give either an issuer or a provider")
+	case cfg.ClientID == "":
+		return errors.New("signin: the client ID is empty")
+	case cfg.ClientSecret == "":
+		return errors.New("signin: the client secret is empty")
+	case cfg.Lifetime < 0:
+		return fmt.Errorf("signin: the session lifetime %v is negative", cfg.Lifetime)
+	case len(cfg.Key) < 32:
+		return errors.New("signin: the session key is shorter than 32 bytes")
+	}
+	signOut := cmp.Or(cfg.SignOutPath, defaultSignOutPath)
+	if !localPath(signOut) || strings.ContainsAny(signOut, "?#") {
+		return fmt.Errorf("signin: the sign-out path %q is not a path", signOut)
+	}
+	callback, err := url.Parse(cfg.CallbackURL)
+	if err != nil || !webURL(callback) {
+		return fmt.Errorf("signin: the callback URL %q is not an absolute http or https URL", cfg.CallbackURL)
+	}
+	if callback.Path == "" || callback.Path == "/" || callback.Path == signOut {
+		return fmt.Errorf("signin: the callback URL %q needs a path of its own, other than / and the sign-out path", cfg.CallbackURL)
+	}
+	if cfg.LogoutURL != "" && !localPath(cfg.LogoutURL) {
+		if u, err := url.Parse(cfg.LogoutURL); err != nil || !webURL(u) {
+			return fmt.Errorf("signin: the logout URL %q is neither an http or https URL nor a path", cfg.LogoutURL)
+		}
+	}
+	return nil
+}
+
+// webURL reports whether u is an absolute http or https URL with a host.
+func webURL(u *url.URL) bool {
+	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+}
+
+// withOpenID returns scopes with openid first, or openid, profile and email
+// for no scopes.
+func withOpenID(scopes []string) []string {
+	if len(scopes) == 0 {
+		return []string{oidc.ScopeOpenID, "profile", "email"}
+	}
+	others := slices.DeleteFunc(slices.Clone(scopes), func(s string) bool { return s == oidc.ScopeOpenID })
+	return append([]string{oidc.ScopeOpenID}, others...)
 }
 
 // middleware is the sign-in middleware as a Go value, built by New.
