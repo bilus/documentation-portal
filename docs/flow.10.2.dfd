@@ -23,7 +23,7 @@
     > revoked sessions
     |Revoked sessions|
 > response writer, request
-[10.2.2. Finish the sign-in at the callback: check the attempt's state, exchange the code with the attempt's PKCE verifier, identify the reader from the verified ID token or through the Provider, and set the cookie of a new session that sends the reader to the return target, or show the sign-in error page with a link to retry
+[10.2.2. Finish the sign-in at the callback: check the attempt's state, exchange the code with the attempt's PKCE verifier, identify the reader from the verified ID token or through the Provider, and set the cookie of a new session and send the reader to the return target, or show the sign-in error page with a link to retry
  (signin.middleware.finish)]
     < attempt cookie, code, state
     > expired attempt cookie, session cookie, return target, sign-in error page

@@ -21,6 +21,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/oauth2-proxy/mockoidc"
+	"golang.org/x/oauth2"
 )
 
 // reader is a reader at the mock OpenID Connect provider, whose ID token
@@ -92,7 +93,6 @@ func queue(o *mockoidc.MockOIDC, alter func(*mockoidc.IDTokenClaims)) {
 }
 
 func TestSignInReturnsToTheFirstPage(t *testing.T) {
-	t.Skip("HOLE(2): sign the reader in through an OpenID Connect provider and return to the page of the first request")
 	o := newOIDC(t)
 	queue(o, nil)
 	f := serveSignIn(t, oidcConfig(o))
@@ -120,7 +120,6 @@ func TestSignInReturnsToTheFirstPage(t *testing.T) {
 }
 
 func TestTheCookiesAreSecureOverHTTPS(t *testing.T) {
-	t.Skip("HOLE(2): set the cookies Secure, with the prefixes __Secure- and __Host-, with an https callback URL")
 	cfg := oidcConfig(newOIDC(t))
 	cfg.CallbackURL = "https://docs.example/auth/callback"
 	f := serveSignIn(t, cfg)
@@ -190,7 +189,6 @@ func callBack(t *testing.T, f *fixture, callback string, attempt *http.Cookie) *
 }
 
 func TestTheReturnTargetFallsBackToTheRoot(t *testing.T) {
-	t.Skip("HOLE(2): send the reader back to a relative path on the portal's own origin alone, and to / in place of any other target")
 	o := newOIDC(t)
 	f := serveSignIn(t, oidcConfig(o))
 	for target, want := range map[string]string{
@@ -208,7 +206,6 @@ func TestTheReturnTargetFallsBackToTheRoot(t *testing.T) {
 }
 
 func TestASignInIssuesANewSession(t *testing.T) {
-	t.Skip("HOLE(2): issue a session with a new session ID at each sign-in")
 	o := newOIDC(t)
 	f := serveSignIn(t, oidcConfig(o))
 	b, tr := browser(t)
@@ -243,7 +240,6 @@ func TestASignInIssuesANewSession(t *testing.T) {
 }
 
 func TestAFailedSignInShowsARetryLink(t *testing.T) {
-	t.Skip("HOLE(2): show the sign-in error page of a failed or cancelled sign-in, with a link to retry, and grant no access")
 	var failToken atomic.Bool
 	o := newOIDC(t, func(o *mockoidc.MockOIDC) {
 		o.AddMiddleware(func(next http.Handler) http.Handler {
@@ -308,7 +304,6 @@ func TestAFailedSignInShowsARetryLink(t *testing.T) {
 }
 
 func TestSignInChecksTheStateAndUsesPKCE(t *testing.T) {
-	t.Skip("HOLE(2): send a new state, nonce and S256 challenge with each authorization request and the verifier with the code")
 	var mu sync.Mutex
 	var authorize, token []url.Values
 	o := newOIDC(t, func(o *mockoidc.MockOIDC) {
@@ -386,7 +381,6 @@ func tamperIDToken(next http.Handler) http.Handler {
 }
 
 func TestSignInValidatesTheIDToken(t *testing.T) {
-	t.Skip("HOLE(2): refuse an ID token with another signature, issuer, audience or nonce, or an expiry in the past")
 	for name, tc := range map[string]struct {
 		setup func(*mockoidc.MockOIDC)
 		alter func(*mockoidc.IDTokenClaims)
@@ -417,7 +411,6 @@ func TestSignInValidatesTheIDToken(t *testing.T) {
 }
 
 func TestASessionLastsTheConfiguredLifetime(t *testing.T) {
-	t.Skip("HOLE(2): give a new session the configured lifetime, 8 hours by default")
 	for lifetime, want := range map[time.Duration]time.Duration{0: 8 * time.Hour, 2 * time.Hour: 2 * time.Hour} {
 		cfg := oidcConfig(newOIDC(t))
 		cfg.Lifetime = lifetime
@@ -445,7 +438,6 @@ func TestASessionLastsTheConfiguredLifetime(t *testing.T) {
 }
 
 func TestSignInThroughAProviderWithoutOpenIDConnect(t *testing.T) {
-	t.Skip("HOLE(2): sign the reader in through a Provider, with state and PKCE, and refuse its error or an identity without a subject")
 	p := newStubProvider(t)
 	f := serveSignIn(t, stubConfig(p))
 	b, _ := browser(t)
@@ -480,7 +472,6 @@ func TestSignInThroughAProviderWithoutOpenIDConnect(t *testing.T) {
 }
 
 func TestTheClientSecretStaysOnTheServer(t *testing.T) {
-	t.Skip("HOLE(2): write the client secret to no log, no response and no URL that the browser sees")
 	var logs syncBuffer
 	log.SetOutput(&logs)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
@@ -514,8 +505,19 @@ func TestTheClientSecretStaysOnTheServer(t *testing.T) {
 	}
 }
 
+func TestWithOpenID(t *testing.T) {
+	for _, tc := range []struct{ scopes, want []string }{
+		{nil, []string{"openid", "profile", "email"}},
+		{[]string{"email"}, []string{"openid", "email"}},
+		{[]string{"profile", "openid", "groups"}, []string{"openid", "profile", "groups"}},
+	} {
+		if got := withOpenID(tc.scopes); !slices.Equal(got, tc.want) {
+			t.Errorf("withOpenID(%q) = %q, want %q", tc.scopes, got, tc.want)
+		}
+	}
+}
+
 func TestNewRefusesAConfigurationThatCannotSignIn(t *testing.T) {
-	t.Skip("HOLE(2): refuse a configuration that cannot sign in a reader, naming no secret")
 	o := newOIDC(t)
 	const secret = "the portal's client secret"
 	good := Config{Issuer: o.Issuer(), ClientID: o.ClientID, ClientSecret: secret, CallbackURL: "https://docs.example/auth/callback", Key: testKey}
@@ -555,7 +557,6 @@ func TestNewRefusesAConfigurationThatCannotSignIn(t *testing.T) {
 }
 
 func TestRequestsThatCannotFollowARedirectAreRefused(t *testing.T) {
-	t.Skip("HOLE(2): refuse a request without a session that cannot follow the sign-in's redirect")
 	f := serveSignIn(t, oidcConfig(newOIDC(t)))
 	post, err := http.NewRequest(http.MethodPost, f.srv.URL+"/portals/pets/", strings.NewReader("q=1"))
 	if err != nil {
@@ -599,4 +600,74 @@ func (s *syncBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.b.String()
+}
+
+func TestReturnTarget(t *testing.T) {
+	for target, want := range map[string]string{
+		"/":                      "/",
+		"/portals/pets/?q=1":     "/portals/pets/?q=1",
+		"/portals/pets/a%2Fb":    "/portals/pets/a%2Fb",
+		"":                       "/",
+		"portals/pets/":          "/",
+		"//evil.example/x":       "/",
+		"/\\evil.example/x":      "/",
+		"/portals\\pets":         "/",
+		"https://evil.example/x": "/",
+		"http:/evil.example":     "/",
+		"/\t/evil.example":       "/",
+		"/a\nb":                  "/",
+		"/a\x7fb":                "/",
+		"/%zz":                   "/",
+	} {
+		if got := returnTarget(target); got != want {
+			t.Errorf("returnTarget(%q) = %q, want %q", target, got, want)
+		}
+	}
+}
+
+func TestRedactHidesTheClientSecret(t *testing.T) {
+	m := &middleware{oauth: &oauth2.Config{ClientSecret: "s3cret &/+"}}
+	got := m.redact("plain s3cret &/+, escaped " + url.QueryEscape("s3cret &/+"))
+	if strings.Contains(got, "s3cret") || strings.Count(got, "[client secret]") != 2 {
+		t.Errorf("redact left %q", got)
+	}
+}
+
+func TestAnIdentityTooLargeForItsCookieFailsTheSignIn(t *testing.T) {
+	p := newStubProvider(t)
+	p.identity.Claims = Claims{"notes": strings.Repeat("a long claim ", 400)}
+	f := serveSignIn(t, stubConfig(p))
+	b, tr := browser(t)
+	if resp, _ := fetch(t, b, f.srv.URL+"/portals/pets/"); resp.StatusCode != http.StatusForbidden || f.pages.reached() != 0 {
+		t.Errorf("an identity of 5 kB ended its sign-in with %d", resp.StatusCode)
+	}
+	if cookies := tr.sessionCookies(); len(cookies) != 0 {
+		t.Errorf("the failed sign-in set %d session cookies", len(cookies))
+	}
+}
+
+func TestATokenResponseWithoutAnIDTokenFailsTheSignIn(t *testing.T) {
+	o := newOIDC(t, func(o *mockoidc.MockOIDC) {
+		o.AddMiddleware(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != mockoidc.TokenEndpoint {
+					next.ServeHTTP(w, r)
+					return
+				}
+				rec := httptest.NewRecorder()
+				next.ServeHTTP(rec, r)
+				var body map[string]any
+				json.Unmarshal(rec.Body.Bytes(), &body)
+				delete(body, "id_token")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(rec.Code)
+				json.NewEncoder(w).Encode(body)
+			})
+		})
+	})
+	f := serveSignIn(t, oidcConfig(o))
+	b, _ := browser(t)
+	if resp, _ := fetch(t, b, f.srv.URL+"/portals/pets/"); resp.StatusCode != http.StatusForbidden || f.pages.reached() != 0 {
+		t.Errorf("a token response without an ID token ended the sign-in with %d", resp.StatusCode)
+	}
 }
