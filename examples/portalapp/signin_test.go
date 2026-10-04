@@ -84,7 +84,6 @@ func choiceCookie(resp *http.Response) *http.Cookie {
 }
 
 func TestTheSignInPageOffersTheConfiguredProviders(t *testing.T) {
-	t.Skip("HOLE(3): offer the configured providers on the sign-in page")
 	auth0 := []string{"AUTH0_ISSUER", "AUTH0_CLIENT_ID", "AUTH0_CLIENT_SECRET"}
 	github := []string{"GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "GITHUB_URL", "GITHUB_API_URL"}
 	for name, tc := range map[string]struct {
@@ -129,7 +128,6 @@ func TestTheSignInPageOffersTheConfiguredProviders(t *testing.T) {
 }
 
 func TestARequestWithoutAProviderGoesToTheSignInPage(t *testing.T) {
-	t.Skip("HOLE(3): send a request without a provider to the sign-in page")
 	p := newPortalTest(t)
 	p.serveSignIn(t, echo)
 	resp := send(t, noRedirects, "GET", p.srv.URL+"/portals/pets/docs/guides/?q=1", nil, nil)
@@ -160,7 +158,6 @@ func TestARequestWithoutAProviderGoesToTheSignInPage(t *testing.T) {
 }
 
 func TestAReaderSignsInThroughTheChosenProvider(t *testing.T) {
-	t.Skip("HOLE(3): sign a reader in through the chosen provider")
 	p := newPortalTest(t)
 	p.serveSignIn(t, echo)
 	for provider, want := range map[string]string{"auth0": "auth0 auth0|ada", "github": "github github|2"} {
@@ -199,7 +196,6 @@ func TestAReaderSignsInThroughTheChosenProvider(t *testing.T) {
 }
 
 func TestTheChoiceStaysOnTheSite(t *testing.T) {
-	t.Skip("HOLE(3): keep the choice of a provider to the portal's own pages")
 	p := newPortalTest(t)
 	p.serveSignIn(t, echo)
 	choose := func(provider, target string, header map[string]string) *http.Response {
@@ -239,7 +235,6 @@ func TestTheChoiceStaysOnTheSite(t *testing.T) {
 }
 
 func TestSignOutClearsTheChoice(t *testing.T) {
-	t.Skip("HOLE(3): clear the choice at a sign-out")
 	p := newPortalTest(t)
 	const logout = "https://tenant.example/v2/logout?client_id=portalapp"
 	p.env["AUTH0_LOGOUT_URL"] = logout
@@ -270,8 +265,38 @@ func TestSignOutClearsTheChoice(t *testing.T) {
 	}
 }
 
+func TestTheChoiceCookieOverHTTPS(t *testing.T) {
+	h, err := signIn(t.Context(), providerSettings{appURL: "https://docs.example.com", sessionKey: testKey,
+		github: githubSettings{clientID: "c", clientSecret: "s", apiURL: gitHubAPI}}, echo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt, ok := h.(*router)
+	if !ok {
+		t.Fatalf("signIn returned %T, want the sign-in router", h)
+	}
+	c := rt.choiceCookie("github", 60)
+	if c.Name != "__Host-signin_provider" || !c.Secure || c.Path != "/" || c.Domain != "" || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("the choice cookie over https: %+v", c)
+	}
+	if got := rt.providers[0].callbackPath; got != "/auth/github/callback" {
+		t.Errorf("GitHub's callback path is %q", got)
+	}
+}
+
+func TestSignInNeedsAProvider(t *testing.T) {
+	if h, err := signIn(t.Context(), providerSettings{appURL: "https://docs.example.com", sessionKey: testKey}, echo); err == nil {
+		t.Errorf("signIn without a provider returned %T", h)
+	}
+	// A provider's own refusal names the provider.
+	_, err := signIn(t.Context(), providerSettings{appURL: "https://docs.example.com", sessionKey: "short",
+		github: githubSettings{clientID: "c", clientSecret: "s", apiURL: gitHubAPI}}, echo)
+	if err == nil || !strings.Contains(err.Error(), "GitHub") {
+		t.Errorf("signIn with a short session key: %v, want GitHub's refusal", err)
+	}
+}
+
 func TestTheAccessHookReadsTheReadersSignIn(t *testing.T) {
-	t.Skip("HOLE(3): sign a reader in through the chosen provider")
 	rules, err := readAccessFile("demo/access.yaml")
 	if err != nil {
 		t.Fatal(err)
