@@ -1,6 +1,13 @@
 package main
 
-import "time"
+import (
+	"cmp"
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+)
 
 // settings are the example application's settings, from the environment
 // alone. The README lists each variable with its default.
@@ -59,6 +66,93 @@ type chatSettings struct {
 // provider is on when its client ID is set, and the chat when the API key
 // is.
 func readSettings(getenv func(string) string) (settings, error) {
-	// HOLE(1): read each variable, else its default, and refuse incomplete settings
-	return settings{addr: ":8080"}, nil
+	or := func(name, fallback string) string { return cmp.Or(getenv(name), fallback) }
+	s := settings{
+		addr:       or("PORTAL_ADDR", ":8080"),
+		bucketURL:  getenv("PORTAL_BUCKET"),
+		configPath: or("PORTAL_CONFIG", "environment.yaml"),
+		previews:   or("PORTAL_PREVIEWS", "previews"),
+		refresh:    time.Minute,
+		accessFile: or("PORTAL_ACCESS_FILE", "access.yaml"),
+		providers: providerSettings{
+			appURL:     strings.TrimSuffix(getenv("PORTAL_URL"), "/"),
+			sessionKey: getenv("PORTAL_SESSION_KEY"),
+			auth0: auth0Settings{
+				issuer:       getenv("AUTH0_ISSUER"),
+				clientID:     getenv("AUTH0_CLIENT_ID"),
+				clientSecret: getenv("AUTH0_CLIENT_SECRET"),
+				logoutURL:    getenv("AUTH0_LOGOUT_URL"),
+			},
+			github: githubSettings{
+				clientID:     getenv("GITHUB_CLIENT_ID"),
+				clientSecret: getenv("GITHUB_CLIENT_SECRET"),
+				webURL:       strings.TrimSuffix(getenv("GITHUB_URL"), "/"),
+				apiURL:       strings.TrimSuffix(or("GITHUB_API_URL", gitHubAPI), "/"),
+			},
+		},
+		chat: chatSettings{
+			apiKey:  getenv("ANTHROPIC_API_KEY"),
+			model:   or("PORTAL_CHAT_MODEL", "claude-opus-5-5"),
+			baseURL: getenv("ANTHROPIC_BASE_URL"),
+		},
+	}
+	if v := getenv("PORTAL_REFRESH"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			return settings{}, fmt.Errorf("PORTAL_REFRESH: %q is not a duration of 0 or more", v)
+		}
+		s.refresh = d
+	}
+	switch {
+	case !webURL(s.providers.appURL, false):
+		return settings{}, fmt.Errorf("PORTAL_URL: %q is not the application's origin, an http or https URL such as https://docs.example.com", getenv("PORTAL_URL"))
+	case s.bucketURL == "":
+		return settings{}, errors.New("PORTAL_BUCKET is empty: name the bucket folder, such as gs://docs-bucket?prefix=portal/")
+	case len(s.providers.sessionKey) < 32:
+		return settings{}, errors.New("PORTAL_SESSION_KEY holds fewer than 32 bytes")
+	}
+	if err := s.providers.check(); err != nil {
+		return settings{}, err
+	}
+	return s, nil
+}
+
+// gitHubAPI is the URL of GitHub's API.
+const gitHubAPI = "https://api.github.com"
+
+// check refuses provider settings without an identity provider, and a
+// provider with some of its settings missing, by the first missing one's
+// variable. A provider is on with any of its settings, GitHub's API URL
+// other than GitHub's own included.
+func (s providerSettings) check() error {
+	auth0 := s.auth0 != auth0Settings{}
+	github := s.github != githubSettings{apiURL: gitHubAPI}
+	switch {
+	case !auth0 && !github:
+		return errors.New("no identity provider: set AUTH0_CLIENT_ID or GITHUB_CLIENT_ID with the provider's other settings")
+	case auth0 && s.auth0.clientID == "":
+		return errors.New("AUTH0_CLIENT_ID is empty, beside other Auth0 settings")
+	case auth0 && s.auth0.issuer == "":
+		return errors.New("AUTH0_ISSUER is empty, beside AUTH0_CLIENT_ID")
+	case auth0 && s.auth0.clientSecret == "":
+		return errors.New("AUTH0_CLIENT_SECRET is empty, beside AUTH0_CLIENT_ID")
+	case github && s.github.clientID == "":
+		return errors.New("GITHUB_CLIENT_ID is empty, beside other GitHub settings")
+	case github && s.github.clientSecret == "":
+		return errors.New("GITHUB_CLIENT_SECRET is empty, beside GITHUB_CLIENT_ID")
+	case github && s.github.webURL != "" && !webURL(s.github.webURL, true):
+		return fmt.Errorf("GITHUB_URL: %q is not an http or https URL", s.github.webURL)
+	case github && !webURL(s.github.apiURL, true):
+		return fmt.Errorf("GITHUB_API_URL: %q is not an http or https URL", s.github.apiURL)
+	}
+	return nil
+}
+
+// webURL reports whether raw is an absolute http or https URL with a host,
+// and without a user, a query or a fragment, and with a path only for
+// withPath.
+func webURL(raw string, withPath bool) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil &&
+		u.RawQuery == "" && !u.ForceQuery && !strings.Contains(raw, "#") && (withPath || u.Path == "")
 }
