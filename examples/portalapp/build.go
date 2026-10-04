@@ -55,9 +55,10 @@ type builder struct {
 // portal configuration from the configuration file, and adds the access
 // hook of the access rules, the account hook of the sign-in and, with an API
 // key, the chat with the reader hook of the sign-in, kept from the last
-// snapshot and given its libraries before its routes. A build whose portal
-// configuration, libraries or chat fail leaves the chat as it was; after
-// them, portal.New refuses nothing that NewLibraries took.
+// snapshot and given its libraries before its routes. A failure of the
+// portal configuration, the libraries or the chat leaves the chat unchanged;
+// after them, portal.New accepts every configuration accepted by
+// NewLibraries.
 func (b *builder) build(root fs.FS) (http.Handler, error) {
 	cfg, err := b.portalConfig(root)
 	if err != nil {
@@ -112,7 +113,7 @@ func (b *builder) buildPreview(root fs.FS) (http.Handler, error) {
 
 // withPreviews wraps reloader in the previews handler, which opens the
 // preview folders of location, each loaded at its first request with build
-// and checked every refresh interval, to the readers whom rules allow.
+// and checked every refresh interval, to the readers allowed by rules.
 func withPreviews(ctx context.Context, reloader http.Handler, location *source.Bucket, refresh time.Duration, rules accessRules, build func(fs.FS) (http.Handler, error)) http.Handler {
 	if location == nil {
 		return reloader

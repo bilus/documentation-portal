@@ -125,8 +125,8 @@ const gitHubAPI = "https://api.github.com"
 
 // check refuses provider settings without an identity provider, and a
 // provider with some of its settings missing, by the first missing one's
-// variable. A provider is on with any of its settings, GitHub's API URL
-// other than GitHub's own included.
+// variable. A provider is on with any of its settings, including a GitHub
+// API URL other than GitHub's own.
 func (s providerSettings) check() error {
 	auth0 := s.auth0 != auth0Settings{}
 	github := s.github != githubSettings{apiURL: gitHubAPI}

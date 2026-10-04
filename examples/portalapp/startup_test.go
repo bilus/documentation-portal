@@ -24,7 +24,7 @@ const testKey = "the session key of the example's tests, 32 bytes or more"
 
 // portalTest is the example application in a test: its settings for the
 // mock Auth0 of Ada, the stub GitHub of Grace and a copy of the demo
-// documentation, and the portal's server, which start starts.
+// documentation, and the portal's server, started by the method start.
 type portalTest struct {
 	env map[string]string
 	dir string // the copy of the demo documentation's bucket folder
@@ -33,7 +33,7 @@ type portalTest struct {
 
 // newPortalTest starts the mock Auth0 and the stub GitHub, and returns the
 // settings of the example application for them, with a copy of the demo
-// documentation, and the portal's server, not yet started.
+// documentation, and the portal's server, nil until the method start.
 func newPortalTest(t *testing.T) *portalTest {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -66,7 +66,7 @@ func newPortalTest(t *testing.T) *portalTest {
 }
 
 // demoBucket copies the demo documentation's bucket folder into a
-// directory of the test, which the test may change, and returns the
+// directory of the test, open to the test's changes, and returns the
 // directory and its file:// bucket folder URL.
 func demoBucket(t *testing.T) (string, string) {
 	t.Helper()
@@ -92,7 +92,7 @@ func (p *portalTest) start(t *testing.T) string {
 }
 
 // signInAs signs a reader in at the portal at base through the identity
-// provider of the provider name, from the sign-in page, as a browser does,
+// provider of the provider name, from the sign-in page, like a browser,
 // and returns the reader's client, whose cookie jar holds the session.
 func signInAs(t *testing.T, base, provider string) *http.Client {
 	t.Helper()

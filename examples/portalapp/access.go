@@ -26,7 +26,7 @@ type accessRules struct {
 
 // rule matches a reader who signed in through the identity provider named
 // Provider, auth0 or github, and whose claim Claim holds one of Values: for
-// github in any letter case, as GitHub's names count, and else exactly.
+// github in any letter case, like GitHub's names, and else exactly.
 type rule struct {
 	Provider string   `yaml:"provider"`
 	Claim    string   `yaml:"claim"`
@@ -35,7 +35,7 @@ type rule struct {
 
 // readAccessFile reads the access rules from the access file at name, or
 // refuses an invalid file: one that is missing, that is not YAML or holds
-// more than one YAML document, with a key it does not know, a rule without
+// more than one YAML document, with an unknown key, a rule without
 // a provider, a claim or values, an empty value, a provider other than
 // auth0 and github, or a GitHub rule on a claim other than login, id, orgs,
 // org_ids, teams and team_ids.
@@ -94,7 +94,7 @@ func (r rule) check() error {
 
 // names reports whether a rule of the identity provider named provider
 // holds value for claim, as the rule would match it, so that a provider's
-// claims keep only the values that some rule reads.
+// claims keep only the values read by some rule.
 func (rules accessRules) names(provider, claim, value string) bool {
 	named := func(r rule) bool { return r.Provider == provider && r.Claim == claim && r.holds(value) }
 	if slices.ContainsFunc(rules.Previews, named) {
@@ -128,8 +128,8 @@ func (rules accessRules) access(r *http.Request) (portal.Access, error) {
 }
 
 // accessOf returns the access of a reader who signed in through the
-// identity provider named provider with claims: the labels whose rules
-// match, and whether a previews rule matches.
+// identity provider named provider with claims: the labels with a matching
+// rule, and whether a previews rule matches the reader.
 func (rules accessRules) accessOf(provider string, claims signin.Claims) readerAccess {
 	a := readerAccess{signedIn: true}
 	match := func(r rule) bool { return r.matches(provider, claims) }
@@ -180,7 +180,7 @@ func (a readerAccess) Section(_ portal.Portal, s portal.Section) bool {
 }
 
 // Preview reports whether the reader may open the preview of folder: for a
-// reader whom a previews rule matches, every folder.
+// reader matched by a previews rule, every folder.
 func (a readerAccess) Preview(folder string) bool {
 	return a.signedIn && a.previews
 }

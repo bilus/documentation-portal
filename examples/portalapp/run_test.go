@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// lockedBuffer is a buffer that two goroutines may write and read.
+// lockedBuffer is a buffer safe for writes and reads from two goroutines.
 type lockedBuffer struct {
 	mu  sync.Mutex
 	buf bytes.Buffer
@@ -34,9 +34,9 @@ func (b *lockedBuffer) String() string {
 }
 
 // TestTheExampleRunsAgainstTheMocks builds the example application and the
-// command of the mock providers, and runs both as the README's local run
-// does: the mocks print their settings, and the example, given them, the
-// demo documentation and the demo access file, signs two readers in.
+// command of the mock providers, and runs both like the README's local
+// run: the mocks print their settings, and the example, given them, the
+// demo documentation and the demo access file, signs in two readers.
 func TestTheExampleRunsAgainstTheMocks(t *testing.T) {
 	bin := t.TempDir()
 	for name, pkg := range map[string]string{"portalapp": ".", "mocks": "./cmd/mocks"} {

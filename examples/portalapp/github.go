@@ -31,9 +31,9 @@ type githubProvider struct {
 
 // newGitHub returns the GitHub provider of s: GitHub's OAuth endpoints, or
 // with a web URL the same paths on its host, the API at the API URL, and
-// keep, which tells the memberships that the claims keep: those of the
-// claims orgs and org_ids, and teams and team_ids, for which keep holds,
-// and every one for a nil keep.
+// keep, which selects the memberships kept in the claims: those of the
+// claims orgs and org_ids, and teams and team_ids, accepted by keep, and
+// every one for a nil keep.
 func newGitHub(s githubSettings, keep func(claim, value string) bool) githubProvider {
 	g := githubProvider{
 		endpoint: github.Endpoint,
@@ -179,8 +179,8 @@ func (g githubProvider) get(ctx context.Context, token *oauth2.Token, u string, 
 	return resp.Header.Get("Link"), nil
 }
 
-// nextPage returns the URL of the next page that the Link header link
-// names, or "" for none, and an error for a next page on another host than
+// nextPage returns the URL of the next page named by the Link header
+// link, or "" for none, and an error for a next page on another host than
 // the API's, so that the token never leaves the API.
 func (g githubProvider) nextPage(link string) (string, error) {
 	for _, part := range strings.Split(link, ",") {

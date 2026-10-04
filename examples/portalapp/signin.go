@@ -121,9 +121,9 @@ func (rt *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// providerOf returns the provider of r: the one whose callback path or
-// sign-out path r asks for, else the one that the choice cookie names, or
-// false for none.
+// providerOf returns the provider of r: the one with r's path as its
+// callback path or sign-out path, else the one named by the choice cookie,
+// or false for none.
 func (rt *router) providerOf(r *http.Request) (provider, bool) {
 	for _, p := range rt.providers {
 		if r.URL.Path == p.callbackPath || r.URL.Path == p.signOutPath {
@@ -215,7 +215,7 @@ func (rt *router) choiceCookie(value string, maxAge int) *http.Cookie {
 // returnTarget returns target when it is a relative path on the
 // application's own origin, such as /portals/pets/?q=1, and / for any
 // other: an absolute or protocol-relative URL, a backslash, a control
-// character or a target that does not parse.
+// character or an unparsable target.
 func returnTarget(target string) string {
 	if !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") ||
 		strings.ContainsFunc(target, func(r rune) bool { return r == '\\' || r < ' ' || r == 0x7f }) {

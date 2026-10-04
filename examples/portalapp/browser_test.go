@@ -18,8 +18,8 @@ import (
 	"github.com/bilus/documentation-portal/examples/portalapp/mocks"
 )
 
-// newBrowser starts a headless Chrome for the test, as the library's
-// browser tests do: CHROME_BIN names it, else chromedp finds one.
+// newBrowser starts a headless Chrome for the test, like the library's
+// browser tests: the one named by CHROME_BIN, else one found by chromedp.
 func newBrowser(t *testing.T) context.Context {
 	t.Helper()
 	opts := chromedp.DefaultExecAllocatorOptions[:]
