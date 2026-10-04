@@ -158,11 +158,12 @@ func TestListingEqual(t *testing.T) {
 // fakeSource is a documentation source whose listing a test sets, with a
 // count of the checks made on it.
 type fakeSource struct {
-	mu      sync.Mutex
-	listing Listing
-	files   map[string]string
-	readErr error // returned by Read when set
-	lists   atomic.Int64
+	mu       sync.Mutex
+	listing  Listing
+	files    map[string]string
+	readErr  error // returned by Read when set
+	volatile bool  // when set, every List returns a listing of its own
+	lists    atomic.Int64
 }
 
 func (f *fakeSource) set(version string, files map[string]string) {
@@ -175,7 +176,10 @@ func (f *fakeSource) set(version string, files map[string]string) {
 func (f *fakeSource) List(context.Context) (Listing, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.lists.Add(1)
+	n := f.lists.Add(1)
+	if f.volatile {
+		return Listing{{Key: "version", Size: n, MD5: []byte("upload in progress")}}, nil
+	}
 	return append(Listing(nil), f.listing...), nil
 }
 
@@ -222,7 +226,6 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 }
 
 func TestReloaderSwapsASettledChange(t *testing.T) {
-	t.Skip("HOLE(3): swap in the handler of a settled change, and keep the old one on a failure")
 	src := &fakeSource{}
 	src.set("v1", map[string]string{"index.md": "one"})
 	var builds atomic.Int64
@@ -248,28 +251,25 @@ func TestReloaderSwapsASettledChange(t *testing.T) {
 	}
 
 	// A listing that changes at every check never settles.
-	var version atomic.Int64
 	src.mu.Lock()
 	src.files = map[string]string{"index.md": "unsettled"}
+	src.volatile = true
 	src.mu.Unlock()
-	go func() {
-		for i := range 60 {
-			src.set("unsettled "+string(rune('a'+i%26)), map[string]string{"index.md": "unsettled"})
-			version.Add(1)
-			time.Sleep(time.Millisecond)
-		}
-	}()
-	waitFor(t, "sixty versions", func() bool { return version.Load() == 60 })
+	lists := src.lists.Load()
+	waitFor(t, "twenty more checks", func() bool { return src.lists.Load() >= lists+20 })
 	if got := body(h); got != "two" {
 		t.Errorf("an unsettled change was loaded: %q", got)
 	}
+	src.mu.Lock()
+	src.volatile = false
+	src.mu.Unlock()
 
 	// A failed read keeps the snapshot in service, and the next check tries again.
 	src.mu.Lock()
 	src.readErr = errors.New("bucket unreachable")
 	src.mu.Unlock()
 	src.set("v3", map[string]string{"index.md": "three"})
-	lists := src.lists.Load()
+	lists = src.lists.Load()
 	waitFor(t, "three more checks", func() bool { return src.lists.Load() >= lists+3 })
 	if got := body(h); got != "two" {
 		t.Errorf("after a failed read, %q", got)
@@ -286,13 +286,13 @@ func TestReloaderSwapsASettledChange(t *testing.T) {
 	if got := body(h); got != "three" {
 		t.Errorf("after a failed build, %q", got)
 	}
-	if n := builds.Load(); n != 4 {
-		t.Errorf("%d builds, want 4", n)
+	// The next check tries the build again.
+	if n := builds.Load(); n < 4 {
+		t.Errorf("%d builds, want the failing one tried", n)
 	}
 }
 
 func TestReloaderWithoutChecks(t *testing.T) {
-	t.Skip("HOLE(3): an interval of zero turns the checks off")
 	src := &fakeSource{}
 	src.set("v1", map[string]string{"index.md": "one"})
 	var builds atomic.Int64
@@ -306,9 +306,27 @@ func TestReloaderWithoutChecks(t *testing.T) {
 	}
 }
 
+// safeBuffer is a bytes.Buffer that the reloader's goroutine and a test may
+// share.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func TestReloaderLogsAFailureOnce(t *testing.T) {
-	t.Skip("HOLE(3): log a failed check once, until the problem changes")
-	var logged bytes.Buffer
+	var logged safeBuffer
 	prev := log.Writer()
 	log.SetOutput(&logged)
 	t.Cleanup(func() { log.SetOutput(prev) })
