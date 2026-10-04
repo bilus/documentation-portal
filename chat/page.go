@@ -181,6 +181,8 @@ func (c *Chat) explain(err error) string {
 		return "I can't help with that. I answer questions about using this API."
 	case errors.Is(err, ErrCutOff):
 		return "The answer came out too long. Please ask a narrower question."
+	case errors.Is(err, ErrNoPortal):
+		return "This page is out of date. Reload the page to go on."
 	}
 	log.Printf("chat: %v", err)
 	return "The assistant is unavailable right now. Please try again later."

@@ -351,7 +351,7 @@ func TestChatNamesEveryAPI(t *testing.T) {
 	if answer, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "conv", "What can you help with?"); err != nil || !m.Exhausted() {
 		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
 	}
-	mux := servedByPortal(t, c.Routes())
+	mux := servedByPortal(t, c)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))
 	if !strings.Contains(rec.Body.String(), "Ask about the Pets and Store APIs") {
@@ -411,7 +411,7 @@ func TestChatInEveryPortal(t *testing.T) {
 	if answer, err := c.Ask(t.Context(), "other", portal.Everything, "client", "conv", "How?"); err == nil {
 		t.Errorf("a slug of no portal: %q", answer)
 	}
-	mux := servedByPortal(t, c.Routes())
+	mux := servedByPortal(t, c)
 	for path, want := range map[string]string{"/portals/pet-shop/chat": "Ask about the Pets API", "/portals/store/chat": "Ask about the Store API"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -474,7 +474,7 @@ func TestChatPageMenu(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mux := servedByPortal(t, c.Routes())
+	mux := servedByPortal(t, c)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/store/chat", nil))
 	page := rec.Body.String()

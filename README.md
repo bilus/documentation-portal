@@ -234,7 +234,9 @@ configuration's `Chat`: a chat page answers from the sections of its portal
 visible to the reader, and its heading and the model's instructions name only
 their APIs. The page keeps the reader's access from its load, signed into its
 session, so a change of the reader's access reaches an open chat page when it
-loads again. `portal.AccessOf(r)` gives the access that the portal handler
+loads again. A later snapshot that changes a portal's configuration closes that
+portal to an open page until the page loads again; without a hook, an open
+page follows each snapshot. `portal.AccessOf(r)` gives the access that the portal handler
 found for a request, and an access that allows nothing to a request served by
 no portal handler; `Library.For(access)` limits a library to a reader, and
 `chat.Chat.Ask` takes the reader's access.

@@ -157,27 +157,40 @@ func (rt *router) viewFor(access Access) *view {
 // with an access hook writes the response with Cache-Control: private.
 func (rt *router) route(w http.ResponseWriter, r *http.Request, v *view) {
 	if rt.access != nil {
-		w = &privateWriter{ResponseWriter: w}
+		w = newPrivateWriter(w)
 	}
 	rt.mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viewKey{}, v)))
 }
 
-// guard returns route as it is, or, for the route of a portal's chat page,
-// with a handler that answers as for a slug of no portal when the portal is
-// hidden from the request's reader.
+// guard returns route as it is, or, for a route under /portals/, such as a
+// portal's chat page, with a handler that answers as for a slug of no portal
+// when the portal of the request's path is hidden from the request's reader.
+// It reads the pattern's path as ServeMux does, whatever its method and its
+// spacing.
 func (rt *router) guard(route Route) Route {
 	h := route.Handler
-	if h == nil {
+	if h == nil || !strings.HasPrefix(patternPath(route.Pattern), "/portals/") {
 		return route
 	}
-	for _, s := range rt.sites {
-		if route.Pattern == "GET "+s.chatURL() {
-			route.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				servePortal(w, r, s.slug, func(_ *site, w http.ResponseWriter, r *http.Request) { h.ServeHTTP(w, r) })
-			})
-		}
-	}
+	route.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slug, _, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/portals/"), "/")
+		servePortal(w, r, slug, func(_ *site, w http.ResponseWriter, r *http.Request) { h.ServeHTTP(w, r) })
+	})
 	return route
+}
+
+// patternPath returns the path of the ServeMux pattern p, without its method
+// and its host, or "" for a pattern without a path.
+func patternPath(p string) string {
+	fields := strings.Fields(p)
+	if len(fields) == 0 {
+		return ""
+	}
+	last := fields[len(fields)-1]
+	if i := strings.Index(last, "/"); i >= 0 {
+		return last[i:]
+	}
+	return ""
 }
 
 // serve returns the handler that answers a request under
