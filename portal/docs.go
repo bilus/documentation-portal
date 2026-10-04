@@ -62,7 +62,7 @@ func (s *site) docList(w http.ResponseWriter, r *http.Request) {
 			list.Docs = append(list.Docs, docLink{Path: p, URL: sec.docURL(p, "", "")})
 		}
 	}
-	render(w, http.StatusOK, "list.html", list)
+	render(w, r, http.StatusOK, "list.html", list)
 }
 
 // markdownFiles returns the paths of the markdown files of fsys that are not
@@ -98,12 +98,12 @@ func (s *site) docPage(w http.ResponseWriter, r *http.Request) {
 	slug, p := r.PathValue("slug"), r.PathValue("path")
 	sec, ok := s.docsFor(slug)
 	if !ok {
-		render(w, http.StatusNotFound, "error.html", page{Title: "Document not found", Message: "No docs section has the slug " + slug + ".", Nav: s.nav()})
+		render(w, r, http.StatusNotFound, "error.html", page{Title: "Document not found", Message: "No docs section has the slug " + slug + ".", Nav: s.nav()})
 		return
 	}
 	src, err := sec.readDoc(p)
 	if errors.Is(err, errNoDoc) {
-		render(w, http.StatusNotFound, "error.html", page{Title: "Document not found", Message: "No markdown file at " + p + ".", Nav: s.nav()})
+		render(w, r, http.StatusNotFound, "error.html", page{Title: "Document not found", Message: "No markdown file at " + p + ".", Nav: s.nav()})
 		return
 	}
 	if err != nil {
@@ -115,7 +115,7 @@ func (s *site) docPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	render(w, http.StatusOK, "doc.html", page{Title: p, Section: sec.Title, Body: body, Nav: s.nav(), Sidebar: s.sidebar(sec, p)})
+	render(w, r, http.StatusOK, "doc.html", page{Title: p, Section: sec.Title, Body: body, Nav: s.nav(), Sidebar: s.sidebar(sec, p)})
 }
 
 // errNoDoc means the request names no markdown file of a content directory.

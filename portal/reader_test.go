@@ -101,14 +101,14 @@ func TestVisibleSites(t *testing.T) {
 func TestViewFor(t *testing.T) {
 	rt := &router{sites: threeSites()}
 	access := titled{"Store", "Orders", "Vault"}
-	v := rt.viewFor(access)
+	v := rt.viewFor(access, nil)
 	if got, ok := v.access.(titled); !ok || !slices.Equal(got, access) || len(v.sites) != 1 || v.sites[0].name != "Store" {
 		t.Errorf("the view of a reader of Store: %+v", v)
 	}
-	if v := rt.viewFor(Everything); v.access != Everything || len(v.sites) != 3 {
+	if v := rt.viewFor(Everything, nil); v.access != Everything || len(v.sites) != 3 {
 		t.Errorf("the view of Everything: %+v", v)
 	}
-	if v := rt.viewFor(nil); v.access != nil || len(v.sites) != 0 {
+	if v := rt.viewFor(nil, nil); v.access != nil || len(v.sites) != 0 {
 		t.Errorf("the view of no access: %+v", v)
 	}
 }
