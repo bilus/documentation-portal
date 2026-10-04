@@ -490,9 +490,11 @@ copy of the cookie stops working there. Another replica, or docportal after
 a restart with the same key, accepts such a copy until the session's
 expiry, so keep the lifetime short for sensitive documentation. An open
 chat page's socket closes at the session's expiry and at its sign-out, and a
-new one needs a session. A sign-out that another site starts shows a page
-with a sign-out link in its place, so no other site can end a reader's
-session. A failed or cancelled sign-in
+new one needs a session. When the browser marks a sign-out as cross-site in
+its Sec-Fetch-Site header, docportal shows a page with a sign-out link in
+its place. Current browsers send that header over https, so over plain
+http, or in an older browser such as Safari before 16.4, a sign-out from
+another site ends the session at once. A failed or cancelled sign-in
 shows an error page with a link to try again, and opens nothing. Every
 response to a signed-in reader carries `Cache-Control: private`.
 

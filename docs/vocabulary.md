@@ -109,7 +109,7 @@ Terms of docportal, one per line.
 - callback URL: the portal's URL for the identity provider's answer, as registered at the provider, such as https://docs.example.com/auth/callback, from -oidc-callback-url, DOCPORTAL_OIDC_CALLBACK_URL or signin.Config.CallbackURL; the middleware answers its path.
 - callback: the request to the callback URL's path with the code and the state, at which the sign-in ends with a new sign-in session or the sign-in error page.
 - sign-out path: the sign-in middleware's route for sign-out, /auth/sign-out by default, and the URL of the sign-out link among the account links.
-- sign-out: a reader's request to the sign-out path, which ends the reader's sign-in session and closes its held connections. A sign-out that another site starts asks the reader first.
+- sign-out: a reader's request to the sign-out path, which ends the reader's sign-in session and closes its held connections. A sign-out that the browser marks as cross-site in its Sec-Fetch-Site header asks the reader first; one without the header ends the session at once.
 - logout URL: the reader's destination after a sign-out, such as the identity provider's logout endpoint, which ends the provider's session too; without one, the signed-out page.
 - signed-out page: the middleware's page after a sign-out without a logout URL, with a link to sign in again.
 - sign-in error page: the middleware's page after a failed or cancelled sign-in, with a link to the return target for a retry; it grants no access.

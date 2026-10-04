@@ -19,7 +19,7 @@
 
 {HTTP server}
 > response writer, request
-[12.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that another site starts
+[12.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that the browser marks as cross-site
  (signin.middleware.signOut)]
     < session cookie
     > expired session cookie, logout URL, signed-out page, sign-out question
@@ -63,7 +63,7 @@
     > attempt cookie, authorization URL, refusal
     <Browser>
 > response writer, request
-[12.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that another site starts
+[12.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that the browser marks as cross-site
  (signin.middleware.signOut)]
     < held connections
     > held connections

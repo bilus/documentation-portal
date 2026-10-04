@@ -47,8 +47,9 @@ type signedIn struct {
 // sessionOf reads from the session cookie, until the session's expiry,
 // closes its held connections, forgets the revoked sessions past theirs,
 // deletes the session cookie, and sends the reader to the logout URL or the
-// signed-out page. A sign-out that another site starts asks the reader
-// first.
+// signed-out page. A sign-out whose Sec-Fetch-Site header says cross-site
+// asks the reader first; one without the header, such as from a browser over
+// plain http or from Safari before 16.4, ends the session at once.
 func (m *middleware) signOut(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 		// Another site sent the reader here: the reader confirms first.
