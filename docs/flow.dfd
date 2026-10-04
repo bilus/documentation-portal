@@ -1,6 +1,8 @@
 # docportal starts up: main.startup runs these steps in order, and main hands
-# the address and the reloader to the HTTP server. The builder, the build
-# method of main.builder, runs boxes 7, 5, 6 and 3 again for each new snapshot.
+# the address and the previews handler to the HTTP server. The builder, the
+# build method of main.builder, runs boxes 7, 5, 6 and 3 again for each new
+# snapshot, and the preview builder, its buildPreview method, runs boxes 7, 5
+# and 3 for the snapshot of each preview folder, without the chat.
 # By hand: dfd --box 300x150 --per-row 5 --number docs/flow.dfd -o flow.svg
 
 {Operator}
@@ -9,8 +11,8 @@
  from the flags and the environment
  (main.parseConfig)]
 > configuration
-[2. Open the documentation source: the directory of the configuration file, or the bucket folder that -root names
- so that every read of the directory stays inside it
+[2. Open the documentation source: the directory of the configuration file, or the bucket folder that -root names, without its previews location
+ so that every read of the directory stays inside it, and box 8 loads the published documentation alone
  (main.openSource)]
     > documentation root name
     < directory handle
@@ -50,7 +52,17 @@
 [9. Wrap the portal handler in the reloader, which checks the source every refresh interval and, for each settled change, builds the new snapshot's handler with the builder and swaps it in
  so that the documentation follows the bucket folder without a restart
  (source.NewReloader)]
-> address, reloader
+> configuration, preview builder
+[10. Open the previews location named by -previews, if any, into the previews configuration
+ so that the previews handler opens the portal handler of each preview folder, loaded at the folder's first request with the preview builder
+ (main.openPreviews)]
+    > bucket folder URL
+    < bucket
+    <Bucket folder>
+> reloader, previews configuration
+[11. Wrap the reloader in the previews handler, which switches readers in and out of previews at /previews/ and sends each request to the portal handler of the reader's preview or to the reloader
+ (portal.WithPreviews, portal.previews.ServeHTTP)]
+> address, previews handler
 {HTTP server}
 
 # type: arguments = []string
@@ -74,5 +86,8 @@
 # type: portal handler = net/http.Handler
 # type: refresh interval = time.Duration
 # type: builder = func(io/fs.FS) (net/http.Handler, error)
+# type: preview builder = func(io/fs.FS) (net/http.Handler, error)
+# type: previews configuration = portal.PreviewsConfig
 # type: address = string
 # type: reloader = net/http.Handler
+# type: previews handler = net/http.Handler

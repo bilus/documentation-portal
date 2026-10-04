@@ -14,7 +14,10 @@
 # conversations, and asks the chat model. The counts and the
 # conversations belong to the chat that box 6 of flow.dfd keeps across
 # snapshots. The exchanges with the embedding program happen only in a
-# program that sets the hooks; docportal sets none.
+# program that sets the hooks; docportal sets none. A request from the
+# previews handler of flow.11.dfd carries the banner in its context, and the
+# pages of box 3.4.3 draw it above the navigation bar; a page with the
+# notice clears the notice cookie of the previews handler in its response.
 # By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 3.4. docs/flow.3.4.dfd -o flow.3.4.svg
 
 {9.4 Answer each request with the portal handler of the snapshot in service}

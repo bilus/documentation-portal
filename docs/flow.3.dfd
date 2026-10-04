@@ -20,7 +20,7 @@
  or refuse to start without them
  (portal.loadAssets)]
 > portal configuration, sites, Elements assets
-[3.3. Build the router, whose routes send each request to a portal's page by the portal's slug: a spec section's viewer page or raw spec, or a docs section's document list, document page or raw file, with the document sidebar from the section's toc file when it names one; the home page, the Elements assets, and with a chat its routes, each portal's chat page behind the check of the other routes of its portal
+[3.3. Build the router, whose routes send each request to a portal's page by the portal's slug: a spec section's viewer page or raw spec, or a docs section's document list, document page or raw file, with the document sidebar from the section's toc file when it names one; the home page, the Elements assets, the 404 page of a preview folder at /previews/, and with a chat its routes, each portal's chat page behind the check of the other routes of its portal
  so that box 3.4 answers each request with the router's sites, hooks and routes
  (portal.newRouter)]
 > portal handler

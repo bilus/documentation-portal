@@ -21,13 +21,14 @@ type Access interface {
 }
 
 // Everything is the access of a reader who may see every portal and
-// section: every reader's without an access hook.
+// section, and open every preview: every reader's without an access hook.
 var Everything Access = everything{}
 
 type everything struct{}
 
 func (everything) Portal(Portal) bool           { return true }
 func (everything) Section(Portal, Section) bool { return true }
+func (everything) Preview(string) bool          { return true }
 
 // nothing is the access of a reader who may see no portal: every reader's
 // after an error from the access hook.

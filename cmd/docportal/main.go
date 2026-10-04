@@ -30,13 +30,16 @@ import (
 )
 
 type config struct {
-	Addr       string
-	ConfigName string        // the configuration file: a local path, or with Root a path inside the bucket folder
-	Root       string        // the bucket folder's URL, or empty for the directory of ConfigName
-	Refresh    time.Duration // between checks of the bucket folder; 0 turns them off
-	MaxSize    int64         // of a bucket folder's objects, in bytes
-	HideTryIt  bool
-	ChatModel  string // empty without a chat
+	Addr        string
+	ConfigName  string        // the configuration file: a local path, or with Root a path inside the bucket folder
+	Root        string        // the bucket folder's URL, or empty for the directory of ConfigName
+	Refresh     time.Duration // between checks of the bucket folder; 0 turns them off
+	MaxSize     int64         // of a bucket folder's objects, in bytes
+	Previews    string        // the previews location inside the bucket folder, or empty without previews
+	PreviewIdle time.Duration // after which an unused preview's snapshot leaves memory; 0 never
+	MaxPreviews int           // preview snapshots in memory; 0 means no limit
+	HideTryIt   bool
+	ChatModel   string // empty without a chat
 }
 
 func main() {
@@ -50,9 +53,10 @@ func main() {
 }
 
 // startup reads the configuration, opens the documentation source, loads its
-// snapshot, builds the portal handler from it, and wraps it in the reloader,
-// which rebuilds it for each settled change of the source until ctx ends.
-// It returns the address to listen on and the reloader.
+// snapshot, builds the portal handler from it, wraps it in the reloader,
+// which rebuilds it for each settled change of the source until ctx ends,
+// opens the previews location, and wraps the reloader in the previews
+// handler. It returns the address to listen on and the previews handler.
 func startup(ctx context.Context, args []string, getenv func(string) string) (string, http.Handler, error) {
 	cfg, err := parseConfig(args, getenv)
 	if err != nil {
@@ -71,7 +75,12 @@ func startup(ctx context.Context, args []string, getenv func(string) string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	return cfg.Addr, source.NewReloader(ctx, src, snap.Listing, h, cfg.Refresh, b.build), nil
+	reloader := source.NewReloader(ctx, src, snap.Listing, h, cfg.Refresh, b.build)
+	previews, err := openPreviews(ctx, cfg, b.buildPreview)
+	if err != nil {
+		return "", nil, err
+	}
+	return cfg.Addr, portal.WithPreviews(reloader, previews), nil
 }
 
 // builder builds the portal handler of each snapshot of the documentation
@@ -99,10 +108,21 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 	return portal.New(pcfg)
 }
 
+// buildPreview builds the portal handler of a preview folder's snapshot at
+// root like build, without the chat: it reads the portal configuration from
+// the configuration file, adds the Try It setting, and builds the handler.
+func (b *builder) buildPreview(root fs.FS) (http.Handler, error) {
+	pcfg, err := portal.ReadConfig(root, b.configPath)
+	if err != nil {
+		return nil, err
+	}
+	return portal.New(setTryIt(pcfg, b.cfg.HideTryIt))
+}
+
 // parseConfig reads the configuration from the flags and the environment.
 // Flags win over the environment, which wins over the defaults.
 func parseConfig(args []string, getenv func(string) string) (config, error) {
-	cfg := config{Addr: ":8080", ConfigName: "environment.yaml", Refresh: time.Minute, MaxSize: 256 << 20}
+	cfg := config{Addr: ":8080", ConfigName: "environment.yaml", Refresh: time.Minute, MaxSize: 256 << 20, PreviewIdle: time.Hour, MaxPreviews: 10}
 	if v := getenv("DOCPORTAL_ADDR"); v != "" {
 		cfg.Addr = v
 	}
@@ -137,6 +157,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		}
 		cfg.HideTryIt = hide
 	}
+	// HOLE(3): read DOCPORTAL_PREVIEWS, DOCPORTAL_PREVIEW_IDLE and DOCPORTAL_MAX_PREVIEWS and their flags, and refuse -previews without -root and a negative idle time or limit
 
 	// The flag package's message and usage go into the error, which main prints.
 	var out strings.Builder
@@ -164,16 +185,17 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 
 // openSource opens the documentation source of cfg: the directory of the
 // configuration file, so that the portal cannot read outside it, or the
-// bucket folder that cfg.Root names, with cfg's size limit. It returns the
-// source with the configuration file's path inside it. A file:// bucket
-// folder, unlike the directory, reads through a symlink to a file outside
-// it, as the file driver does.
+// bucket folder that cfg.Root names, with cfg's size limit, without its
+// previews location. It returns the source with the configuration file's
+// path inside it. A file:// bucket folder, unlike the directory, reads
+// through a symlink to a file outside it, as the file driver does.
 func openSource(ctx context.Context, cfg config) (source.Source, string, error) {
 	if cfg.Root != "" {
 		bucket, err := source.OpenBucket(ctx, cfg.Root, cfg.MaxSize)
 		if err != nil {
 			return nil, "", fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
 		}
+		// HOLE(3): leave the previews location out of the bucket folder's listing
 		return bucket, cfg.ConfigName, nil
 	}
 	// The root stays open for as long as docportal runs.
@@ -182,6 +204,15 @@ func openSource(ctx context.Context, cfg config) (source.Source, string, error) 
 		return nil, "", fmt.Errorf("open documentation root: %w", err)
 	}
 	return dir, filepath.Base(cfg.ConfigName), nil
+}
+
+// openPreviews opens the previews location named by cfg.Previews, if any,
+// into the previews configuration, so that the previews handler opens the
+// portal handler of each preview folder, loaded at the folder's first
+// request with build. Without a previews location, previews are off.
+func openPreviews(ctx context.Context, cfg config, build func(fs.FS) (http.Handler, error)) (portal.PreviewsConfig, error) {
+	// HOLE(3): the preview snapshots of the previews location, with cfg's refresh interval, idle time and preview limit
+	return portal.PreviewsConfig{}, nil
 }
 
 // setTryIt adds the Try It setting to the portal configuration.

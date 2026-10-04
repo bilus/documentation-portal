@@ -1,0 +1,66 @@
+# Process 11, the previews handler that portal.WithPreviews returns: its
+# answer to each request from the HTTP server, previews.ServeHTTP, which runs
+# boxes 11.1 to 11.4 in order. The published portal handler, in docportal the
+# reloader of box 9, and the previews configuration's Open and access hook
+# are the receiver's fields, fixed at box 11 of flow.dfd. The response writer
+# passes unchanged from the HTTP server to box 11.4. Box 11.3 calls Open,
+# which in docportal is source.Previews.Handler: it finds the folder's
+# snapshot in the preview snapshots, or loads it from the bucket folder at
+# the folder's first request, and drops the least recently used snapshot
+# beyond the preview limit. Each preview folder in memory has a reloader of
+# its own, process 9, whose checks list the folder through a listing that
+# drops the snapshot from the preview snapshots when it finds the folder
+# empty; a timer drops a snapshot unused for the idle time. These drops run
+# inside source.Previews, behind Open, so no box of this diagram draws them.
+# Box 11.4 sends the request on to the preview's portal handler or to the
+# published one, with the banner in the request's context, for the pages of
+# box 3.4.3, where a page with the notice clears the notice cookie.
+# By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 11. docs/flow.11.dfd -o flow.11.svg
+
+{HTTP server}
+> request
+[11.1. Read what the request asks of the previews: to leave the preview at /previews/, to switch to the folder named in a longer /previews/ path, with the path to open after the switch, the reader's preview from the preview cookie, and an ended preview from the notice cookie
+ (portal.readPreviewRequest)]
+> request, preview request
+[11.2. Ask the access hook for the access of the request's reader, once, for a request with a folder to switch to or a preview to serve, and never for a request to leave: Everything without a hook, and an access that allows nothing after an error or a nil access, whose cause goes to the log
+ (portal.previews.readerAccess)]
+    > request
+    < access, error
+    <Embedding program>
+    > hook problem
+    <Log>
+> request, preview request, access
+[11.3. Open the portal handler of the request's folder, the one to switch to, else the reader's preview, for a reader whose access allows that preview, and none for a request to leave: an error for an invalid name, a folder hidden from the reader, a missing folder, or a failed load
+ (portal.previews.openFolder)]
+    > folder
+    < allowed
+    <Embedding program>
+    < preview snapshot
+    > preview snapshot
+    |Preview snapshots|
+    > keys
+    < listing, files
+    <Bucket folder>
+> response writer, request, preview request, portal handler, open error
+[11.4. Answer the request: leave the preview, or switch to the opened folder with a redirect that sets the preview cookie; send it to the preview's portal handler with the banner, or after a failure to the published portal handler with the notice or the 404 page of the folder; send a request with the notice cookie alone to the published portal handler with the notice; each of these privately; and send a request with neither cookie, unchanged, to the published portal handler
+ (portal.previews.send)]
+    > load problem
+    <Log>
+    > response
+    <HTTP server>
+
+# type: request = *net/http.Request
+# type: preview request = portal.previewRequest
+# type: access = portal.Access
+# type: error = error
+# type: hook problem = error
+# type: folder = string
+# type: allowed = bool
+# type: keys = []string
+# type: listing = source.Listing
+# type: files = [][]byte
+# type: response writer = net/http.ResponseWriter
+# type: portal handler = net/http.Handler
+# type: open error = error
+# type: load problem = error
+# type: response = []byte
