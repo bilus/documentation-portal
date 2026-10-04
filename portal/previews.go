@@ -2,7 +2,20 @@ package portal
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log"
 	"net/http"
+	"net/url"
+	"path"
+	"strings"
+)
+
+// The cookies of the previews handler.
+const (
+	previewCookie = "portal-preview"       // the folder of the reader's preview
+	endedCookie   = "portal-preview-ended" // the folder of an ended preview, for its notice
 )
 
 // PreviewAccess is an access that also decides which previews its reader
@@ -37,7 +50,9 @@ type PreviewsConfig struct {
 // the reader's preview or to published. Without cfg.Open, it returns
 // published itself.
 func WithPreviews(published http.Handler, cfg PreviewsConfig) http.Handler {
-	// HOLE(1): published as it is without cfg.Open
+	if cfg.Open == nil {
+		return published
+	}
 	return &previews{published: published, open: cfg.Open, access: cfg.Access}
 }
 
@@ -73,8 +88,55 @@ type previewRequest struct {
 // preview cookie, and an ended preview from the notice cookie. A cookie
 // without a valid folder name counts as none.
 func readPreviewRequest(r *http.Request) previewRequest {
-	// HOLE(1): read the /previews/ path, the preview cookie and the notice cookie
-	return previewRequest{}
+	var req previewRequest
+	switch p := r.URL.EscapedPath(); {
+	case p == "/previews" || p == "/previews/":
+		req.leave = true
+	case strings.HasPrefix(p, "/previews/") && !strings.HasPrefix(p, "/previews//"):
+		// One escaped segment names the folder, as for ServeMux's wildcards.
+		segment, rest, _ := strings.Cut(strings.TrimPrefix(p, "/previews/"), "/")
+		req.enter = segment
+		if name, err := url.PathUnescape(segment); err == nil {
+			req.enter = name
+		}
+		req.path = "/"
+		if rest, err := url.PathUnescape(rest); err == nil {
+			req.path = cleanTarget(rest)
+		}
+	}
+	if c, err := r.Cookie(previewCookie); err == nil && validFolder(c.Value) {
+		req.folder = c.Value
+	}
+	if c, err := r.Cookie(endedCookie); err == nil && validFolder(c.Value) {
+		req.ended = c.Value
+	}
+	return req
+}
+
+// cleanTarget returns the URL of the path p of this site, cleaned of dot
+// segments and of repeated slashes, which would name another host, with a
+// trailing slash kept.
+func cleanTarget(p string) string {
+	clean := path.Clean("/" + p)
+	if strings.HasSuffix(p, "/") && clean != "/" {
+		clean += "/"
+	}
+	return (&url.URL{Path: clean}).String()
+}
+
+// validFolder reports whether name is a folder name: one path segment of
+// ASCII letters, digits, '.', '_' and '-', other than . and .., so that it
+// fits a cookie too.
+func validFolder(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, c := range []byte(name) {
+		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '.' || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // readerAccess asks the access hook for the access of r's reader, once, for
@@ -83,8 +145,22 @@ func readPreviewRequest(r *http.Request) previewRequest {
 // nothing after an error or a nil access, whose cause goes to the log. For
 // a request without a folder, it returns nil and asks nothing.
 func (p *previews) readerAccess(r *http.Request, req previewRequest) Access {
-	// HOLE(1): ask the hook when req has a folder to open
-	return nil
+	if req.leave || req.enter == "" && req.folder == "" {
+		return nil
+	}
+	if p.access == nil {
+		return Everything
+	}
+	access, err := p.access(r)
+	switch {
+	case err != nil:
+		log.Printf("access hook: %v", err)
+		return nothing{}
+	case access == nil:
+		log.Print("access hook: no access and no error")
+		return nothing{}
+	}
+	return access
 }
 
 // openFolder opens the portal handler of the request's folder, the one to
@@ -94,8 +170,27 @@ func (p *previews) readerAccess(r *http.Request, req previewRequest) Access {
 // and nil without a folder. Every error but a failed load's wraps
 // fs.ErrNotExist.
 func (p *previews) openFolder(r *http.Request, req previewRequest, access Access) (http.Handler, error) {
-	// HOLE(1): check the name and the access, and open the folder
-	return nil, nil
+	folder := req.enter
+	if folder == "" {
+		folder = req.folder
+	}
+	if req.leave || folder == "" {
+		return nil, nil
+	}
+	if !validFolder(folder) {
+		return nil, fmt.Errorf("preview %q: not a folder name: %w", folder, fs.ErrNotExist)
+	}
+	if pa, ok := access.(PreviewAccess); !ok || !pa.Preview(folder) {
+		return nil, fmt.Errorf("preview %q: hidden from the reader: %w", folder, fs.ErrNotExist)
+	}
+	h, err := p.open(r.Context(), folder)
+	if err == nil && h == nil {
+		err = errors.New("no portal handler")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("preview %q: %w", folder, err)
+	}
+	return h, nil
 }
 
 // send answers the request: it leaves the preview, or switches to the opened
@@ -107,8 +202,36 @@ func (p *previews) openFolder(r *http.Request, req previewRequest, access Access
 // request with neither cookie, unchanged, to the published portal handler.
 // The cause of a failed load goes to the log.
 func (p *previews) send(w http.ResponseWriter, r *http.Request, req previewRequest, h http.Handler, err error) {
-	// HOLE(1): answer each kind of request
-	p.published.ServeHTTP(w, r)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		log.Print(err)
+	}
+	switch {
+	case req.leave:
+		w.Header().Set("Cache-Control", "private")
+		http.SetCookie(w, expired(previewCookie))
+		http.Redirect(w, r, "/", http.StatusFound)
+	case req.enter != "" && err == nil:
+		w.Header().Set("Cache-Control", "private")
+		http.SetCookie(w, &http.Cookie{Name: previewCookie, Value: req.enter, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+		if req.ended != "" {
+			http.SetCookie(w, expired(endedCookie))
+		}
+		http.Redirect(w, r, req.path, http.StatusFound)
+	case req.enter != "":
+		// The published portal handler writes the 404 page, and the cookie stays.
+		private(p.published).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
+	case req.folder != "" && err == nil:
+		private(h).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
+	case req.folder != "":
+		http.SetCookie(w, expired(previewCookie))
+		// The first page with the notice clears this cookie, after it in the response.
+		http.SetCookie(w, &http.Cookie{Name: endedCookie, Value: req.folder, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+		private(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.folder}))
+	case req.ended != "":
+		private(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.ended}))
+	default:
+		p.published.ServeHTTP(w, r)
+	}
 }
 
 // banner is the line above the navigation bar of a page: the reader's
@@ -118,9 +241,35 @@ type banner struct {
 	Ended   string // the folder of an ended preview, or ""
 }
 
+// bannerKey keys the banner in the context of a request from the previews
+// handler.
+type bannerKey struct{}
+
+// withBanner returns r with the banner b in its context, or r itself for an
+// empty b.
+func withBanner(r *http.Request, b banner) *http.Request {
+	if b == (banner{}) {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), bannerKey{}, b))
+}
+
+// bannerOf returns the banner in r's context, or nil.
+func bannerOf(r *http.Request) *banner {
+	if b, ok := r.Context().Value(bannerKey{}).(banner); ok {
+		return &b
+	}
+	return nil
+}
+
+// expired returns the cookie name with the path /, expired, so that the
+// browser drops it.
+func expired(name string) *http.Cookie {
+	return &http.Cookie{Name: name, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+}
+
 // previewNotFound writes the 404 page of a /previews/ request that reaches
 // the portal handler: Preview not found, with the folder's name.
 func previewNotFound(w http.ResponseWriter, r *http.Request) {
-	// HOLE(1): the page Preview not found, which names the folder
-	http.NotFound(w, r)
+	render(w, r, http.StatusNotFound, "error.html", page{Title: "Preview not found", Message: "No preview has the folder name " + r.PathValue("folder") + ".", Nav: navBar{Links: []navLink{{Label: "Portals", URL: "/"}}}})
 }

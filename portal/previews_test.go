@@ -124,7 +124,6 @@ func TestARequestWithoutAPreviewPassesThrough(t *testing.T) {
 }
 
 func TestEnteringAPreviewSwitchesTheReader(t *testing.T) {
-	t.Skip("HOLE(1): switch the reader at /previews/{folder}")
 	h := newPreviews(t, nil)
 	for path, want := range map[string]string{
 		"/previews/pr-1":  "/",
@@ -153,7 +152,6 @@ func TestEnteringAPreviewSwitchesTheReader(t *testing.T) {
 }
 
 func TestAPreviewServesEveryRequestFromItsFolder(t *testing.T) {
-	t.Skip("HOLE(1): send each request of a reader in a preview to the preview's portal handler")
 	h := newPreviews(t, nil)
 	for path, want := range map[string]string{
 		"/portals/pets/docs/documents/a.md":   "The preview version.",
@@ -186,7 +184,6 @@ func TestAPreviewServesEveryRequestFromItsFolder(t *testing.T) {
 }
 
 func TestEveryPageOfAPreviewShowsTheBanner(t *testing.T) {
-	t.Skip("HOLE(1): the banner of the reader's preview on every page")
 	h := newPreviews(t, nil)
 	const banner = `<div class="portal-banner">Preview <strong>pr-1</strong><a href="/previews/">Leave the preview</a></div>`
 	for _, path := range []string{
@@ -218,7 +215,6 @@ func TestEveryPageOfAPreviewShowsTheBanner(t *testing.T) {
 }
 
 func TestLeavingThePreviewOpensThePublishedDocumentation(t *testing.T) {
-	t.Skip("HOLE(1): leave the preview at /previews/")
 	h := newPreviews(t, nil)
 	for _, path := range []string{"/previews/", "/previews"} {
 		rec := getWith(h, path, "Cookie", inPreview)
@@ -229,7 +225,6 @@ func TestLeavingThePreviewOpensThePublishedDocumentation(t *testing.T) {
 }
 
 func TestAFolderThatDoesNotOpenIsNotFound(t *testing.T) {
-	t.Skip("HOLE(1): the 404 page of a folder that does not open, with the reader where they were")
 	var logged bytes.Buffer
 	prev := log.Writer()
 	log.SetOutput(&logged)
@@ -271,7 +266,6 @@ func TestAFolderThatDoesNotOpenIsNotFound(t *testing.T) {
 }
 
 func TestAPreviewThatNoLongerOpensReturnsTheReaderWithANotice(t *testing.T) {
-	t.Skip("HOLE(1): the published documentation with the notice after a preview that no longer opens")
 	var logged bytes.Buffer
 	prev := log.Writer()
 	log.SetOutput(&logged)
@@ -319,7 +313,6 @@ func TestAPreviewThatNoLongerOpensReturnsTheReaderWithANotice(t *testing.T) {
 }
 
 func TestTheAccessHookDecidesWhoOpensPreviews(t *testing.T) {
-	t.Skip("HOLE(1): the access hook decides who may open a preview")
 	var logged bytes.Buffer
 	prev := log.Writer()
 	log.SetOutput(&logged)
@@ -358,7 +351,6 @@ func TestTheAccessHookDecidesWhoOpensPreviews(t *testing.T) {
 }
 
 func TestPreviewResponsesArePrivate(t *testing.T) {
-	t.Skip("HOLE(1): every response of a preview is private")
 	h := newPreviews(t, nil)
 	for _, path := range []string{
 		"/",
@@ -383,7 +375,6 @@ func TestPreviewResponsesArePrivate(t *testing.T) {
 }
 
 func TestWithoutAnOpenerThereAreNoPreviews(t *testing.T) {
-	t.Skip("HOLE(1): the published portal handler alone without an opener")
 	published := publishedPortal(t)
 	for name, cfg := range map[string]portal.PreviewsConfig{
 		"nothing":        {},
@@ -391,6 +382,24 @@ func TestWithoutAnOpenerThereAreNoPreviews(t *testing.T) {
 	} {
 		if h := portal.WithPreviews(published, cfg); h != published {
 			t.Errorf("with %s and no opener, WithPreviews wraps the published portal handler", name)
+		}
+	}
+}
+
+func TestThePortalHandlerAnswersAPreviewFolderAsNotFound(t *testing.T) {
+	h := newAccountPortal(t, previewRoot("published"), petsPortal(sections("specs/pets.yaml", "docs", "")), nil, signedIn)
+	for path, name := range map[string]string{
+		"/previews/pr-1":                        "pr-1",
+		"/previews/pr-1/portals/pets/specs/api": "pr-1",
+		"/previews/%3Cb%3E":                     "<b>",
+	} {
+		rec := getWith(h, path, "Reader", "Ada")
+		body := rec.Body.String()
+		if rec.Code != http.StatusNotFound || !strings.Contains(body, "<h1>Preview not found</h1>") || !strings.Contains(body, "No preview has the folder name "+html.EscapeString(name)+".") {
+			t.Errorf("%s: %d %q, want the 404 page naming %q", path, rec.Code, body, name)
+		}
+		if bar := barOf(body); !strings.Contains(bar, `<a href="/">Portals</a>`) || !strings.HasSuffix(bar, adasLinks+"</nav>") {
+			t.Errorf("%s: the navigation bar %q, want Portals and the account links", path, bar)
 		}
 	}
 }
