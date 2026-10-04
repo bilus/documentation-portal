@@ -46,7 +46,6 @@ func stubToken(t *testing.T, base string) *oauth2.Token {
 }
 
 func TestTheGitHubEndpoint(t *testing.T) {
-	t.Skip("HOLE(2): give GitHub's endpoints, or those of the web URL")
 	if got := newGitHub(githubSettings{apiURL: "https://api.github.com"}).Endpoint(); got != github.Endpoint {
 		t.Errorf("without a web URL, the endpoint is %+v, want GitHub's", got)
 	}
@@ -59,7 +58,6 @@ func TestTheGitHubEndpoint(t *testing.T) {
 }
 
 func TestTheGitHubProviderNamesTheReader(t *testing.T) {
-	t.Skip("HOLE(2): identify the reader from GitHub's API")
 	for name, tc := range map[string]struct {
 		reader             mocks.GitHubReader
 		want               signin.Identity
@@ -101,7 +99,6 @@ func TestTheGitHubProviderNamesTheReader(t *testing.T) {
 }
 
 func TestTheGitHubProviderFailsOnAnAPIError(t *testing.T) {
-	t.Skip("HOLE(2): identify the reader from GitHub's API")
 	stub := mocks.GitHub(mocks.GitHubReader{ID: 2, Login: "grace", Name: "Grace Hopper", Orgs: []string{"Acme", "Globex"}, Teams: []string{"Acme/partners", "Globex/docs"}})
 	for name, change := range map[string]func(w http.ResponseWriter, r *http.Request) bool{
 		"a refused token": func(w http.ResponseWriter, r *http.Request) bool {
@@ -175,6 +172,29 @@ func stubAuthorized(w http.ResponseWriter, r *http.Request, stub http.Handler) b
 	req.Header.Set("Authorization", r.Header.Get("Authorization"))
 	stub.ServeHTTP(probe, req)
 	return probe.Code == http.StatusOK
+}
+
+func TestNextPage(t *testing.T) {
+	g := newGitHub(githubSettings{apiURL: "https://api.github.com"})
+	for link, want := range map[string]string{
+		"": "",
+		`<https://api.github.com/user/teams?page=2>; rel="next", <https://api.github.com/user/teams?page=5>; rel="last"`: "https://api.github.com/user/teams?page=2",
+		`<https://api.github.com/user/teams?page=1>; rel="prev", <https://api.github.com/user/teams?page=3>; rel="next"`: "https://api.github.com/user/teams?page=3",
+		`<https://api.github.com/user/teams?page=1>; rel="first"`:                                                        "",
+	} {
+		if got, err := g.nextPage(link); err != nil || got != want {
+			t.Errorf("the next page of %q: %q, %v, want %q", link, got, err, want)
+		}
+	}
+	for _, link := range []string{
+		`<http://api.github.com/user/teams?page=2>; rel="next"`,
+		`<https://api.github.com.evil.example/user/teams?page=2>; rel="next"`,
+		`<https://api.github.com:8443/user/teams?page=2>; rel="next"`,
+	} {
+		if got, err := g.nextPage(link); err == nil {
+			t.Errorf("the next page of %q: %q, want an error", link, got)
+		}
+	}
 }
 
 // fail answers with status when when holds, and reports whether it did.
