@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"flag"
 	"fmt"
@@ -201,7 +202,26 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		}
 		cfg.MaxPreviews = n
 	}
-	// HOLE(3): read the sign-in settings from their flags and the environment, the client secret and the session key from the environment alone, and refuse sign-in settings without an issuer
+	// The client secret and the session key come from the environment alone.
+	for name, setting := range map[string]*string{
+		"DOCPORTAL_OIDC_ISSUER":        &cfg.SignIn.Issuer,
+		"DOCPORTAL_OIDC_CLIENT_ID":     &cfg.SignIn.ClientID,
+		"DOCPORTAL_OIDC_CLIENT_SECRET": &cfg.SignIn.ClientSecret,
+		"DOCPORTAL_OIDC_CALLBACK_URL":  &cfg.SignIn.CallbackURL,
+		"DOCPORTAL_OIDC_LOGOUT_URL":    &cfg.SignIn.LogoutURL,
+		"DOCPORTAL_OIDC_SCOPES":        &cfg.SignIn.Scopes,
+		"DOCPORTAL_OIDC_AUDIENCE":      &cfg.SignIn.Audience,
+		"DOCPORTAL_SESSION_KEY":        &cfg.SignIn.Key,
+	} {
+		*setting = getenv(name)
+	}
+	if v := getenv("DOCPORTAL_SESSION_LIFETIME"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return config{}, fmt.Errorf("DOCPORTAL_SESSION_LIFETIME: %q is not a duration", v)
+		}
+		cfg.SignIn.Lifetime = d
+	}
 
 	// The flag package's message and usage go into the error, which main prints.
 	var out strings.Builder
@@ -217,6 +237,13 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.IntVar(&cfg.MaxPreviews, "max-previews", cfg.MaxPreviews, "most preview snapshots in memory; 0 means no limit")
 	flags.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	flags.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
+	flags.StringVar(&cfg.SignIn.Issuer, "oidc-issuer", cfg.SignIn.Issuer, "issuer URL of the OpenID Connect provider for the readers' sign-in, such as https://TENANT.auth0.com/; none serves every reader without a sign-in")
+	flags.StringVar(&cfg.SignIn.ClientID, "oidc-client-id", cfg.SignIn.ClientID, "the portal's client ID at the provider; DOCPORTAL_OIDC_CLIENT_SECRET holds its secret")
+	flags.StringVar(&cfg.SignIn.CallbackURL, "oidc-callback-url", cfg.SignIn.CallbackURL, "the portal's URL for the provider's answer, such as https://docs.example.com/auth/callback")
+	flags.StringVar(&cfg.SignIn.LogoutURL, "oidc-logout-url", cfg.SignIn.LogoutURL, "the reader's destination after the sign-out, such as the provider's logout endpoint; none for the signed-out page")
+	flags.StringVar(&cfg.SignIn.Scopes, "oidc-scopes", cfg.SignIn.Scopes, "scopes of the sign-in, separated by commas; none for openid, profile and email")
+	flags.StringVar(&cfg.SignIn.Audience, "oidc-audience", cfg.SignIn.Audience, "audience parameter of the sign-in, such as the identifier of an Auth0 API")
+	flags.DurationVar(&cfg.SignIn.Lifetime, "session-lifetime", cfg.SignIn.Lifetime, "lifetime of a signed-in reader's session; 0 means 8 hours")
 	if err := flags.Parse(args); err != nil {
 		return config{}, errors.New(strings.TrimSpace(out.String()))
 	}
@@ -235,6 +262,12 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("-max-previews: %d is negative", cfg.MaxPreviews)
 	}
 	cfg.MaxSize = maxSizeMiB << 20
+	if cfg.SignIn.Issuer == "" && cfg.SignIn != (signInConfig{}) {
+		return config{}, errors.New("sign-in settings without -oidc-issuer (DOCPORTAL_OIDC_ISSUER): name the issuer, or drop the settings")
+	}
+	if cfg.SignIn.Lifetime < 0 {
+		return config{}, fmt.Errorf("-session-lifetime: %v is negative", cfg.SignIn.Lifetime)
+	}
 	return cfg, nil
 }
 
@@ -304,7 +337,9 @@ func setTryIt(pcfg portal.Config, hide bool) portal.Config {
 // configuration when issuer is not empty, so that every page ends with the
 // reader's name and a sign-out link.
 func addAccount(pcfg portal.Config, issuer string) portal.Config {
-	// HOLE(3): with an issuer, set the account hook to signin.AccountLinks
+	if issuer != "" {
+		pcfg.Account = signin.AccountLinks
+	}
 	return pcfg
 }
 
@@ -331,7 +366,9 @@ func addChat(pcfg portal.Config, modelID string, c *chat.Chat, issuer string) (p
 			return portal.Config{}, nil, err
 		}
 		var reader func(*http.Request) string
-		// HOLE(3): with an issuer, count each signed-in reader's questions by signin.ReaderID
+		if issuer != "" {
+			reader = signin.ReaderID
+		}
 		if c, err = chat.New(chat.Config{Model: m, Libraries: libs, Reader: reader}); err != nil {
 			return portal.Config{}, nil, err
 		}
@@ -350,8 +387,12 @@ func signInConfigOf(s signInConfig) signin.Config {
 	if s.Issuer == "" {
 		return signin.Config{}
 	}
-	// HOLE(3): without a session key in s, make a random one of 32 bytes and write a notice to the log
 	key := []byte(s.Key)
+	if len(key) == 0 {
+		key = make([]byte, 32)
+		rand.Read(key)
+		log.Print("DOCPORTAL_SESSION_KEY is empty: the sessions last until docportal's exit")
+	}
 	return signin.Config{
 		Issuer:       s.Issuer,
 		ClientID:     s.ClientID,
