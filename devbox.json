@@ -17,6 +17,6 @@
     }
   },
   "env": {
-    "GOPRIVATE": "github.com/bilus/live-templ"
+    "GOPRIVATE": "github.com/bilus/*"
   }
 }

@@ -16,7 +16,11 @@ SHA256SUM := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || e
 CHROME_BIN ?= $(wildcard /opt/pw-browsers/chromium)
 export CHROME_BIN
 
-.PHONY: setup generate build lint test test-e2e run
+DEPGRAPH ?= go run github.com/bilus/Scratchpad/go-depgraph/cmd/depgraph@latest
+DIAGRAM   = docs/diagrams/packages.svg
+LAYERS    = $(wildcard docs/diagrams/layers.toml)
+
+.PHONY: setup generate build lint test test-e2e run diagram
 
 # The core packages leave sign-in to the program that embeds them: none may
 # import the sign-in package, an OAuth or OpenID Connect library or an
@@ -64,3 +68,13 @@ test-e2e: setup
 
 run: build
 	./bin/docportal $(ARGS)
+
+# diagram draws the packages and their imports, with the layers that
+# docs/diagrams/layers.toml asserts, and opens the drawing.
+diagram:
+	@mkdir -p $(dir $(DIAGRAM))
+	$(DEPGRAPH) \
+		-exclude 'e2e/...' \
+		-exclude 'internal/...' \
+		$(if $(LAYERS),-layers $(LAYERS),) -o $(DIAGRAM) .
+	open $(DIAGRAM)
