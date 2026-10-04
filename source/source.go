@@ -4,7 +4,9 @@
 package source
 
 import (
+	"bytes"
 	"context"
+	"crypto/md5"
 	"errors"
 	"fmt"
 	"io"
@@ -119,7 +121,8 @@ func (d *Directory) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 // CDK bucket, whose keys the bucket's prefix, if any, has already stripped.
 type Bucket struct {
 	bucket *blob.Bucket
-	limit  int64 // the size limit in bytes; 0 means none
+	limit  int64         // the size limit in bytes; 0 means none
+	read   func(n int64) // called with the bytes read of each object, for tests
 }
 
 // NewBucket makes the bucket folder of bucket a documentation source, whose
@@ -178,7 +181,10 @@ func (b *Bucket) List(ctx context.Context) (Listing, error) {
 }
 
 // Read reads the objects of listing into a documentation root handle held in
-// memory, or refuses a listing over the size limit.
+// memory. It refuses a listing over the size limit, reads no object past
+// the limit, and refuses an object whose size or MD5 sum differs from the
+// listing's, which changed since the listing, so that the snapshot never
+// mixes two versions of the folder.
 func (b *Bucket) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 	if b.limit > 0 && listing.Size() > b.limit {
 		return nil, fmt.Errorf("the bucket folder holds %d bytes, over the size limit of %d", listing.Size(), b.limit)
@@ -186,17 +192,44 @@ func (b *Bucket) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 	root := make(fstest.MapFS, len(listing))
 	var read int64
 	for _, o := range listing {
-		data, err := b.bucket.ReadAll(ctx, o.Key)
+		// One byte past the allowance tells an object that grew from one at the limit.
+		allowance := int64(1 << 62)
+		if b.limit > 0 {
+			allowance = b.limit - read + 1
+		}
+		data, err := b.readObject(ctx, o.Key, allowance)
 		if err != nil {
 			return nil, fmt.Errorf("read %s from the bucket folder: %w", o.Key, err)
 		}
-		// An object that grew since the listing counts with its new size.
 		if read += int64(len(data)); b.limit > 0 && read > b.limit {
 			return nil, fmt.Errorf("the bucket folder holds over %d bytes, the size limit", b.limit)
+		}
+		if int64(len(data)) != o.Size || (len(o.MD5) > 0 && !bytes.Equal(sumOf(data), o.MD5)) {
+			return nil, fmt.Errorf("read %s from the bucket folder: the object changed since the listing", o.Key)
 		}
 		root[o.Key] = &fstest.MapFile{Data: data, Mode: 0o444, ModTime: o.ModTime}
 	}
 	return root, nil
+}
+
+// readObject reads at most max bytes of the object at key.
+func (b *Bucket) readObject(ctx context.Context, key string, max int64) ([]byte, error) {
+	r, err := b.bucket.NewReader(ctx, key, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	data, err := io.ReadAll(io.LimitReader(r, max))
+	if b.read != nil {
+		b.read(int64(len(data)))
+	}
+	return data, err
+}
+
+// sumOf returns the MD5 sum of data, as a bucket reports it.
+func sumOf(data []byte) []byte {
+	sum := md5.Sum(data)
+	return sum[:]
 }
 
 // NewReloader wraps first, the portal handler of src's snapshot with

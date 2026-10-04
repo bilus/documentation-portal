@@ -546,3 +546,41 @@ func TestRebuildLogsAFailedBuild(t *testing.T) {
 		t.Errorf("a failed build: err %v, log %q", err, logged.String())
 	}
 }
+
+func TestBucketReadRefusesAnObjectChangedDuringTheRead(t *testing.T) {
+	b := memBucket(t, folder)
+	src := NewBucket(b, 0)
+	listing, err := src.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same size, other bytes: only the MD5 sum tells.
+	if err := b.WriteAll(t.Context(), "docs/a.md", []byte("# B\n"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := src.Read(t.Context(), listing); err == nil || !strings.Contains(err.Error(), "docs/a.md") {
+		t.Errorf("err = %v, want one naming docs/a.md", err)
+	}
+}
+
+func TestBucketReadStopsAtTheSizeLimit(t *testing.T) {
+	b := memBucket(t, folder)
+	listing, err := NewBucket(b, 0).List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An object that grew far past the limit is not read whole.
+	big := make([]byte, 4<<20)
+	if err := b.WriteAll(t.Context(), "specs/pets.yaml", big, nil); err != nil {
+		t.Fatal(err)
+	}
+	src := NewBucket(b, listing.Size())
+	src.read = func(n int64) {
+		if n > listing.Size()+1 {
+			t.Errorf("read %d bytes of an object over the limit of %d", n, listing.Size())
+		}
+	}
+	if _, err := src.Read(t.Context(), listing); err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Errorf("err = %v, want one naming the size limit", err)
+	}
+}

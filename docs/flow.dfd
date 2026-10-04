@@ -10,7 +10,7 @@
  (main.parseConfig)]
 > configuration
 [2. Open the documentation source: the directory of the configuration file, or the bucket folder that -root names
- so that every read stays inside it
+ so that every read of the directory stays inside it
  (main.openSource)]
     > documentation root name
     < directory handle
