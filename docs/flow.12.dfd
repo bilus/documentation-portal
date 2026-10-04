@@ -1,0 +1,32 @@
+# Process 12, the body of main.signIn: with an issuer, it builds the sign-in
+# middleware around the previews handler from the sign-in configuration of
+# box 14; without one, it returns the previews handler unchanged. Box 12.2
+# is the middleware's answer to each request that the HTTP server sends it:
+# signin.New does not call it, as portal.New does not call box 3.4 in
+# flow.3.dfd.
+# By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 12. docs/flow.12.dfd -o flow.12.svg
+
+{14 Make the sign-in configuration}
+> sign-in configuration, previews handler
+[12.1. Build the sign-in middleware around the previews handler: check the sign-in configuration, and discover an OpenID Connect provider's endpoints at its issuer
+ or refuse a configuration that cannot sign in a reader
+ (signin.New)]
+    > issuer
+    < provider metadata
+    <Identity provider>
+    < endpoint
+    <Provider>
+> sign-in middleware
+{HTTP server}
+> response writer, request
+[12.2. Answer each request: end the session at the sign-out path, finish a sign-in at the callback, serve a signed-in reader's request with the reader's identity, and start a sign-in for any other request
+ (signin.middleware.ServeHTTP)]
+
+# type: sign-in configuration = signin.Config
+# type: previews handler = net/http.Handler
+# type: issuer = string
+# type: provider metadata = []byte
+# type: endpoint = golang.org/x/oauth2.Endpoint
+# type: sign-in middleware = net/http.Handler
+# type: response writer = net/http.ResponseWriter
+# type: request = *net/http.Request

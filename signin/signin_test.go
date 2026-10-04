@@ -391,7 +391,7 @@ func stubConfig(p *stubProvider) Config {
 	return Config{Provider: p, ClientID: "portal", ClientSecret: "the client secret"}
 }
 
-// TestAReaderSignsInAndOut is the smoke test of process 10.2: a reader asks
+// TestAReaderSignsInAndOut is the smoke test of process 12.2: a reader asks
 // for a page, passes the sign-in at a provider without OpenID Connect, which
 // authorizes every reader at once, gets the page as the signed-in reader,
 // ends the session at the sign-out path, and meets the sign-in again at the

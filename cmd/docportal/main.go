@@ -138,13 +138,15 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 
 // buildPreview builds the portal handler of a preview folder's snapshot at
 // root like build, without the chat: it reads the portal configuration from
-// the configuration file, adds the Try It setting, and builds the handler.
+// the configuration file, adds the Try It setting and the sign-in's account
+// hook, and builds the handler.
 func (b *builder) buildPreview(root fs.FS) (http.Handler, error) {
 	pcfg, err := portal.ReadConfig(root, b.configPath)
 	if err != nil {
 		return nil, err
 	}
-	return portal.New(setTryIt(pcfg, b.cfg.HideTryIt))
+	pcfg = setTryIt(pcfg, b.cfg.HideTryIt)
+	return portal.New(addAccount(pcfg, b.cfg.SignIn.Issuer))
 }
 
 // parseConfig reads the configuration from the flags and the environment.
@@ -406,11 +408,11 @@ func signInConfigOf(s signInConfig) signin.Config {
 	}
 }
 
-// signIn wraps h, the reloader, in the sign-in middleware of cfg when cfg
-// names an issuer: the middleware signs each reader in through the identity
-// provider and puts the reader's identity into each request's context, so
-// that the request hooks read it. Without an issuer, it returns h
-// unchanged.
+// signIn wraps h, the previews handler, in the sign-in middleware of cfg
+// when cfg names an issuer: the middleware signs each reader in through the
+// identity provider and puts the reader's identity into each request's
+// context, so that the request hooks read it. Without an issuer, it returns
+// h unchanged.
 func signIn(ctx context.Context, cfg signin.Config, h http.Handler) (http.Handler, error) {
 	if cfg.Issuer == "" {
 		return h, nil
