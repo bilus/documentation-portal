@@ -156,6 +156,7 @@ func New(ctx context.Context, cfg Config, next http.Handler) (http.Handler, erro
 		client:       &http.Client{Timeout: 30 * time.Second},
 		now:          time.Now,
 		revoked:      map[string]time.Time{},
+		held:         map[string]map[*heldConn]bool{},
 	}
 	if m.secure {
 		// A prefix that keeps the cookies to this origin over https, so that
@@ -283,7 +284,8 @@ type middleware struct {
 	now          func() time.Time
 
 	mu      sync.Mutex
-	revoked map[string]time.Time // the revoked sessions: each ID until its session would expire
+	revoked map[string]time.Time          // the revoked sessions: each ID until its session would expire
+	held    map[string]map[*heldConn]bool // the connections that handlers took over, by session ID
 }
 
 // ServeHTTP answers each request: it ends the session at the sign-out path,

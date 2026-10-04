@@ -1,9 +1,12 @@
 package signin
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -356,5 +359,113 @@ func TestASignOutFromAnotherSiteAsksFirst(t *testing.T) {
 	}
 	if resp := f.requestWith(t, "/portals/pets/", ada); resp.StatusCode != http.StatusOK {
 		t.Errorf("a cross-site sign-out ended the session: %d", resp.StatusCode)
+	}
+}
+
+// socket stands in for the chat's socket: it takes the connection over and
+// answers each line with the subject of its request's reader, until the
+// connection ends.
+func socket(w http.ResponseWriter, r *http.Request) {
+	id, _ := IdentityOf(r)
+	conn, rw, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+	rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n")
+	rw.Flush()
+	for {
+		line, err := rw.ReadString('\n')
+		if err != nil {
+			return
+		}
+		fmt.Fprintf(rw, "%s as %s\n", strings.TrimSpace(line), id.Subject)
+		rw.Flush()
+	}
+}
+
+// dial opens a socket of f's server with the session cookie c, and returns
+// a function that sends a line and returns the answer, or the error.
+func dial(t *testing.T, f *fixture, c *http.Cookie) func(string) string {
+	t.Helper()
+	host := f.srv.Listener.Addr().String()
+	conn, err := net.Dial("tcp", host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	fmt.Fprintf(conn, "GET /socket HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nCookie: %s=%s\r\n\r\n", host, c.Name, c.Value)
+	br := bufio.NewReader(conn)
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if status, err := br.ReadString('\n'); err != nil || !strings.Contains(status, "101") {
+		t.Fatalf("the socket's handshake answered %q, %v", status, err)
+	}
+	for {
+		if line, err := br.ReadString('\n'); err != nil || line == "\r\n" {
+			break
+		}
+	}
+	return func(q string) string {
+		conn.SetDeadline(time.Now().Add(2 * time.Second))
+		if _, err := fmt.Fprintf(conn, "%s\n", q); err != nil {
+			return "error: " + err.Error()
+		}
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return "error: " + err.Error()
+		}
+		return strings.TrimSpace(line)
+	}
+}
+
+func TestASessionsSocketsCloseWithTheSession(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	f.pages.then = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/socket" {
+			socket(w, r)
+		}
+	}
+	ada := sessionFor(t, f.m, Identity{Subject: "ada"}, f.clock.now().Add(time.Hour))
+	grace := sessionFor(t, f.m, Identity{Subject: "grace"}, f.clock.now().Add(500*time.Millisecond))
+	ask, askGrace := dial(t, f, ada), dial(t, f, grace)
+	if got := ask("q1"); got != "q1 as ada" {
+		t.Fatalf("ada's socket answered %q", got)
+	}
+	if got := askGrace("q1"); got != "q1 as grace" {
+		t.Fatalf("grace's socket answered %q", got)
+	}
+	// Ada signs out in another tab.
+	if resp := f.requestWith(t, "/auth/sign-out", ada); resp.StatusCode != http.StatusOK {
+		t.Fatalf("the sign-out answered %d", resp.StatusCode)
+	}
+	if got := ask("q2"); !strings.HasPrefix(got, "error") {
+		t.Errorf("after the sign-out, ada's socket answered %q, want a closed connection", got)
+	}
+	// Grace's session expires while her socket is open.
+	time.Sleep(time.Second)
+	if got := askGrace("q2"); !strings.HasPrefix(got, "error") {
+		t.Errorf("after the session's expiry, grace's socket answered %q, want a closed connection", got)
+	}
+}
+
+func TestTheMiddlewareForgetsTheClosedSockets(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	f.pages.then = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/socket" {
+			socket(w, r)
+		}
+	}
+	ada := sessionFor(t, f.m, Identity{Subject: "ada"}, f.clock.now().Add(time.Hour))
+	grace := sessionFor(t, f.m, Identity{Subject: "grace"}, f.clock.now().Add(300*time.Millisecond))
+	ask, askGrace := dial(t, f, ada), dial(t, f, grace)
+	ask("q1")
+	askGrace("q1")
+	f.requestWith(t, "/auth/sign-out", ada)
+	time.Sleep(time.Second)
+	f.m.mu.Lock()
+	defer f.m.mu.Unlock()
+	if len(f.m.held) != 0 {
+		t.Errorf("after a sign-out and an expiry, the middleware still holds the connections %v", f.m.held)
 	}
 }

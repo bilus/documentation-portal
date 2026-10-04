@@ -109,11 +109,12 @@ Terms of docportal, one per line.
 - callback URL: the portal's URL for the identity provider's answer, as registered at the provider, such as https://docs.example.com/auth/callback, from -oidc-callback-url, DOCPORTAL_OIDC_CALLBACK_URL or signin.Config.CallbackURL; the middleware answers its path.
 - callback: the request to the callback URL's path with the code and the state, at which the sign-in ends with a new sign-in session or the sign-in error page.
 - sign-out path: the sign-in middleware's route for sign-out, /auth/sign-out by default, and the URL of the sign-out link among the account links.
-- sign-out: a reader's request to the sign-out path, which ends the reader's sign-in session. A sign-out that another site starts asks the reader first.
+- sign-out: a reader's request to the sign-out path, which ends the reader's sign-in session and closes its held connections. A sign-out that another site starts asks the reader first.
 - logout URL: the reader's destination after a sign-out, such as the identity provider's logout endpoint, which ends the provider's session too; without one, the signed-out page.
 - signed-out page: the middleware's page after a sign-out without a logout URL, with a link to sign in again.
 - sign-in error page: the middleware's page after a failed or cancelled sign-in, with a link to the return target for a retry; it grants no access.
 - revoked sessions: the session IDs of the sign-in sessions that a sign-out ended before their expiry, each kept until that expiry in the middleware's memory; the middleware refuses their cookies.
+- held connections: the connections that the wrapped handler took over from a signed-in reader's requests, such as the chat's sockets, by session ID, in the middleware's memory; each closes at its session's expiry, or at its sign-out.
 - client secret: the portal's secret as an OAuth client at the identity provider, from DOCPORTAL_OIDC_CLIENT_SECRET alone or signin.Config.ClientSecret; the sign-in middleware sends it to the token endpoint alone, and it appears in no log line, no response and no URL of the browser.
 - client ID: the portal's ID as an OAuth client at the identity provider, from -oidc-client-id, DOCPORTAL_OIDC_CLIENT_ID or signin.Config.ClientID. Distinct from a client of the chat.
 - scopes: the scopes of the authorization request, from -oidc-scopes, DOCPORTAL_OIDC_SCOPES or signin.Config.Scopes: openid, profile and email by default, with openid first for an issuer.
