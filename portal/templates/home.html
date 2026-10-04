@@ -9,9 +9,9 @@
 <body>
 <main>
 <h1>{{.Title}}</h1>
-<ul>
-{{range .Portals}}<li><a href="{{.URL}}">{{.Label}}</a></li>
-{{end}}</ul>
+{{with .Portals}}<ul>
+{{range .}}<li><a href="{{.URL}}">{{.Label}}</a></li>
+{{end}}</ul>{{else}}<p>{{.Message}}</p>{{end}}
 </main>
 </body>
 </html>

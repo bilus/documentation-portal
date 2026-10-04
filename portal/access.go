@@ -42,8 +42,10 @@ func (nothing) Section(Portal, Section) bool { return false }
 // allows nothing, so that a route of the portal configuration's Chat mounted
 // elsewhere shows nothing.
 func AccessOf(r *http.Request) Access {
-	// HOLE(1): return the access of the view in r's context, or nothing without one
-	return Everything
+	if access := viewOf(r).access; access != nil {
+		return access
+	}
+	return nothing{}
 }
 
 // view is the reader's view of one request, as the router built it: the
@@ -81,16 +83,41 @@ func (v *view) portalFor(slug string) (*site, bool) {
 // site of each portal visible to the reader, in order, with only its visible
 // sections, and with the others for its portal menu.
 func visibleSites(sites []*site, access Access) []*site {
-	// HOLE(1): copy each site visible to access, and give each copy the copies as its portals
-	return sites
+	var visible []*site
+	for _, s := range sites {
+		if v, ok := s.visibleTo(access); ok {
+			visible = append(visible, v)
+		}
+	}
+	for _, v := range visible {
+		v.portals = visible
+	}
+	return visible
 }
 
 // visibleTo returns a copy of the site with only the sections visible to the
 // reader with access, which keeps the whole site, or false when access is
 // nil, hides the portal or hides every section of it.
 func (s *site) visibleTo(access Access) (*site, bool) {
-	// HOLE(1): ask access about the portal and each section as the portal configuration gives them
-	return s, true
+	if access == nil || !access.Portal(s.config) {
+		return nil, false
+	}
+	var sections []*section
+	for _, sec := range s.sections {
+		if access.Section(s.config, sec.config) {
+			sections = append(sections, sec)
+		}
+	}
+	if len(sections) == 0 {
+		return nil, false
+	}
+	v := *s
+	v.sections = sections
+	v.whole = s
+	if s.whole != nil {
+		v.whole = s.whole
+	}
+	return &v, true
 }
 
 // privateWriter writes each response with Cache-Control: private, even when
@@ -103,14 +130,17 @@ type privateWriter struct {
 
 // WriteHeader writes the status code with Cache-Control: private.
 func (w *privateWriter) WriteHeader(code int) {
-	// HOLE(1): set Cache-Control: private before the status goes out
+	w.Header().Set("Cache-Control", "private")
+	w.wrote = true
 	w.ResponseWriter.WriteHeader(code)
 }
 
 // Write writes b, after the status 200 with Cache-Control: private when no
 // status went out before.
 func (w *privateWriter) Write(b []byte) (int, error) {
-	// HOLE(1): write the status through WriteHeader first when none went out
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
 	return w.ResponseWriter.Write(b)
 }
 

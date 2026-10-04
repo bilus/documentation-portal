@@ -7,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -129,8 +130,19 @@ func (rt *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Everything without a hook, and an access that allows nothing after an
 // error or a nil access, whose cause goes to the log.
 func (rt *router) readerAccess(r *http.Request) Access {
-	// HOLE(1): call rt.access once, log an error or a nil access, and return nothing for either
-	return Everything
+	if rt.access == nil {
+		return Everything
+	}
+	access, err := rt.access(r)
+	switch {
+	case err != nil:
+		log.Printf("access hook: %v", err)
+		return nothing{}
+	case access == nil:
+		log.Print("access hook: no access and no error")
+		return nothing{}
+	}
+	return access
 }
 
 // viewFor builds the reader's view for access: the access and the reader's
@@ -138,14 +150,15 @@ func (rt *router) readerAccess(r *http.Request) Access {
 // its visible sections, so that every page of the request reads only what is
 // visible to the reader.
 func (rt *router) viewFor(access Access) *view {
-	// HOLE(1): pick the reader's sites with visibleSites
-	return &view{access: Everything, sites: rt.sites}
+	return &view{access: access, sites: visibleSites(rt.sites, access)}
 }
 
 // route sends r with the reader's view v through the routes to its page, and
 // with an access hook writes the response with Cache-Control: private.
 func (rt *router) route(w http.ResponseWriter, r *http.Request, v *view) {
-	// HOLE(1): with an access hook, write through a privateWriter
+	if rt.access != nil {
+		w = &privateWriter{ResponseWriter: w}
+	}
 	rt.mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viewKey{}, v)))
 }
 
@@ -153,7 +166,17 @@ func (rt *router) route(w http.ResponseWriter, r *http.Request, v *view) {
 // with a handler that answers as for a slug of no portal when the portal is
 // hidden from the request's reader.
 func (rt *router) guard(route Route) Route {
-	// HOLE(1): wrap the handler of a portal's chat page in servePortal with the portal's slug
+	h := route.Handler
+	if h == nil {
+		return route
+	}
+	for _, s := range rt.sites {
+		if route.Pattern == "GET "+s.chatURL() {
+			route.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				servePortal(w, r, s.slug, func(_ *site, w http.ResponseWriter, r *http.Request) { h.ServeHTTP(w, r) })
+			})
+		}
+	}
 	return route
 }
 
@@ -187,7 +210,10 @@ func (rt *router) home(w http.ResponseWriter, r *http.Request) {
 		sites[0].index(w, r)
 		return
 	}
-	// HOLE(1): with no visible portal, write the home page with its message
+	if len(sites) == 0 {
+		render(w, http.StatusOK, "home.html", page{Title: "Portals", Message: "No portals are open to you."})
+		return
+	}
 	links := make([]navLink, 0, len(sites))
 	for _, s := range sites {
 		links = append(links, navLink{Label: s.name, URL: s.url()})

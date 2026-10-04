@@ -35,8 +35,11 @@ func NewLibraries(cfg Config) ([]*Library, error) {
 // For returns the library limited to the sections of its portal visible to
 // the reader with access, or false when access hides the portal.
 func (l *Library) For(access Access) (*Library, bool) {
-	// HOLE(1): limit the library's site with visibleTo
-	return l, true
+	s, ok := l.s.visibleTo(access)
+	if !ok {
+		return nil, false
+	}
+	return &Library{s: s}, true
 }
 
 // Name returns the name of the library's portal.

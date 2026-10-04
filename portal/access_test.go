@@ -148,7 +148,6 @@ func TestWithoutAHookNoResponseIsPrivate(t *testing.T) {
 }
 
 func TestHomeListsTheVisiblePortals(t *testing.T) {
-	t.Skip("HOLE(1): serve each reader from the reader's sites")
 	root, portals := accessRoot()
 	h := newAccessPortal(t, root, portals, fakeaccess.Hook)
 	if rec := getAs(h, "Store/API", "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/portals/store/specs/api" {
@@ -171,7 +170,6 @@ func TestHomeListsTheVisiblePortals(t *testing.T) {
 }
 
 func TestNavigationBarListsTheVisibleSections(t *testing.T) {
-	t.Skip("HOLE(1): serve each reader from the reader's sites")
 	root, portals := accessRoot()
 	h := newAccessPortal(t, root, portals, fakeaccess.Hook)
 	reader := "Pet Shop/Beta, Pet Shop/Guides"
@@ -188,7 +186,6 @@ func TestNavigationBarListsTheVisibleSections(t *testing.T) {
 }
 
 func TestHiddenRoutesAnswerAsMissing(t *testing.T) {
-	t.Skip("HOLE(1): serve each reader from the reader's sites")
 	root, portals := accessRoot()
 	hidden := newAccessPortal(t, root, portals, fakeaccess.Hook)
 	missing := newAccessPortal(t, root, withoutHidden(portals), fakeaccess.Hook)
@@ -213,7 +210,6 @@ func TestHiddenRoutesAnswerAsMissing(t *testing.T) {
 }
 
 func TestLinksToHiddenSectionsLeadNowhere(t *testing.T) {
-	t.Skip("HOLE(1): serve each reader from the reader's sites")
 	root, portals := accessRoot()
 	hidden := newAccessPortal(t, root, portals, fakeaccess.Hook)
 	missing := newAccessPortal(t, root, withoutHidden(portals), fakeaccess.Hook)
@@ -241,7 +237,6 @@ func TestLinksToHiddenSectionsLeadNowhere(t *testing.T) {
 }
 
 func TestHookErrorHidesEverything(t *testing.T) {
-	t.Skip("HOLE(1): serve each reader from the reader's sites")
 	var logged bytes.Buffer
 	prev := log.Writer()
 	log.SetOutput(&logged)
@@ -275,7 +270,6 @@ func TestHookErrorHidesEverything(t *testing.T) {
 }
 
 func TestResponsesArePrivateWithAHook(t *testing.T) {
-	t.Skip("HOLE(1): serve each reader from the reader's sites")
 	root, portals := accessRoot()
 	h := newAccessPortal(t, root, portals, fakeaccess.Hook)
 	for _, path := range append(everyRoute, "/assets/elements/styles.min.css", "/assets/elements/missing.css", "/assets/elements/") {
@@ -303,7 +297,6 @@ func (a *asked) Section(_ portal.Portal, s portal.Section) bool {
 }
 
 func TestHookGetsTheConfiguredPortalsAndSections(t *testing.T) {
-	t.Skip("HOLE(1): serve each reader from the reader's sites")
 	root := fstest.MapFS{"pets.yaml": {Data: []byte(pets)}, "guides/a.md": {Data: []byte("# A\n")}}
 	shop := portal.Portal{Name: "Pets", Labels: []string{"partner-acme"}, Sections: []portal.Section{
 		{Title: "API", Type: portal.SpecSection, Input: "./pets.yaml"},
@@ -326,7 +319,6 @@ func TestHookGetsTheConfiguredPortalsAndSections(t *testing.T) {
 }
 
 func TestAccessOf(t *testing.T) {
-	t.Skip("HOLE(1): serve each reader from the reader's sites")
 	root, portals := accessRoot()
 	var got portal.Access
 	record := portal.Route{Pattern: "GET /record", Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = portal.AccessOf(r) })}
@@ -363,7 +355,6 @@ func TestAccessOf(t *testing.T) {
 }
 
 func TestLibraryForLimitsTheSections(t *testing.T) {
-	t.Skip("HOLE(1): limit a library to a reader's access")
 	root, portals := accessRoot()
 	libs, err := portal.NewLibraries(portal.Config{Root: root, Portals: portals})
 	if err != nil {
@@ -413,7 +404,6 @@ func TestLibraryForLimitsTheSections(t *testing.T) {
 }
 
 func TestTocProblemsDoNotDependOnTheReader(t *testing.T) {
-	t.Skip("HOLE(1): judge a toc file by the whole site in the log")
 	var logged bytes.Buffer
 	prev := log.Writer()
 	log.SetOutput(&logged)
@@ -451,5 +441,13 @@ func TestTocProblemsDoNotDependOnTheReader(t *testing.T) {
 	}
 	if n := strings.Count(logged.String(), "toc file broken.json: names no page"); n != 1 {
 		t.Errorf("a toc file that names no page of the whole portal logged %d lines, want 1:\n%s", n, logged.String())
+	}
+}
+
+func TestNewRefusesAChatPageWithoutAHandler(t *testing.T) {
+	root, portals := accessRoot()
+	cfg := portal.Config{Root: root, Portals: portals, Chat: []portal.Route{{Pattern: "GET /portals/store/chat"}}, Access: fakeaccess.Hook}
+	if _, err := portal.New(cfg); err == nil {
+		t.Error("the chat page of a portal without a handler: no error")
 	}
 }
