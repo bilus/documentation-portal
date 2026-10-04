@@ -1,4 +1,4 @@
-design flow.dfd: 4 diagrams, 21 boxes
+design flow.dfd: 5 diagrams, 27 boxes
 
 items at home flow.9.dfd, level 1
   Reloader: snapshot in service  live range 4  read distance 1  writers 9.1  readers 9.2, 9.4
@@ -6,14 +6,16 @@ items at home flow.9.dfd, level 1
 private items
   Chat: chat                           writers 6      readers 6
   Conversations: conversations         writers 3.4.3  readers 3.4.3
+  Preview snapshots: preview snapshot  writers 11.3   readers 11.3
   Question counts: questions by asker  writers 3.4.3  readers 3.4.3
   Reloader: last listing               writers 9.2    readers 9.2
 
 pressure
-  flow.dfd      max 0 in 7 gaps, first between 1 and 2
+  flow.dfd      max 0 in 9 gaps, first between 1 and 2
   flow.3.dfd    max 0 in 3 gaps, first between 3.1 and 3.2
   flow.3.4.dfd  max 0 in 3 gaps, first between 3.4.1 and 3.4.4
   flow.9.dfd    max 1 in 4 gaps, first between 9.1 and 9.2
+  flow.11.dfd   max 0 in 3 gaps, first between 11.1 and 11.2
 
 findings
   none
@@ -23,10 +25,11 @@ design packages
   flow.3.dfd, depth 1    portal
   flow.3.4.dfd, depth 2  portal
   flow.9.dfd, depth 1    source
+  flow.11.dfd, depth 1   portal
 
 totals
   shared items by level                               1: 1
-  private items                                       4
+  private items                                       5
   unlabeled arrow                                     0
   dead item                                           0
   orphan item                                         0

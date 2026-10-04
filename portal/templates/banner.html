@@ -1,0 +1,6 @@
+{{define "banner"}}{{with .Banner}}<style>
+.portal-banner { padding: .5rem 1rem; background: #fff4ce; border-bottom: 1px solid #e3cf7f; font: 14px Inter, ui-sans-serif, system-ui, sans-serif; }
+.portal-banner a { margin-left: 1rem; color: inherit; }
+</style>
+<div class="portal-banner">{{if .Preview}}Preview <strong>{{.Preview}}</strong><a href="/previews/">Leave the preview</a>{{else}}The preview <strong>{{.Ended}}</strong> is no longer available. This is the published documentation.{{end}}</div>
+{{end}}{{end}}

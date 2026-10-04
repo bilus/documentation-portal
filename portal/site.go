@@ -169,6 +169,7 @@ type page struct {
 	Docs      []docLink      // document list only: the markdown files outside Contents
 	Portals   []navLink      // home page only
 	Body      template.HTML  // document page only
+	Banner    *banner        // above the navigation bar, or nil
 }
 
 // docLink links a document page from the document list.
@@ -211,9 +212,12 @@ var templateFiles embed.FS
 var templates = template.Must(template.ParseFS(templateFiles, "templates/*.html"))
 
 // render writes the named page template with the given status, with the
-// account links of r's reader at the right end of the page's navigation bar.
+// account links of r's reader at the right end of the page's navigation bar,
+// and above the bar the banner of r's preview, or its notice, which clears
+// the notice cookie.
 func render(w http.ResponseWriter, r *http.Request, status int, name string, p page) {
 	p.Nav.Account = viewOf(r).account
+	// HOLE(1): the banner from r's context, and with a notice the notice cookie cleared
 	var buf bytes.Buffer
 	if err := templates.ExecuteTemplate(&buf, name, p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

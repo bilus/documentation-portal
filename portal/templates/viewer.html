@@ -9,7 +9,7 @@
 <style>html, body { height: 100%; margin: 0; } body { display: flex; flex-direction: column; } elements-api { display: block; flex: 1; min-height: 0; }</style>
 </head>
 <body>
-{{template "nav" .}}
+{{template "banner" .}}{{template "nav" .}}
 <elements-api apiDescriptionUrl="{{.SpecURL}}" router="hash"{{if .HideTryIt}} hideTryIt="true"{{end}} layout="sidebar"></elements-api>
 </body>
 </html>

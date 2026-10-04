@@ -102,9 +102,10 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 // page by the portal's slug: a spec section's viewer page or raw spec, or a
 // docs section's document list, document page or raw file, with the document
 // sidebar from the section's toc file when it names one; the home page, the
-// Elements assets, and with a chat its routes, each portal's chat page behind
-// the check of the other routes of its portal. The router keeps the sites,
-// the access hook and the account hook for its answer to each request.
+// Elements assets, the 404 page of a preview folder at /previews/, and with
+// a chat its routes, each portal's chat page behind the check of the other
+// routes of its portal. The router keeps the sites, the access hook and the
+// account hook for its answer to each request.
 func newRouter(cfg Config, sites []*site, assets fs.FS) (http.Handler, error) {
 	mux := http.NewServeMux()
 	rt := &router{sites: sites, access: cfg.Access, account: cfg.Account, mux: mux}
@@ -120,6 +121,8 @@ func newRouter(cfg Config, sites []*site, assets fs.FS) (http.Handler, error) {
 	// Any other path of a portal: the named 404 for a slug of no portal.
 	mux.HandleFunc("GET /portals/{portal}/{rest...}", rt.serve(func(_ *site, w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
+	mux.HandleFunc("GET /previews/{folder}", previewNotFound)
+	mux.HandleFunc("GET /previews/{folder}/{path...}", previewNotFound)
 	for _, r := range cfg.Chat {
 		if err := handle(mux, rt.guard(r)); err != nil {
 			return nil, err
