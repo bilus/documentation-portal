@@ -11,15 +11,15 @@ Terms of docportal, one per line.
 - operator: the person who starts docportal and gives it its configuration.
 - reader: the person who reads the documentation in a browser.
 - arguments: docportal's command-line arguments, without the program name: the flags and nothing else.
-- flags: -addr, -config, -hide-try-it and -chat-model. Any other flag is rejected.
-- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_CONFIG, DOCPORTAL_HIDE_TRY_IT and DOCPORTAL_CHAT_MODEL. Tests pass their own lookup.
-- configuration: the address, the configuration file name, the Try It setting and the chat model, each taken from its flag, else from the environment, else from its default: :8080, environment.yaml, false and empty.
-- startup: reading the configuration, opening the documentation root, reading the portal configuration from the configuration file, adding the Try It setting and the chat's routes to it, and building the portal handler, in main.startup. A failure there stops docportal before it listens.
+- flags: -addr, -config, -root, -refresh, -max-size, -hide-try-it and -chat-model. Any other flag is rejected.
+- environment: a lookup of environment variables, of which docportal reads DOCPORTAL_ADDR, DOCPORTAL_CONFIG, DOCPORTAL_ROOT, DOCPORTAL_REFRESH, DOCPORTAL_MAX_SIZE, DOCPORTAL_HIDE_TRY_IT and DOCPORTAL_CHAT_MODEL. Tests pass their own lookup.
+- configuration: the address, the configuration file name, the bucket folder URL, the refresh interval, the size limit, the Try It setting and the chat model, each taken from its flag, else from the environment, else from its default: :8080, environment.yaml, empty, one minute, 256 MiB, false and empty.
+- startup: reading the configuration, opening the documentation source, loading its snapshot, reading the portal configuration from the configuration file, adding the Try It setting and the chat's routes to it, building the portal handler, and starting the reloader, in main.startup. A failure there stops docportal before it listens.
 - address: the network address docportal listens on, such as :8080.
-- documentation root: the directory that holds the configuration file and the files of the portals' sections. docportal's is a local directory; a program that mounts the portal handler may pass any fs.FS.
+- documentation root: the directory that holds the configuration file and the files of the portals' sections. docportal's is a local directory or a bucket folder; a program that mounts the portal handler may pass any fs.FS.
 - configuration file: a YAML file of the documentation root that lists the portals under portals:, each with name and sections, and each section with title, type, input and, for a docs section, toc. docportal reads the one that -config or DOCPORTAL_CONFIG names, environment.yaml by default.
-- configuration file name: the configuration file's path on the local file system, as the operator gives it.
-- configuration file path: the configuration file's path inside the documentation root: the last element of the configuration file name.
+- configuration file name: the configuration file's path as the operator gives it with -config or DOCPORTAL_CONFIG: on the local file system without a bucket folder URL, and inside the bucket folder with one.
+- configuration file path: the configuration file's path inside the documentation root: the last element of the configuration file name for a local directory, and the whole name for a bucket folder.
 - portal: a named set of sections in the portal configuration, whose pages have URLs of their own under /portals/{portal slug}/, with a chat page when a chat model is named.
 - portal name: a portal's name, which labels it on the home page and in the portal menu.
 - portal slug: a portal's name made into a slug by the rule of section slugs, such as delivery-api for Delivery API. It names the portal in its URLs, and no two portals share one.
@@ -30,8 +30,23 @@ Terms of docportal, one per line.
 - spec section: a section of type spec, whose input is a spec path.
 - docs section: a section of type docs, whose input is a content directory path, with an optional toc path.
 - sample configuration: testdata/environment.yaml, the configuration file of docportal's tests, with one portal, Petstore, which holds a spec section for testdata/specs/petstore-3.1.yaml and a docs section for testdata/docs.
-- documentation root name: the documentation root's path on the local file system: the directory of the configuration file name.
-- documentation root handle: the documentation root opened with os.OpenRoot, as an fs.FS. Every read of the configuration file, a spec, a markdown file or an image goes through it, and os.OpenRoot keeps each read inside the root, symlinks included.
+- documentation root name: a local documentation root's path on the local file system: the directory of the configuration file name.
+- documentation root handle: the documentation root as an fs.FS: a local directory opened with os.OpenRoot, which keeps each read inside the root, symlinks included, or a snapshot's files in memory. Every read of the configuration file, a spec, a markdown file or an image goes through it.
+- documentation source: where the documentation root's files come from: a local directory, read live, or a bucket folder, read into snapshots. source.Source lists it and reads a listing's files.
+- bucket folder: the objects of a bucket, on GCS, S3 or the local file system, whose keys start with an optional prefix, which ends in a slash: the documentation source that -root names by a Go CDK URL, such as gs://docs?prefix=portal/. Its listing's keys are the objects' keys without the prefix, so the configuration file path and the sections' inputs are relative to the folder. source.Bucket reads it with Go CDK's blob package, with read access alone.
+- Go CDK URL: a URL that names a bucket to Go CDK's blob package, with the driver's scheme, the bucket's name and query parameters, of which prefix selects the bucket folder: gs://docs?prefix=portal/, s3://docs?region=eu-west-1&prefix=portal/ or file:///srv/docs?prefix=portal/.
+- driver: Go CDK's support for one URL scheme, registered by a blank import of its package: docportal registers gcsblob, s3blob and fileblob, and a program that uses the library registers the drivers it needs.
+- bucket folder URL: the Go CDK URL of the bucket folder, from -root or DOCPORTAL_ROOT, and empty by default, which makes the directory of the configuration file name the documentation source.
+- listing: the objects of a documentation source at one check, each with its key, size, modification time and MD5 sum as the bucket reports them, in key order. It leaves out the zero-byte objects whose keys end in a slash, and a key that is not a valid io/fs path refuses the whole listing. A local directory's listing is empty.
+- check: one listing of the documentation source by the reloader, every refresh interval, compared with the listing of the snapshot in service and with the last check's.
+- refresh: the reloader's work on a settled change: reading the new snapshot, building its portal handler with the builder, and swapping it in.
+- snapshot: a documentation source read at one time: a documentation root handle and the listing it was read from. A bucket folder's snapshot holds every object's bytes in memory; a local directory's is its documentation root handle.
+- size limit: the largest total size of a listing's objects that the portal reads into a snapshot, from -max-size or DOCPORTAL_MAX_SIZE in MiB, 256 by default. A bucket folder over it refuses the snapshot. Zero means no limit.
+- refresh interval: how often the reloader checks the documentation source, from -refresh or DOCPORTAL_REFRESH as a Go duration, one minute by default. Zero turns the checks off.
+- settled change: a listing of the documentation source that differs from the snapshot in service and that two checks in a row report alike. Only a settled change becomes a new snapshot, so that an upload in progress, whose listing changes from check to check, is not loaded half done.
+- builder: the function that builds the portal handler from a snapshot's documentation root handle: in docportal, the build method of main.builder, which reads the portal configuration, adds the Try It setting and the chat, and calls portal.New, as startup's boxes do, and keeps the chat across the builds.
+- reloader: the HTTP handler that source.NewReloader returns: it answers each request with the portal handler of the snapshot in service, checks the documentation source every refresh interval, and for each settled change builds the portal handler of the new snapshot with the builder and swaps it in, in one step. A check or a refresh that fails keeps the snapshot in service and writes the cause to the log.
+- snapshot in service: the snapshot whose portal handler the reloader answers requests with, kept with its listing. A request that started on it finishes on it after a swap.
 - spec path: a spec section's input: the path, relative to the documentation root, of an API spec to serve.
 - configured spec: the file at a spec section's spec path. Under a portal's /specs/ and /api/specs/, the portal handler serves no other file of the documentation root.
 - missing spec: a request under a portal's /specs/ or /api/specs/ that names no configured spec: a slug of no spec section, or a spec section whose spec path has no file behind it. It gets a 404 that names the slug or the spec path.
@@ -51,7 +66,7 @@ Terms of docportal, one per line.
 - portal handler: the HTTP handler that portal.New returns: it redirects / to the first section of the only portal or serves the home page, serves the pages of each portal under /portals/{portal slug}/, each spec section's viewer page and raw spec and each docs section's document list, document pages and raw files, and serves the Elements assets.
 - site: a portal after openPortals has checked it, with its sections opened, as the router serves its pages.
 - router: the http.ServeMux that newRouter builds and portal.New returns as the portal handler. It sends each request to its handler by method and path.
-- HTTP server: net/http's server, which listens on the address and calls the portal handler for each request.
+- HTTP server: net/http's server, which listens on the address and calls the reloader for each request.
 - viewer page: the HTML page at /portals/{portal slug}/specs/{section slug} that embeds Stoplight Elements pointed at a spec section's raw spec, with the Try It console unless the Try It setting hides it.
 - Try It console: the part of the viewer page where Stoplight Elements sends requests from the reader's browser to the servers listed in the raw spec.
 - Try It setting: whether the viewer page hides the Try It console. It is true with -hide-try-it or a true DOCPORTAL_HIDE_TRY_IT, and false by default.
@@ -68,6 +83,7 @@ Terms of docportal, one per line.
 - navigation bar: the links at the top of every HTML page of a portal: to the page of each of its sections under the section's title, in the order of the portal configuration, to its chat page when a chat model is named, and, with two or more portals, the portal menu.
 - chat page: the live page at /portals/{portal slug}/chat where a reader asks questions about the APIs of the portal's spec sections, each named in its heading, and the chat model answers from the published specs and the markdown files of the portal's sections through read-only tools. The portal handler serves it only when a chat model is named, and one chat serves the chat pages of every portal, with one question limit for a client.
 - chat model: the Anthropic model that answers on the chat page, named by -chat-model or DOCPORTAL_CHAT_MODEL, and empty by default, which leaves the chat off.
+- chat: chat.Chat, the one answerer behind the chat pages of every portal, built with the chat model for the first snapshot and given each new snapshot's libraries with Chat.Reload, which keeps its sessions, conversations and question counts. A snapshot that fails leaves it as it is.
 - library: portal.Library, a portal's published documentation as the chat reads it: the published spec of each of its spec sections, its operations and parts, and the text of the document page of each markdown file that a document list shows, each with its page's URL.
 - published spec: the configured spec without its unpublished parts and marker keys. The raw spec carries it, and the viewer page's title and the operation routes come from it.
 - raw spec: the response at /portals/{portal slug}/api/specs/{section slug}, as application/yaml: the configured spec without its unpublished parts and marker keys. A configured spec from which the rules remove nothing comes back byte for byte. Any other spec is written again from its parsed form, with every YAML document and the order of its keys, but not its layout.

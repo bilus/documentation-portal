@@ -1,5 +1,6 @@
 # docportal starts up: main.startup runs these steps in order, and main hands
-# the address and the portal to the HTTP server.
+# the address and the reloader to the HTTP server. The builder, the build
+# method of main.builder, runs boxes 7, 5, 6 and 3 again for each new snapshot.
 # By hand: dfd --box 300x150 --per-row 5 --number docs/flow.dfd -o flow.svg
 
 {Operator}
@@ -7,13 +8,23 @@
 [1. Read the configuration
  from the flags and the environment
  (main.parseConfig)]
-> configuration file name
-[2. Open the directory of the configuration file as the documentation root
- so that the portal cannot read outside it
- (main.openRoot)]
+> configuration
+[2. Open the documentation source: the directory of the configuration file, or the bucket folder that -root names
+ so that every read of the directory stays inside it
+ (main.openSource)]
     > documentation root name
-    < documentation root handle
+    < directory handle
     <Documentation root>
+    > bucket folder URL
+    < bucket
+    <Bucket folder>
+> source
+[8. Load the source's snapshot: list it and read the listing's files into memory
+ so that every request reads one version of the documentation
+ (source.Load)]
+    > keys
+    < listing, files
+    <Bucket folder>
 > documentation root handle, configuration file path
 [7. Read the portals from the configuration file
  into the portal configuration
@@ -25,26 +36,44 @@
 [5. Add the Try It setting to the portal configuration
  so that the viewer page shows or hides the Try It console
  (main.setTryIt)]
-> portal configuration, chat model
-[6. Add the chat to the portal configuration, if a chat model is named
- so that the portal handler serves a chat page in every portal
+> portal configuration, chat model, chat
+[6. Add the chat to the portal configuration, if a chat model is named, with the chat kept from the last snapshot
+ so that the portal handler serves a chat page in every portal and the chat keeps its conversations
  (main.addChat)]
+    > chat
+    < chat
+    |Chat|
 > portal configuration
 [3. Build the portal handler
  or refuse portals that openPortals refuses, or missing Elements assets
  (portal.New)]
-> address, portal handler
+> source, listing, portal handler, refresh interval, builder
+[9. Wrap the portal handler in the reloader, which checks the source every refresh interval and, for each settled change, builds the new snapshot's handler with the builder and swaps it in
+ so that the documentation follows the bucket folder without a restart
+ (source.NewReloader)]
+> address, reloader
 {HTTP server}
 
 # type: arguments = []string
 # type: environment = func(string) string
-# type: configuration file name = string
+# type: configuration = main.config
 # type: documentation root name = string
+# type: directory handle = *os.Root
+# type: bucket folder URL = string
+# type: bucket = *gocloud.dev/blob.Bucket
+# type: source = source.Source
+# type: keys = []string
+# type: listing = source.Listing
+# type: files = [][]byte
 # type: documentation root handle = io/fs.FS
 # type: configuration file path = string
 # type: configuration file = []byte
 # type: Try It setting = bool
 # type: chat model = string
+# type: chat = *chat.Chat
 # type: portal configuration = portal.Config
-# type: address = string
 # type: portal handler = net/http.Handler
+# type: refresh interval = time.Duration
+# type: builder = func(io/fs.FS) (net/http.Handler, error)
+# type: address = string
+# type: reloader = net/http.Handler

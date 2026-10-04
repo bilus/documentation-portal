@@ -499,3 +499,94 @@ func TestAskNamesNoPortal(t *testing.T) {
 		t.Errorf("err = %v, want ErrNoPortal", err)
 	}
 }
+
+// libraryOf returns the library of a Pets portal whose only document says
+// text.
+func libraryOf(t *testing.T, text string) *portal.Library {
+	t.Helper()
+	root := fstest.MapFS{
+		"api.yaml":  {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")},
+		"docs/a.md": {Data: []byte("# Guide\n\n" + text + "\n")},
+	}
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal([]portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}, {Title: "Documents", Type: portal.DocsSection, Input: "docs"}})}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lib
+}
+
+func TestChatReloadKeepsConversations(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{
+		{Match: "What does the guide say?", Call: &fakemodel.Call{Name: "read_document", Args: map[string]any{"path": "docs/a.md"}}},
+		{Match: "The old text.", Reply: "The guide says: the old text."},
+		{Match: "And now?", Call: &fakemodel.Call{Name: "read_document", Args: map[string]any{"path": "docs/a.md"}}},
+		{Match: "The new text.", Reply: "The guide says: the new text."},
+		{Match: "Another?", Reply: "Three."},
+	})
+	c, err := New(Config{Model: m, Libraries: []*portal.Library{libraryOf(t, "The old text.")}, Limits: Limits{Questions: 3, Window: time.Hour, Turns: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer, err := c.Ask(t.Context(), "pets", "client", "conv", "What does the guide say?"); err != nil || !strings.Contains(answer, "the old text") {
+		t.Fatalf("before the reload: %q, %v", answer, err)
+	}
+	if err := c.Reload([]*portal.Library{libraryOf(t, "The new text.")}); err != nil {
+		t.Fatal(err)
+	}
+	// The conversation goes on, with the model reading the new library, and
+	// its second turn is its last.
+	if answer, err := c.Ask(t.Context(), "pets", "client", "conv", "And now?"); err != nil || !strings.Contains(answer, "the new text") {
+		t.Fatalf("after the reload: %q, %v", answer, err)
+	}
+	if _, err := c.Ask(t.Context(), "pets", "client", "conv", "A third?"); !errors.Is(err, ErrTurns) {
+		t.Errorf("a third turn after the reload: err = %v, want ErrTurns", err)
+	}
+	// The client's questions before the reload count against its limit too.
+	if _, err := c.Ask(t.Context(), "pets", "client", "other", "Another?"); err != nil {
+		t.Fatalf("a third question: %v", err)
+	}
+	if _, err := c.Ask(t.Context(), "pets", "client", "another", "A fourth?"); !errors.Is(err, ErrRateLimited) {
+		t.Errorf("a fourth question after the reload: err = %v, want ErrRateLimited", err)
+	}
+}
+
+func TestChatReloadServesTheNewPortals(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Reply: "one"}})
+	c, err := New(Config{Model: m, Libraries: []*portal.Library{library(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Reload(twoPortals(t)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Ask(t.Context(), "pets", "client", "conv", "Gone?"); !errors.Is(err, ErrNoPortal) {
+		t.Errorf("a removed portal: err = %v, want ErrNoPortal", err)
+	}
+	if _, err := c.Ask(t.Context(), "store", "client", "conv", "Here?"); err != nil {
+		t.Errorf("an added portal: %v", err)
+	}
+	var paths []string
+	for _, r := range c.Routes() {
+		paths = append(paths, r.Pattern)
+	}
+	if got := strings.Join(paths, " "); !strings.Contains(got, "/portals/store/chat") || strings.Contains(got, "/portals/pets/chat") {
+		t.Errorf("routes after the reload: %s", got)
+	}
+}
+
+func TestChatReloadRefusesWhatNewRefuses(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Reply: "one"}})
+	c, err := New(Config{Model: m, Libraries: []*portal.Library{library(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib := library(t)
+	for name, libs := range map[string][]*portal.Library{"no library": nil, "a nil library": {nil}, "one slug twice": {lib, lib}} {
+		if err := c.Reload(libs); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	if _, err := c.Ask(t.Context(), "pets", "client", "conv", "Still here?"); err != nil {
+		t.Errorf("after the refused reloads: %v", err)
+	}
+}

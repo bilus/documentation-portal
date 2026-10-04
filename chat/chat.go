@@ -88,6 +88,7 @@ const appName, userID, agentName = "docportal", "reader", "support"
 // Chat answers questions in conversations, each an ADK session, on the chat
 // page of each portal.
 type Chat struct {
+	model    model.LLM
 	agents   []*portalAgent // one for each library, in order
 	sessions session.Service
 	limits   Limits
@@ -118,26 +119,45 @@ func New(cfg Config) (*Chat, error) {
 		return nil, errors.New("chat: a model and a library are required")
 	}
 	c := &Chat{
+		model:    cfg.Model,
 		sessions: session.InMemoryService(),
 		limits:   cfg.Limits.withDefaults(),
 		now:      time.Now,
 		asked:    map[string][]time.Time{},
 		convs:    map[string]*conversation{},
 	}
-	for i, lib := range cfg.Libraries {
+	agents, err := newAgents(cfg.Model, cfg.Libraries, c.sessions)
+	if err != nil {
+		return nil, err
+	}
+	c.agents = agents
+	return c, nil
+}
+
+// newAgents builds an agent for each of libs over m, with their
+// conversations in sessions, or refuses no library, a nil library and two
+// libraries with one slug.
+func newAgents(m model.LLM, libs []*portal.Library, sessions session.Service) ([]*portalAgent, error) {
+	if len(libs) == 0 {
+		return nil, errors.New("chat: a library is required")
+	}
+	agents := make([]*portalAgent, 0, len(libs))
+	for i, lib := range libs {
 		if lib == nil {
 			return nil, fmt.Errorf("chat: library %d is nil", i+1)
 		}
-		if _, taken := c.agentFor(lib.Slug()); taken {
-			return nil, fmt.Errorf("chat: two libraries have the slug %q", lib.Slug())
+		for _, a := range agents {
+			if a.lib.Slug() == lib.Slug() {
+				return nil, fmt.Errorf("chat: two libraries have the slug %q", lib.Slug())
+			}
 		}
-		a, err := newAgent(cfg.Model, lib, c.sessions)
+		a, err := newAgent(m, lib, sessions)
 		if err != nil {
 			return nil, err
 		}
-		c.agents = append(c.agents, a)
+		agents = append(agents, a)
 	}
-	return c, nil
+	return agents, nil
 }
 
 // newAgent builds the agent that answers from lib with m, and its runner,
@@ -169,14 +189,37 @@ func newAgent(m model.LLM, lib *portal.Library, sessions session.Service) (*port
 	return &portalAgent{lib: lib, runner: r}, nil
 }
 
+// Reload replaces the chat's agents with agents for libs, one for each, over
+// the chat's model, and keeps its sessions, conversations and question
+// counts, so that a new snapshot of the documentation answers the
+// conversations in progress. It refuses what New refuses: no library, a nil
+// library and two libraries with one slug, and then keeps the old agents.
+func (c *Chat) Reload(libs []*portal.Library) error {
+	agents, err := newAgents(c.model, libs, c.sessions)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.agents = agents
+	return nil
+}
+
 // agentFor returns the agent of the portal whose slug is slug, or false.
 func (c *Chat) agentFor(slug string) (*portalAgent, bool) {
-	for _, a := range c.agents {
+	for _, a := range c.currentAgents() {
 		if a.lib.Slug() == slug {
 			return a, true
 		}
 	}
 	return nil, false
+}
+
+// currentAgents returns the agents, which a reload replaces as a whole.
+func (c *Chat) currentAgents() []*portalAgent {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.agents
 }
 
 // Ask answers question, asked by client in conversation conv on the chat

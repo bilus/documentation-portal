@@ -39,7 +39,7 @@ func (c *Chat) Routes() []portal.Route {
 	add := func(pattern string, h http.Handler) {
 		routes = append(routes, portal.Route{Pattern: pattern, Handler: h})
 	}
-	for _, a := range c.agents {
+	for _, a := range c.currentAgents() {
 		mount := func(lv live.Ctx) (*page, error) { return c.mount(lv, a) }
 		add(app.Handler(a.lib.ChatURL(), chatComponent, mount, live.WithSession(clientOf)))
 	}
@@ -120,8 +120,8 @@ func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 	}
 	nav = append(nav, navLink{Label: "Chat", URL: a.lib.ChatURL(), Current: true})
 	var menu []navLink
-	if len(c.agents) > 1 {
-		for _, other := range c.agents {
+	if agents := c.currentAgents(); len(agents) > 1 {
+		for _, other := range agents {
 			menu = append(menu, navLink{Label: other.lib.Name(), URL: other.lib.URL()})
 		}
 	}
