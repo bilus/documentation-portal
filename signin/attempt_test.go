@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,17 +28,18 @@ import (
 // reader is a reader at the mock OpenID Connect provider, whose ID token
 // the function alter may change before the provider's signature.
 type reader struct {
-	subject, name, email string
-	groups               []string
-	alter                func(*mockoidc.IDTokenClaims)
+	subject, name, username, email string
+	groups                         []string
+	alter                          func(*mockoidc.IDTokenClaims)
 }
 
 // readerClaims are the claims of a reader's ID token.
 type readerClaims struct {
 	*mockoidc.IDTokenClaims
-	Name   string   `json:"name,omitempty"`
-	Email  string   `json:"email,omitempty"`
-	Groups []string `json:"groups,omitempty"`
+	Name     string   `json:"name,omitempty"`
+	Username string   `json:"preferred_username,omitempty"`
+	Email    string   `json:"email,omitempty"`
+	Groups   []string `json:"groups,omitempty"`
 }
 
 func (u reader) ID() string { return u.subject }
@@ -50,7 +52,7 @@ func (u reader) Claims(_ []string, base *mockoidc.IDTokenClaims) (jwt.Claims, er
 	if u.alter != nil {
 		u.alter(base)
 	}
-	return readerClaims{IDTokenClaims: base, Name: u.name, Email: u.email, Groups: u.groups}, nil
+	return readerClaims{IDTokenClaims: base, Name: u.name, Username: u.username, Email: u.email, Groups: u.groups}, nil
 }
 
 // ada is the reader of the mock OpenID Connect provider in the tests.
@@ -123,22 +125,38 @@ func TestTheCookiesAreSecureOverHTTPS(t *testing.T) {
 	cfg := oidcConfig(newOIDC(t))
 	cfg.CallbackURL = "https://docs.example/auth/callback"
 	f := serveSignIn(t, cfg)
+	// A sibling host can set no __Host- cookie, which keeps the attempt to
+	// this origin.
 	attempt, callback := startAt(t, f, "https://docs.example/portals/pets/")
-	if attempt.Name != "__Secure-"+attemptCookie || !attempt.Secure || !attempt.HttpOnly || attempt.Path != "/auth/callback" {
-		t.Errorf("the attempt cookie %s, want a Secure, HttpOnly cookie __Secure-%s for /auth/callback", attempt, attemptCookie)
+	if attempt.Name != "__Host-"+attemptCookie || !attempt.Secure || !attempt.HttpOnly || attempt.Path != "/" {
+		t.Errorf("the attempt cookie %s, want a Secure, HttpOnly cookie __Host-%s for /", attempt, attemptCookie)
 	}
 	r := httptest.NewRequest(http.MethodGet, callback, nil)
 	r.AddCookie(attempt)
 	rec := httptest.NewRecorder()
 	f.m.ServeHTTP(rec, r)
-	var sess *http.Cookie
+	var sess, deleted *http.Cookie
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == "__Host-"+sessionCookie {
+		switch {
+		case c.Name == "__Host-"+sessionCookie:
 			sess = c
+		case c.Name == attempt.Name && c.MaxAge < 0 && c.Path == attempt.Path:
+			deleted = c
 		}
 	}
 	if rec.Code != http.StatusFound || sess == nil || !sess.Secure || !sess.HttpOnly || sess.Path != "/" {
-		t.Errorf("the callback answered %d with the cookies %q, want a Secure, HttpOnly cookie __Host-%s for /", rec.Code, rec.Result().Header.Values("Set-Cookie"), sessionCookie)
+		t.Fatalf("the callback answered %d with the cookies %q, want a Secure, HttpOnly cookie __Host-%s for /", rec.Code, rec.Result().Header.Values("Set-Cookie"), sessionCookie)
+	}
+	if deleted == nil {
+		t.Errorf("the callback did not delete the attempt cookie: %q", rec.Result().Header.Values("Set-Cookie"))
+	}
+	// The browser's next page carries the session back.
+	r = httptest.NewRequest(http.MethodGet, "https://docs.example/portals/pets/", nil)
+	r.AddCookie(sess)
+	rec = httptest.NewRecorder()
+	f.m.ServeHTTP(rec, r)
+	if rec.Code != http.StatusOK || f.pages.last().Subject != "1234567890" {
+		t.Errorf("the session read back over https answered %d for %q", rec.Code, f.pages.last().Subject)
 	}
 }
 
@@ -541,6 +559,30 @@ func TestNewRefusesAConfigurationThatCannotSignIn(t *testing.T) {
 		"a short key":                         func(c *Config) { c.Key = []byte("thirty-one bytes, one too short") },
 		"an issuer that does not answer":      func(c *Config) { c.Issuer = "http://127.0.0.1:1/" },
 		"an issuer that names another":        func(c *Config) { c.Issuer = o.Issuer() + "/" },
+		"a sign-out path with an escape":      func(c *Config) { c.SignOutPath = "/auth/sign%2Dout" },
+		"a sign-out path at the root":         func(c *Config) { c.SignOutPath = "/" },
+		"a sign-out path with a dot segment":  func(c *Config) { c.SignOutPath = "/auth/./sign-out" },
+		"a callback URL with an escape":       func(c *Config) { c.CallbackURL = "https://docs.example/auth/call%2Dback" },
+		"a callback URL with a space":         func(c *Config) { c.CallbackURL = "https://docs.example/auth/call%20back" },
+		"a callback URL with a dot segment":   func(c *Config) { c.CallbackURL = "https://docs.example/auth/./callback" },
+		"a logout path at the sign-out path":  func(c *Config) { c.LogoutURL = "/auth/sign-out" },
+		"a logout URL at the sign-out path":   func(c *Config) { c.LogoutURL = "https://docs.example/auth/sign-out" },
+		"a provider without endpoints": func(c *Config) {
+			c.Issuer, c.Provider = "", endpointProvider{newStubProvider(t), oauth2.Endpoint{}}
+		},
+		"a provider with a relative authorization URL": func(c *Config) {
+			c.Issuer, c.Provider = "", endpointProvider{newStubProvider(t), oauth2.Endpoint{AuthURL: "/authorize", TokenURL: "https://idp.example/token"}}
+		},
+		"a provider with a token URL that is not http": func(c *Config) {
+			c.Issuer, c.Provider = "", endpointProvider{newStubProvider(t), oauth2.Endpoint{AuthURL: "https://idp.example/authorize", TokenURL: "ftp://idp.example/token"}}
+		},
+		"a provider without a token URL": func(c *Config) {
+			c.Issuer, c.Provider = "", endpointProvider{newStubProvider(t), oauth2.Endpoint{AuthURL: "https://idp.example/authorize"}}
+		},
+		"a provider with an authorization URL without a host": func(c *Config) {
+			c.Issuer, c.Provider = "", endpointProvider{newStubProvider(t), oauth2.Endpoint{AuthURL: "https:///authorize", TokenURL: "https://idp.example/token"}}
+		},
+		"an issuer that names no endpoints": func(c *Config) { c.Issuer = issuerWithoutEndpoints(t) },
 	} {
 		cfg := good
 		change(&cfg)
@@ -553,6 +595,12 @@ func TestNewRefusesAConfigurationThatCannotSignIn(t *testing.T) {
 	}
 	if _, err := New(t.Context(), good, nil); err == nil {
 		t.Error("no handler to wrap: no error")
+	}
+	// A route under another route's path works.
+	under := good
+	under.SignOutPath = "/auth/callback/out"
+	if _, err := New(t.Context(), under, http.NotFoundHandler()); err != nil {
+		t.Errorf("a sign-out path under the callback's: %v", err)
 	}
 }
 
@@ -670,4 +718,89 @@ func TestATokenResponseWithoutAnIDTokenFailsTheSignIn(t *testing.T) {
 	if resp, _ := fetch(t, b, f.srv.URL+"/portals/pets/"); resp.StatusCode != http.StatusForbidden || f.pages.reached() != 0 {
 		t.Errorf("a token response without an ID token ended the sign-in with %d", resp.StatusCode)
 	}
+}
+
+func TestTheClientSecretStaysOutOfTheLogInAnyEscaping(t *testing.T) {
+	var logs syncBuffer
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	const secret = `a "quoted" back\slash secret & <more>`
+	quoted := strconv.Quote(secret)
+	inJSON, _ := json.Marshal(secret)
+	forms := []string{secret, url.QueryEscape(secret), quoted[1 : len(quoted)-1], string(inJSON[1 : len(inJSON)-1])}
+
+	// A provider that repeats the refused secret in its error's description.
+	refusing := newOIDC(t, func(o *mockoidc.MockOIDC) { o.ClientSecret = "another secret" })
+	cfg := oidcConfig(refusing)
+	cfg.ClientSecret = secret
+	b, _ := browser(t)
+	if resp, _ := fetch(t, b, serveSignIn(t, cfg).srv.URL+"/portals/pets/"); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("the refused sign-in ended with %d", resp.StatusCode)
+	}
+	// Token endpoints that repeat it in a body without an error field, and
+	// in the error field.
+	for _, field := range []string{"message", "error"} {
+		p := newStubProvider(t)
+		p.echoSecret = field
+		cfg := stubConfig(p)
+		cfg.ClientSecret = secret
+		b, _ := browser(t)
+		if resp, _ := fetch(t, b, serveSignIn(t, cfg).srv.URL+"/portals/pets/"); resp.StatusCode != http.StatusForbidden {
+			t.Errorf("the sign-in refused with the secret in the field %s ended with %d", field, resp.StatusCode)
+		}
+	}
+	for _, form := range forms {
+		if strings.Contains(logs.String(), form) {
+			t.Errorf("the log holds the client secret as %q: %q", form, logs.String())
+		}
+	}
+	if strings.Contains(logs.String(), "slash") {
+		t.Errorf("the log holds a part of the client secret: %q", logs.String())
+	}
+	if strings.Count(logs.String(), "sign-in") < 3 {
+		t.Errorf("the refused sign-ins left too few lines in the log: %q", logs.String())
+	}
+}
+
+func TestAnOverlongFirstPageStillSignsIn(t *testing.T) {
+	f := serveSignIn(t, oidcConfig(newOIDC(t)))
+	b, _ := browser(t)
+	resp, body := fetch(t, b, f.srv.URL+"/"+strings.Repeat("a", 3021))
+	if resp.StatusCode != http.StatusOK || body != `the page of "1234567890"` || resp.Request.URL.RequestURI() != "/" {
+		t.Errorf("a sign-in that started at a page of 3 kB ended with %d at %s", resp.StatusCode, resp.Request.URL.RequestURI())
+	}
+}
+
+func TestALongFirstRequestKeepsTheAttemptCookieSmall(t *testing.T) {
+	f := serveSignIn(t, oidcConfig(newOIDC(t)))
+	target := "/portals/pets/?q=" + strings.Repeat("a&", 1000)
+	attempt, callback := startAt(t, f, target)
+	if n := len(attempt.Name) + len(attempt.Value); n > 4000 {
+		t.Errorf("the attempt cookie of a target of %d bytes holds %d bytes, more than a browser keeps", len(target), n)
+	}
+	if resp := callBack(t, f, callback, attempt); resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/" {
+		t.Errorf("the sign-in ended with %d at %q, want /", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+// endpointProvider is a Provider with the endpoint e.
+type endpointProvider struct {
+	Provider
+	e oauth2.Endpoint
+}
+
+func (p endpointProvider) Endpoint() oauth2.Endpoint { return p.e }
+
+// issuerWithoutEndpoints returns the issuer URL of a server whose discovery
+// document names neither an authorization nor a token endpoint.
+func issuerWithoutEndpoints(t *testing.T) string {
+	t.Helper()
+	var issuer string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"issuer": issuer, "jwks_uri": issuer + "/keys"})
+	}))
+	t.Cleanup(srv.Close)
+	issuer = srv.URL
+	return issuer
 }

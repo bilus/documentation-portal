@@ -326,3 +326,35 @@ func TestARevokedSessionIsRefused(t *testing.T) {
 		t.Errorf("a revoked session got %d, want a sign-in", resp.StatusCode)
 	}
 }
+
+func TestASignOutFromAnotherSiteAsksFirst(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	ada := sessionFor(t, f.m, Identity{Subject: "ada"}, f.clock.now().Add(time.Hour))
+	for site, signsOut := range map[string]bool{"cross-site": false, "same-origin": true, "same-site": true, "none": true} {
+		c := sessionFor(t, f.m, Identity{Subject: "ada"}, f.clock.now().Add(time.Hour))
+		if site == "cross-site" {
+			c = ada
+		}
+		r, err := http.NewRequest(http.MethodGet, f.srv.URL+"/auth/sign-out", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Sec-Fetch-Site", site)
+		r.AddCookie(c)
+		resp, err := stopAtRedirects(http.DefaultClient).Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if deletesTheSession(resp) != signsOut {
+			t.Errorf("a sign-out with Sec-Fetch-Site %s deleted the session cookie: %v, want %v", site, !signsOut, signsOut)
+		}
+		if !signsOut && (resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `href="/auth/sign-out"`)) {
+			t.Errorf("a cross-site sign-out answered %d with %q, want a page that links the sign-out", resp.StatusCode, body)
+		}
+	}
+	if resp := f.requestWith(t, "/portals/pets/", ada); resp.StatusCode != http.StatusOK {
+		t.Errorf("a cross-site sign-out ended the session: %d", resp.StatusCode)
+	}
+}
