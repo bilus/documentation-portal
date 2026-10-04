@@ -181,6 +181,10 @@ func TestPrivateWriter(t *testing.T) {
 	if err := http.NewResponseController(&privateWriter{ResponseWriter: rec}).Flush(); err != nil {
 		t.Errorf("a flush through the response controller: %v", err)
 	}
+	unflushable := struct{ http.ResponseWriter }{httptest.NewRecorder()}
+	if err := http.NewResponseController(&privateWriter{ResponseWriter: unflushable}).Flush(); !errors.Is(err, http.ErrNotSupported) {
+		t.Errorf("a flush over a writer without Flush: %v, want http.ErrNotSupported", err)
+	}
 }
 
 func TestAccessOfANilView(t *testing.T) {

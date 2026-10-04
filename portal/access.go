@@ -125,7 +125,7 @@ func (s *site) visibleTo(access Access) (*site, bool) {
 // for an error.
 type privateWriter struct {
 	http.ResponseWriter
-	wrote bool // whether the status went out
+	wrote bool // whether the final status went out
 }
 
 // newPrivateWriter returns w in a privateWriter, with Cache-Control: private
@@ -136,15 +136,19 @@ func newPrivateWriter(w http.ResponseWriter) *privateWriter {
 	return &privateWriter{ResponseWriter: w}
 }
 
-// WriteHeader writes the status code with Cache-Control: private.
+// WriteHeader writes the status code with Cache-Control: private. As in
+// net/http, an informational status other than 101 leaves the final status
+// to a later call.
 func (w *privateWriter) WriteHeader(code int) {
 	w.Header().Set("Cache-Control", "private")
-	w.wrote = true
+	if code >= 200 || code == http.StatusSwitchingProtocols {
+		w.wrote = true
+	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
 // Write writes b, after the status 200 with Cache-Control: private when no
-// status went out before.
+// final status went out before.
 func (w *privateWriter) Write(b []byte) (int, error) {
 	if !w.wrote {
 		w.WriteHeader(http.StatusOK)
@@ -152,10 +156,25 @@ func (w *privateWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+// FlushError sends the buffered response to the client, after the status 200
+// with Cache-Control: private when no final status went out before, as in
+// net/http. http.ResponseController calls it in place of Unwrap.
+func (w *privateWriter) FlushError() error {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	return http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+// Flush is FlushError without its error, for a handler that flushes through
+// http.Flusher.
+func (w *privateWriter) Flush() { _ = w.FlushError() }
+
 // Hijack hands the connection to the caller, for the chat's socket.
 func (w *privateWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return http.NewResponseController(w.ResponseWriter).Hijack()
 }
 
-// Unwrap returns the response writer under w, for http.ResponseController.
+// Unwrap returns the response writer under w, for the other methods of
+// http.ResponseController, such as its deadlines.
 func (w *privateWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

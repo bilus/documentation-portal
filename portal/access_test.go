@@ -522,6 +522,60 @@ func TestASilentResponseIsPrivate(t *testing.T) {
 	}
 }
 
+func TestAFlushedResponseIsPrivate(t *testing.T) {
+	flush := func(w http.ResponseWriter) {
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
+	routes := map[string]http.HandlerFunc{
+		"/controller": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Del("Cache-Control")
+			flush(w)
+		},
+		"/flusher": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache")
+			f, ok := w.(http.Flusher)
+			if !ok {
+				http.Error(w, "no http.Flusher", http.StatusInternalServerError)
+				return
+			}
+			f.Flush()
+		},
+		"/hints": func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusEarlyHints)
+			w.Header().Del("Cache-Control")
+			flush(w)
+		},
+		"/hints-and-text": func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusEarlyHints)
+			w.Header().Del("Cache-Control")
+			w.Write([]byte("tea"))
+		},
+	}
+	var chat []portal.Route
+	for path, h := range routes {
+		chat = append(chat, portal.Route{Pattern: "GET " + path, Handler: h})
+	}
+	root, portals := accessRoot()
+	h, err := portal.New(portal.Config{Root: root, Portals: portals, Chat: chat, Access: fakeaccess.Hook})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	for path := range routes {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || resp.Header.Get("Cache-Control") != "private" {
+			t.Errorf("%s: %d with Cache-Control %q, want 200 with private", path, resp.StatusCode, resp.Header.Get("Cache-Control"))
+		}
+	}
+}
+
 func TestATocProblemComesBackAfterARestrictedReader(t *testing.T) {
 	var logged bytes.Buffer
 	prev := log.Writer()
