@@ -148,18 +148,37 @@ func (tr *transcript) text() string {
 
 // sessionCookies returns the session cookies of the responses, in order,
 // deletions included.
-func (tr *transcript) sessionCookies() []*http.Cookie {
+func (tr *transcript) sessionCookies() []*http.Cookie { return tr.cookiesNamed(sessionCookie) }
+
+// cookiesNamed returns the cookies called name of the responses, in order,
+// deletions included.
+func (tr *transcript) cookiesNamed(name string) []*http.Cookie {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	var cookies []*http.Cookie
 	for _, resp := range tr.responses {
 		for _, c := range resp.Cookies() {
-			if c.Name == sessionCookie {
+			if c.Name == name {
 				cookies = append(cookies, c)
 			}
 		}
 	}
 	return cookies
+}
+
+// setting returns the last response that sets the cookie name with a value.
+func (tr *transcript) setting(name string) *http.Response {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	var last *http.Response
+	for _, resp := range tr.responses {
+		for _, c := range resp.Cookies() {
+			if c.Name == name && c.Value != "" && c.MaxAge >= 0 {
+				last = resp
+			}
+		}
+	}
+	return last
 }
 
 // browser returns a client that keeps cookies and follows redirects, like a
@@ -171,7 +190,21 @@ func browser(t *testing.T) (*http.Client, *transcript) {
 		t.Fatal(err)
 	}
 	tr := &transcript{}
-	return &http.Client{Jar: jar, Transport: tr}, tr
+	return &http.Client{Jar: browserJar{jar}, Transport: tr}, tr
+}
+
+// browserJar is a cookie jar that drops a cookie of more than 4096 bytes of
+// name and value, as browsers do.
+type browserJar struct{ *cookiejar.Jar }
+
+func (j browserJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	var kept []*http.Cookie
+	for _, c := range cookies {
+		if len(c.Name)+len(c.Value) <= 4096 {
+			kept = append(kept, c)
+		}
+	}
+	j.Jar.SetCookies(u, kept)
 }
 
 // stopAtRedirects returns a copy of c that does not follow redirects.
@@ -251,11 +284,13 @@ func s256(verifier string) string {
 type stubProvider struct {
 	srv *httptest.Server
 
-	mu        sync.Mutex
-	authorize url.Values // the query of the last authorization request
-	exchange  url.Values // the form of the last token request
-	identity  Identity   // what Identity returns for the access token
-	err       error      // what Identity returns, if not nil
+	mu         sync.Mutex
+	authorize  url.Values    // the query of the last authorization request
+	exchange   url.Values    // the form of the last token request
+	identity   Identity      // what Identity returns for the access token
+	err        error         // what Identity returns, if not nil
+	echoSecret string        // the field of a refusal's body that repeats the client secret, or none
+	hang       time.Duration // how long the token endpoint waits before it answers
 }
 
 func newStubProvider(t *testing.T) *stubProvider {
@@ -288,7 +323,13 @@ func newStubProvider(t *testing.T) *stubProvider {
 		p.mu.Lock()
 		p.exchange = r.PostForm
 		challenge := p.authorize.Get("code_challenge")
+		echo, hang := p.echoSecret, p.hang
 		p.mu.Unlock()
+		select {
+		case <-time.After(hang):
+		case <-r.Context().Done():
+			return
+		}
 		id, secret, ok := r.BasicAuth()
 		if !ok {
 			id, secret = r.PostForm.Get("client_id"), r.PostForm.Get("client_secret")
@@ -297,7 +338,12 @@ func newStubProvider(t *testing.T) *stubProvider {
 		switch {
 		case id != "portal" || secret != "the client secret":
 			w.WriteHeader(http.StatusUnauthorized)
-			io.WriteString(w, `{"error":"invalid_client"}`)
+			if echo != "" {
+				body, _ := json.Marshal(map[string]string{echo: "bad client secret " + secret})
+				w.Write(body)
+			} else {
+				io.WriteString(w, `{"error":"invalid_client"}`)
+			}
 		case r.PostForm.Get("code") != "the code", challenge != "" && s256(r.PostForm.Get("code_verifier")) != challenge:
 			w.WriteHeader(http.StatusBadRequest)
 			io.WriteString(w, `{"error":"invalid_grant"}`)

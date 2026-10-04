@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,11 +53,16 @@ func (m *middleware) start(w http.ResponseWriter, r *http.Request) {
 		Expires:  m.now().Add(attemptLifetime),
 	}
 	value, err := m.seal(m.attemptName, a)
+	if err == nil && len(m.attemptName)+len(value) > maxCookie {
+		// A browser drops so large a cookie: the reader returns to / instead.
+		a.Return = "/"
+		value, err = m.seal(m.attemptName, a)
+	}
 	if err != nil {
 		http.Error(w, "The sign-in could not start.", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, m.cookie(m.attemptName, value, m.callbackPath, int(attemptLifetime/time.Second)))
+	http.SetCookie(w, m.cookie(m.attemptName, value, "/", int(attemptLifetime/time.Second)))
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(a.Verifier)}
 	if m.verifier != nil {
 		opts = append(opts, oidc.Nonce(a.Nonce))
@@ -96,7 +103,7 @@ func localPath(s string) bool {
 // shows the sign-in error page with a link to retry.
 func (m *middleware) finish(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	http.SetCookie(w, m.cookie(m.attemptName, "", m.callbackPath, -1))
+	http.SetCookie(w, m.cookie(m.attemptName, "", "/", -1))
 	a, err := m.attemptOf(r)
 	if err != nil {
 		m.fail(w, cmp.Or(a.Return, "/"), err)
@@ -109,7 +116,7 @@ func (m *middleware) finish(w http.ResponseWriter, r *http.Request) {
 	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, m.client)
 	token, err := m.oauth.Exchange(ctx, r.FormValue("code"), oauth2.VerifierOption(a.Verifier))
 	if err != nil {
-		m.fail(w, a.Return, fmt.Errorf("exchange the code: %w", err))
+		m.fail(w, a.Return, fmt.Errorf("exchange the code: %w", refusal(err)))
 		return
 	}
 	id, err := m.identify(ctx, token, a.Nonce)
@@ -210,11 +217,31 @@ func (m *middleware) fail(w http.ResponseWriter, retry string, cause error) {
 	}.write(w, http.StatusForbidden)
 }
 
-// redact returns s without the client secret, plain or query-escaped.
+// refusal returns err without the token endpoint's own words, which may
+// repeat the client secret in any escaping: for the endpoint's refusal, its
+// HTTP status and its error code, and else err.
+func refusal(err error) error {
+	var re *oauth2.RetrieveError
+	if !errors.As(err, &re) {
+		return err
+	}
+	status := 0
+	if re.Response != nil {
+		status = re.Response.StatusCode
+	}
+	return fmt.Errorf("the token endpoint refused the code with status %d and error %q", status, re.ErrorCode)
+}
+
+// redact returns s without the client secret: plain, query-escaped, quoted
+// as Go quotes it, or escaped as JSON escapes it.
 func (m *middleware) redact(s string) string {
 	secret := m.oauth.ClientSecret
 	if secret == "" {
 		return s
 	}
-	return strings.NewReplacer(secret, "[client secret]", url.QueryEscape(secret), "[client secret]").Replace(s)
+	quoted := strconv.Quote(secret)
+	inJSON, _ := json.Marshal(secret)
+	const marker = "[client secret]"
+	return strings.NewReplacer(secret, marker, url.QueryEscape(secret), marker,
+		quoted[1:len(quoted)-1], marker, string(inJSON[1:len(inJSON)-1]), marker).Replace(s)
 }

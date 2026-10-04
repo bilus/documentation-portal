@@ -101,7 +101,7 @@ Terms of docportal, one per line.
 - session key: the secret of 32 bytes or more behind the seal of the session cookie and the attempt cookie, from DOCPORTAL_SESSION_KEY or signin.Config.Key, the same for every replica. Without it, docportal makes a random one, so that the sign-in sessions last until docportal's exit.
 - sealed: of a cookie's value, encrypted and authenticated with AES-256-GCM under a key from the session key and the callback URL, and bound to the cookie's name, so that the browser can neither read nor change it, and no other portal or cookie can pass it off as its own.
 - sign-in attempt: the attempt cookie's record of one sign-in: the state, the nonce, the PKCE verifier and the return target, for ten minutes.
-- attempt cookie: the sealed cookie of a sign-in attempt, for the callback path alone, deleted at the callback.
+- attempt cookie: the sealed cookie of a sign-in attempt, for /, as __Host-signin_attempt with an https callback URL, so that no sibling host can plant one, and deleted at the callback. An attempt that would pass 4000 bytes returns the reader to /.
 - state: a random value of the sign-in attempt, in the authorization request and again in the callback, which must match the attempt's, so that each callback belongs to an attempt of its browser. Distinct from the state of a chat page.
 - nonce: a random value of the sign-in attempt for the ID token to carry, so that each ID token belongs to its attempt.
 - PKCE: Proof Key for Code Exchange with S256: the authorization request carries the hash of the attempt's random verifier, and the code exchange the verifier itself, so that a stolen code is worthless.
@@ -109,7 +109,7 @@ Terms of docportal, one per line.
 - callback URL: the portal's URL for the identity provider's answer, as registered at the provider, such as https://docs.example.com/auth/callback, from -oidc-callback-url, DOCPORTAL_OIDC_CALLBACK_URL or signin.Config.CallbackURL; the middleware answers its path.
 - callback: the request to the callback URL's path with the code and the state, at which the sign-in ends with a new sign-in session or the sign-in error page.
 - sign-out path: the sign-in middleware's route for sign-out, /auth/sign-out by default, and the URL of the sign-out link among the account links.
-- sign-out: a reader's request to the sign-out path, which ends the reader's sign-in session.
+- sign-out: a reader's request to the sign-out path, which ends the reader's sign-in session. A sign-out that another site starts asks the reader first.
 - logout URL: the reader's destination after a sign-out, such as the identity provider's logout endpoint, which ends the provider's session too; without one, the signed-out page.
 - signed-out page: the middleware's page after a sign-out without a logout URL, with a link to sign in again.
 - sign-in error page: the middleware's page after a failed or cancelled sign-in, with a link to the return target for a retry; it grants no access.

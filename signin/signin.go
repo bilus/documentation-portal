@@ -158,11 +158,15 @@ func New(ctx context.Context, cfg Config, next http.Handler) (http.Handler, erro
 		revoked:      map[string]time.Time{},
 	}
 	if m.secure {
-		// Prefixes that keep the cookies to this origin over https.
-		m.sessionName, m.attemptName = "__Host-"+sessionCookie, "__Secure-"+attemptCookie
+		// A prefix that keeps the cookies to this origin over https, so that
+		// no sibling host can plant one.
+		m.sessionName, m.attemptName = "__Host-"+sessionCookie, "__Host-"+attemptCookie
 	}
 	if cfg.Provider != nil {
 		m.oauth.Endpoint = cfg.Provider.Endpoint()
+		if err := checkEndpoint(m.oauth.Endpoint); err != nil {
+			return nil, fmt.Errorf("signin: the provider's %w", err)
+		}
 		return m, nil
 	}
 	provider, err := oidc.NewProvider(oidc.ClientContext(ctx, m.client), cfg.Issuer)
@@ -170,6 +174,9 @@ func New(ctx context.Context, cfg Config, next http.Handler) (http.Handler, erro
 		return nil, fmt.Errorf("signin: discover the issuer %s: %w", cfg.Issuer, err)
 	}
 	m.oauth.Endpoint = provider.Endpoint()
+	if err := checkEndpoint(m.oauth.Endpoint); err != nil {
+		return nil, fmt.Errorf("signin: the issuer's %w", err)
+	}
 	m.oauth.Scopes = withOpenID(cfg.Scopes)
 	m.verifier = provider.Verifier(&oidc.Config{ClientID: cfg.ClientID})
 	return m, nil
@@ -194,19 +201,49 @@ func (cfg Config) check() error {
 		return errors.New("signin: the session key is shorter than 32 bytes")
 	}
 	signOut := cmp.Or(cfg.SignOutPath, defaultSignOutPath)
-	if !localPath(signOut) || strings.ContainsAny(signOut, "?#") {
-		return fmt.Errorf("signin: the sign-out path %q is not a path", signOut)
+	if !routePath(signOut) {
+		return fmt.Errorf("signin: the sign-out path %q is not a route: a path other than /, of letters, digits, -, ., _, ~ and /", signOut)
 	}
 	callback, err := url.Parse(cfg.CallbackURL)
 	if err != nil || !webURL(callback) {
 		return fmt.Errorf("signin: the callback URL %q is not an absolute http or https URL", cfg.CallbackURL)
 	}
-	if callback.Path == "" || callback.Path == "/" || callback.Path == signOut {
-		return fmt.Errorf("signin: the callback URL %q needs a path of its own, other than / and the sign-out path", cfg.CallbackURL)
+	if !routePath(callback.EscapedPath()) || callback.Path == signOut {
+		return fmt.Errorf("signin: the callback URL %q needs a route of its own: a path other than / and the sign-out path, of letters, digits, -, ., _, ~ and /", cfg.CallbackURL)
 	}
-	if cfg.LogoutURL != "" && !localPath(cfg.LogoutURL) {
-		if u, err := url.Parse(cfg.LogoutURL); err != nil || !webURL(u) {
+	if cfg.LogoutURL != "" {
+		u, err := url.Parse(cfg.LogoutURL)
+		if !localPath(cfg.LogoutURL) && (err != nil || !webURL(u)) {
 			return fmt.Errorf("signin: the logout URL %q is neither an http or https URL nor a path", cfg.LogoutURL)
+		}
+		if (u.Host == "" || u.Host == callback.Host) && u.Path == signOut {
+			return fmt.Errorf("signin: the logout URL %q leads back to the sign-out path", cfg.LogoutURL)
+		}
+	}
+	return nil
+}
+
+// routePath reports whether p can be a route of the middleware, which
+// ServeHTTP compares with a request's decoded path: a path other than /, of
+// letters, digits, -, ., _, ~ and / alone, without a . or .. segment, so
+// that it reads the same raw and decoded.
+func routePath(p string) bool {
+	if len(p) < 2 || !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
+		return false
+	}
+	if slices.ContainsFunc(strings.Split(p, "/"), func(s string) bool { return s == "." || s == ".." }) {
+		return false
+	}
+	return strings.Trim(p, "/-._~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") == ""
+}
+
+// checkEndpoint refuses an endpoint whose authorization or token URL is not
+// an absolute http or https URL, so that no sign-in redirects to a page of
+// the portal in a loop.
+func checkEndpoint(e oauth2.Endpoint) error {
+	for name, raw := range map[string]string{"authorization URL": e.AuthURL, "token URL": e.TokenURL} {
+		if u, err := url.Parse(raw); err != nil || !webURL(u) {
+			return fmt.Errorf("%s %q is not an absolute http or https URL", name, raw)
 		}
 	}
 	return nil
@@ -237,7 +274,7 @@ type middleware struct {
 	callbackPath string
 	signOutPath  string
 	sessionName  string        // the session cookie's name: __Host-signin_session over https
-	attemptName  string        // the attempt cookie's name: __Secure-signin_attempt over https
+	attemptName  string        // the attempt cookie's name: __Host-signin_attempt over https
 	logoutURL    string        // where sign-out sends the reader, or none for the signed-out page
 	secure       bool          // whether the cookies are Secure: with an https callback URL
 	lifetime     time.Duration // of a session

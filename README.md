@@ -484,10 +484,11 @@ SameSite=Lax, and over https Secure. `/auth/sign-out` deletes the cookie
 and revokes the session in docportal's memory until its expiry, so that a
 copy of the cookie stops working there. Another replica, or docportal after
 a restart with the same key, accepts such a copy until the session's
-expiry, so keep the lifetime short for sensitive documentation. A failed or
-cancelled sign-in shows an error page with a link to try again, and opens
-nothing. Every response to a signed-in reader carries
-`Cache-Control: private`.
+expiry, so keep the lifetime short for sensitive documentation. A sign-out
+that another site starts shows a page with a sign-out link in its place, so
+no other site can end a reader's session. A failed or cancelled sign-in
+shows an error page with a link to try again, and opens nothing. Every
+response to a signed-in reader carries `Cache-Control: private`.
 
 A program that embeds the portal wraps the portal handler in the sign-in
 middleware of the package `signin`, outside the core packages, which serves
