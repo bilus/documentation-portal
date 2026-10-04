@@ -23,7 +23,6 @@ func lookup(env map[string]string) func(string) string {
 }
 
 func TestReadSettings(t *testing.T) {
-	t.Skip("HOLE(1): read the settings from the environment")
 	s, err := readSettings(lookup(someSettings))
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +103,6 @@ func TestReadSettings(t *testing.T) {
 }
 
 func TestReadSettingsRefusesIncompleteSettings(t *testing.T) {
-	t.Skip("HOLE(1): read the settings from the environment")
 	for name, tc := range map[string]struct {
 		change map[string]string // "" deletes the variable
 		want   string            // in the error

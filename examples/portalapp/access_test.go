@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,7 +26,6 @@ func writeAccessFile(t *testing.T, content string) string {
 }
 
 func TestReadAccessFile(t *testing.T) {
-	t.Skip("HOLE(1): read the access rules from the access file")
 	rules, err := readAccessFile("demo/access.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +69,6 @@ labels:
 }
 
 func TestReadAccessFileRefusesAnInvalidFile(t *testing.T) {
-	t.Skip("HOLE(1): read the access rules from the access file")
 	if _, err := readAccessFile(filepath.Join(t.TempDir(), "missing.yaml")); err == nil {
 		t.Error("a missing access file opened")
 	}
@@ -102,7 +103,6 @@ var (
 )
 
 func TestTheAccessRulesMapClaimsToLabels(t *testing.T) {
-	t.Skip("HOLE(1): map a reader's provider and claims to labels")
 	rules, err := readAccessFile("demo/access.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -157,8 +157,25 @@ func TestTheAccessRulesMapClaimsToLabels(t *testing.T) {
 	}
 }
 
+func TestTheAccessHookAllowsNothingWithoutASignIn(t *testing.T) {
+	rules, err := readAccessFile("demo/access.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := httptest.NewRequest("GET", "/", nil)
+	withProvider := plain.WithContext(context.WithValue(plain.Context(), providerKey{}, "github"))
+	for name, r := range map[string]*http.Request{"a request outside the sign-in": plain, "a provider without an identity": withProvider} {
+		a, err := rules.access(r)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if a == nil || a.Portal(pets) || a.Section(pets, api) || a.(portal.PreviewAccess).Preview("pr-1") {
+			t.Errorf("%s: the access %#v allows something", name, a)
+		}
+	}
+}
+
 func TestPreviewsOpenToTheReadersOfThePreviewRules(t *testing.T) {
-	t.Skip("HOLE(1): open previews to the readers whom a rule of the previews matches")
 	rules, err := readAccessFile("demo/access.yaml")
 	if err != nil {
 		t.Fatal(err)
