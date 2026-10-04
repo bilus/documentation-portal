@@ -403,3 +403,62 @@ func TestThePortalHandlerAnswersAPreviewFolderAsNotFound(t *testing.T) {
 		}
 	}
 }
+
+func TestASwitchReadsThePathAsServeMuxDoes(t *testing.T) {
+	h := newPreviews(t, nil)
+	// An escaped letter of previews names the path that ServeMux routes.
+	rec := get(h, "/%70reviews/pr-1")
+	if c := cookieOf(rec, "portal-preview"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" || c == nil || c.Value != "pr-1" {
+		t.Errorf("/%%70reviews/pr-1: %d to %q with the cookie %v, want the switch to pr-1", rec.Code, rec.Header().Get("Location"), c)
+	}
+	rec = getWith(h, "/%70reviews/", "Cookie", inPreview)
+	if c := cookieOf(rec, "portal-preview"); rec.Code != http.StatusFound || c == nil || c.MaxAge >= 0 {
+		t.Errorf("/%%70reviews/: %d with the cookie %v, want the way out of the preview", rec.Code, c)
+	}
+	if rec := get(h, "/%70reviews/no-such"); rec.Code != http.StatusNotFound || rec.Header().Get("Cache-Control") != "private" {
+		t.Errorf("/%%70reviews/no-such: %d with Cache-Control %q, want the private 404 page", rec.Code, rec.Header().Get("Cache-Control"))
+	}
+}
+
+func TestASwitchKeepsTheQueryAndTheEscapes(t *testing.T) {
+	h := newPreviews(t, nil)
+	for path, want := range map[string]string{
+		"/previews/pr-1/portals/pets/docs/documents/a.md?x=1&y=2": "/portals/pets/docs/documents/a.md?x=1&y=2",
+		"/previews/pr-1/portals/pets/docs/documents/a%2Fb.md":     "/portals/pets/docs/documents/a%2Fb.md",
+		"/previews/pr-1/portals/pets/docs/documents/a+b.md":       "/portals/pets/docs/documents/a+b.md",
+		// Escaped slashes stay escaped, so they name no other host.
+		"/previews/pr-1/%2F%2Fevil.example/x": "/%2F%2Fevil.example/x",
+	} {
+		if rec := get(h, path); rec.Code != http.StatusFound || rec.Header().Get("Location") != want {
+			t.Errorf("%s: %d to %q, want a redirect to %s", path, rec.Code, rec.Header().Get("Location"), want)
+		}
+	}
+}
+
+// setCookies returns the Set-Cookie lines of rec for the cookie name.
+func setCookies(rec *httptest.ResponseRecorder, name string) []string {
+	var lines []string
+	for _, line := range rec.Header().Values("Set-Cookie") {
+		if strings.HasPrefix(line, name+"=") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func TestTheNoticeCookieGoesOutOnce(t *testing.T) {
+	h := newPreviews(t, nil)
+	// The page with the notice of its own response needs no notice cookie.
+	if lines := setCookies(getWith(h, "/portals/pets/docs/documents/a.md", "Cookie", "portal-preview=gone"), "portal-preview-ended"); len(lines) != 0 {
+		t.Errorf("the page with the notice sets %q", lines)
+	}
+	// A redirect sets it once, and the page after the redirect clears it once.
+	rec := getWith(h, "/", "Cookie", "portal-preview=gone")
+	if lines := setCookies(rec, "portal-preview-ended"); len(lines) != 1 || strings.Contains(lines[0], "Max-Age=0") {
+		t.Errorf("the redirect of / sets %q, want the notice cookie once", lines)
+	}
+	rec = getWith(h, rec.Header().Get("Location"), "Cookie", "portal-preview-ended=gone")
+	if lines := setCookies(rec, "portal-preview-ended"); len(lines) != 1 || !strings.Contains(lines[0], "Max-Age=0") {
+		t.Errorf("the page after the redirect sets %q, want the notice cookie cleared once", lines)
+	}
+}

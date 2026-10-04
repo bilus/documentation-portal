@@ -62,7 +62,10 @@ counts across snapshots. A local directory is read live, as before.
 The `file://` form serves local tests of the bucket flow. Unlike the local
 directory of `-config` alone, which follows no symlink out of the root, it
 reads through a symlink to a file outside the folder, as Go CDK's file driver
-does, so keep it to folders that nobody else can write to.
+does, so keep it to folders that nobody else can write to. On a file system
+that ignores letter case, as macOS and Windows do by default, keep the
+previews location and the preview folders in lower case: each spelling of a
+name opens the folder as a preview of its own, unlike the keys of GCS and S3.
 
 A program that uses the library opens the folder with `source.OpenBucket`,
 after a blank import of the Go CDK drivers it needs, such as
@@ -152,7 +155,15 @@ least recently used leaving first. Each holds up to `-max-size`, so
 docportal's snapshots take up to eleven times that size with the defaults. A
 check that finds a preview folder empty, as after the CI job deletes it, ends
 the preview, and its readers return to the published documentation with a
-notice.
+notice. A load of a preview folder with objects that fails, such as one with
+an invalid configuration file, stays remembered for `-refresh`, so that the
+requests in that time get the 404 page without reading the folder again.
+
+A cache in front of docportal must let a request with the `portal-preview`
+cookie pass. Every response in a preview is private, but the published
+documentation's responses carry no `Cache-Control`, so a shared cache that
+stores them, as some do by file extension, would answer a reader in a preview
+with the published image or spec.
 
 Any site can link `/previews/pr-123` and switch a reader to a preview. The
 banner makes the switch visible, so keep the previews location to the CI

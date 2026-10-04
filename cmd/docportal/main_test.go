@@ -697,3 +697,24 @@ func TestStartupEndsADeletedPreview(t *testing.T) {
 		}
 	}
 }
+
+func TestStartupKeepsAPreviewThroughABrokenChange(t *testing.T) {
+	dir, url := bucketFolder(t)
+	writePreview(t, dir, "pr-1", "# The preview version\n")
+	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "5ms", "-preview-idle", "1h", "-previews", "previews"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := getIn(h, "/portals/pets/docs/guides/a.md", "portal-preview=pr-1").Body.String(); !strings.Contains(body, "The preview version") {
+		t.Fatalf("the preview's page: %q", body)
+	}
+	// A configuration file that docportal refuses keeps the last snapshot,
+	// check after check.
+	if err := os.WriteFile(filepath.Join(dir, "site", "previews", "pr-1", "environment.yaml"), []byte("portals: [\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if body := getIn(h, "/portals/pets/docs/guides/a.md", "portal-preview=pr-1").Body.String(); !strings.Contains(body, "The preview version") || strings.Contains(body, "no longer available") {
+		t.Errorf("the preview's page after a broken change: %q", body)
+	}
+}
