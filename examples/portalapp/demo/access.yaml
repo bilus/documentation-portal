@@ -1,23 +1,25 @@
 # The access file of the demo: under labels, the rules of the readers who
 # have each label of the configuration file; under previews, the rules of
 # the readers who may open previews. A rule matches a reader who signed in
-# through its provider and whose claim holds one of its values.
+# through its provider and whose claim holds one of its values. The GitHub
+# rules name IDs, which never change hands, unlike the names in their
+# comments, which another account may take after a rename.
 labels:
   staff:
     - provider: auth0
       claim: https://docs.example.com/roles
       values: [staff]
     - provider: github
-      claim: teams
-      values: [acme/staff]
+      claim: team_ids
+      values: ["2001"] # Acme/staff
   partner:
     - provider: auth0
       claim: https://docs.example.com/roles
       values: [partner]
     - provider: github
-      claim: teams
-      values: [acme/partners]
+      claim: team_ids
+      values: ["2002"] # Acme/partners
 previews:
   - provider: github
-    claim: orgs
-    values: [acme]
+    claim: org_ids
+    values: ["1001"] # Acme

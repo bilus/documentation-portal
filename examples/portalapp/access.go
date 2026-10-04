@@ -37,8 +37,8 @@ type rule struct {
 // refuses an invalid file: one that is missing, that is not YAML or holds
 // more than one YAML document, with a key it does not know, a rule without
 // a provider, a claim or values, an empty value, a provider other than
-// auth0 and github, or a GitHub rule on a claim other than login, orgs and
-// teams.
+// auth0 and github, or a GitHub rule on a claim other than login, id, orgs,
+// org_ids, teams and team_ids.
 func readAccessFile(name string) (accessRules, error) {
 	data, err := os.ReadFile(name)
 	if err != nil {
@@ -68,23 +68,44 @@ func readAccessFile(name string) (accessRules, error) {
 	return rules, nil
 }
 
+// githubClaims are the claims of the GitHub provider: the names, free for
+// another account to take after a rename, and the IDs, which never change
+// hands.
+var githubClaims = []string{"login", "id", "orgs", "org_ids", "teams", "team_ids"}
+
 // check refuses a rule without a provider, a claim or values, with an empty
 // value, of a provider other than auth0 and github, or of github on a claim
-// other than login, orgs and teams.
+// other than those of githubClaims.
 func (r rule) check() error {
 	switch {
 	case r.Provider != "auth0" && r.Provider != "github":
 		return fmt.Errorf("the provider %q is neither auth0 nor github", r.Provider)
 	case r.Claim == "":
 		return errors.New("no claim")
-	case r.Provider == "github" && r.Claim != "login" && r.Claim != "orgs" && r.Claim != "teams":
-		return fmt.Errorf("GitHub gives no claim %q, only login, orgs and teams", r.Claim)
+	case r.Provider == "github" && !slices.Contains(githubClaims, r.Claim):
+		return fmt.Errorf("GitHub gives no claim %q, only %s", r.Claim, strings.Join(githubClaims, ", "))
 	case len(r.Values) == 0:
 		return errors.New("no values")
 	case slices.Contains(r.Values, ""):
 		return errors.New("an empty value")
 	}
 	return nil
+}
+
+// names reports whether a rule of the identity provider named provider
+// holds value for claim, as the rule would match it, so that a provider's
+// claims keep only the values that some rule reads.
+func (rules accessRules) names(provider, claim, value string) bool {
+	named := func(r rule) bool { return r.Provider == provider && r.Claim == claim && r.holds(value) }
+	if slices.ContainsFunc(rules.Previews, named) {
+		return true
+	}
+	for _, rs := range rules.Labels {
+		if slices.ContainsFunc(rs, named) {
+			return true
+		}
+	}
+	return false
 }
 
 // providerKey keys the provider name of a request's sign-in in the
@@ -125,16 +146,16 @@ func (rules accessRules) accessOf(provider string, claims signin.Claims) readerA
 // matches reports whether r matches a reader who signed in through the
 // identity provider named provider with claims.
 func (r rule) matches(provider string, claims signin.Claims) bool {
-	if r.Provider != provider {
-		return false
+	return r.Provider == provider && slices.ContainsFunc(claims.Strings(r.Claim), r.holds)
+}
+
+// holds reports whether value is one of r's values: in any letter case for
+// a github rule, and exactly for any other.
+func (r rule) holds(value string) bool {
+	if r.Provider == "github" {
+		return slices.ContainsFunc(r.Values, func(want string) bool { return strings.EqualFold(want, value) })
 	}
-	same := func(a, b string) bool { return a == b }
-	if provider == "github" {
-		same = strings.EqualFold
-	}
-	return slices.ContainsFunc(claims.Strings(r.Claim), func(have string) bool {
-		return slices.ContainsFunc(r.Values, func(want string) bool { return same(have, want) })
-	})
+	return slices.Contains(r.Values, value)
 }
 
 // readerAccess is the access of one signed-in reader under the access

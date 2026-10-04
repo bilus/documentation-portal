@@ -102,6 +102,18 @@ func TestReadSettings(t *testing.T) {
 	}
 }
 
+func TestReadSettingsNormalizesTheApplicationURL(t *testing.T) {
+	env := maps.Clone(someSettings)
+	env["PORTAL_URL"] = "HTTPS://Docs.Example.COM:8443/"
+	s, err := readSettings(lookup(env))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.providers.appURL != "https://docs.example.com:8443" {
+		t.Errorf("the application URL is %q, want https://docs.example.com:8443", s.providers.appURL)
+	}
+}
+
 func TestReadSettingsRefusesIncompleteSettings(t *testing.T) {
 	for name, tc := range map[string]struct {
 		change map[string]string // "" deletes the variable
