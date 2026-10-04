@@ -12,7 +12,7 @@
     |Reloader|
     > swap
     <Log>
-> refresh interval
+>
 [9.2. Check the source: list it, and compare the listing with the snapshot in service and with the last check's
  to find a settled change
  (source.reloader.check)]
@@ -41,21 +41,21 @@
     |Reloader|
     > swap
     <Log>
-> request
+> response writer, request
 [9.4. Answer each request with the portal handler of the snapshot in service
  (source.reloader.ServeHTTP)]
     < snapshot in service
     |Reloader|
-> response
-{HTTP server}
+    > response
+    <HTTP server>
 
 # type: listing = source.Listing
 # type: portal handler = net/http.Handler
-# type: refresh interval = time.Duration
 # type: keys = []string
 # type: settled listing = source.Listing
 # type: files = [][]byte
 # type: problem = error
 # type: swap = string
+# type: response writer = net/http.ResponseWriter
 # type: request = *net/http.Request
 # type: response = []byte

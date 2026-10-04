@@ -49,10 +49,11 @@ func AccessOf(r *http.Request) Access {
 }
 
 // view is the reader's view of one request, as the router built it: the
-// reader's access, and the reader's sites.
+// reader's access, the reader's account links and the reader's sites.
 type view struct {
-	access Access
-	sites  []*site // each with only its visible sections, in the order of the portal configuration
+	access  Access
+	account []AccountLink // the reader's account links, or none
+	sites   []*site       // each with only its visible sections, in the order of the portal configuration
 }
 
 // viewKey keys the reader's view in the context of a request served by the
