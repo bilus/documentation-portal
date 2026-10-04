@@ -117,6 +117,71 @@ divider, and then the markdown files without an entry, under Other documents.
 A missing or invalid toc file brings back the list of markdown files, with a
 line in the log.
 
+## Previews
+
+With `-previews` (`DOCPORTAL_PREVIEWS`) naming a previews location, a folder
+of the bucket folder such as `previews/`, docportal serves previews of
+documentation before its publication, such as a pull request's. A CI job
+uploads the documentation of each pull request to a preview folder of its own
+under the location, such as `previews/pr-123/`, with a configuration file at
+the path of `-config` and the files of its sections, and posts a link to
+`/previews/pr-123` on the pull request. The published documentation leaves
+the previews location out, and its size limit counts none of it.
+
+    docportal -root 'gs://docs-bucket?prefix=portal/' -previews previews/
+
+The link switches the reader's browser to the preview and opens `/`, and
+`/previews/pr-123/{path}` opens `/{path}` instead, so that a link can lead to
+a changed page. From then on, every page, raw file and raw spec comes from the
+preview folder, and a banner above the navigation bar names the folder, with
+a link to `/previews/`, the way back to the published documentation. A
+session cookie, `portal-preview`, holds the folder, so a browser shows one
+preview at a time, and every response in a preview carries
+`Cache-Control: private`. A preview has no chat. A folder name is one path
+segment of ASCII letters, digits, `.`, `_` and `-`, other than `.` and `..`;
+any other name, and a folder without a configuration file, gets a 404 page,
+with the reader still in the preview or the published documentation of the
+request.
+
+docportal loads a preview folder at its first request, as a snapshot of its
+own, and checks it every `-refresh`, like the bucket folder. A snapshot leaves
+memory after `-preview-idle` (`DOCPORTAL_PREVIEW_IDLE`, one hour by default, 0
+for never) without a request, and at most `-max-previews`
+(`DOCPORTAL_MAX_PREVIEWS`, 10 by default, 0 for no limit) stay in memory, the
+least recently used leaving first. Each holds up to `-max-size`, so
+docportal's snapshots take up to eleven times that size with the defaults. A
+check that finds a preview folder empty, as after the CI job deletes it, ends
+the preview, and its readers return to the published documentation with a
+notice.
+
+Any site can link `/previews/pr-123` and switch a reader to a preview. The
+banner makes the switch visible, so keep the previews location to the CI
+job's uploads.
+
+A program that embeds the portal leaves the previews location out of the
+published bucket folder with `source.Bucket.Without`, keeps the snapshots of
+the preview folders with `source.NewPreviews`, over the folders of
+`source.Bucket.Folder`, and wraps the published portal handler in
+`portal.WithPreviews`:
+
+    published, err := bucket.Without("previews") // bucket from source.OpenBucket
+    ...
+    location, err := bucket.Folder("previews")
+    ...
+    previews := source.NewPreviews(ctx, func(name string) (source.Source, error) {
+    	return location.Folder(name)
+    }, build, time.Minute, time.Hour, 10)
+    h := portal.WithPreviews(reloader, portal.PreviewsConfig{Open: previews.Handler, Access: access})
+
+Here `reloader` serves the snapshots of `published`, as above, and `build`
+builds a preview folder's portal handler, with the program's hooks and
+without the chat. With an access hook, the program decides who may open
+previews: the hook's access opens a preview only through the method
+`Preview(folder string) bool` of `portal.PreviewAccess`, so a hook without it
+opens none. `portal.Everything` opens every preview, and without a hook every
+reader may open any preview. The previews handler asks the access hook once
+for each request with a folder to switch to or a preview to serve.
+
 ## Chat
 
 With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
@@ -161,8 +226,8 @@ its own server, beside routes of its own. docportal is such a program.
     mux.Handle("/", signIn(h))       // its sign-in middleware around the portal
     log.Fatal(http.ListenAndServe(":8080", mux))
 
-The portal handler serves `/`, `/portals/`, `/assets/elements/` and, with a
-chat, the chat's socket at `/live/websocket` and its scripts. A pattern of
+The portal handler serves `/`, `/portals/`, `/previews/`, `/assets/elements/`
+and, with a chat, the chat's socket at `/live/websocket` and its scripts. A pattern of
 the program's own, such as `/auth/`, is more specific than `/`, so the parent
 mux sends its requests to the program. The portal knows no identity
 provider: the program's middleware signs each reader in and keeps the
@@ -176,7 +241,8 @@ through the same middleware.
 Request hooks, optional functions of the request, read that identity:
 
 - `portal.Config.Access` returns the reader's access to the portals and
-  sections (see Access per reader).
+  sections (see Access per reader), and, through `portal.PreviewAccess`, to
+  the previews (see Previews).
 - `portal.Config.Account` returns the reader's account links, such as the
   reader's name and a sign-out link, which end the navigation bar of every
   page and of the chat page. A link without a URL shows its text alone,
@@ -291,6 +357,11 @@ reach. With a hook, every response carries `Cache-Control: private`, so that
 no shared cache gives one reader's page to another. `portal.Everything` is
 the access of a reader who may see everything.
 
+A reader of such a program opens a preview only with an access that also
+has the method `Preview`, such as one that opens every preview to the staff:
+
+    func (g groups) Preview(string) bool { return slices.Contains(g, "staff") }
+
 A docs section serves its whole content directory, nested directories
 included, so keep the directory of a section for some readers out of the
 content directory of every section for others.
@@ -347,5 +418,5 @@ The browser test needs Chrome or Chromium. Set `CHROME_BIN` if chromedp does
 not find it.
 
 The design lives in `docs/`: the data flow diagrams (`flow.dfd` and its
-child diagrams `flow.3.dfd`, `flow.3.4.dfd` and `flow.9.dfd`), the
+child diagrams `flow.3.dfd`, `flow.3.4.dfd`, `flow.9.dfd` and `flow.11.dfd`), the
 vocabulary, and the plans and ledgers of the changes.
