@@ -7,6 +7,7 @@ import (
 	"github.com/bilus/live-templ/form"
 	"github.com/bilus/live-templ/live"
 	"github.com/bilus/live-templ/tree"
+	"strconv"
 )
 
 // livegen_page is in page_templ.go as livegen wrote it. A stock templ generate
@@ -15,78 +16,121 @@ var _ = livegen_page
 
 func chatPageTree(lv live.Ctx, p *page) (*tree.Tree, error) {
 	t_qd1 := tree.New(chatPageTreeStatics[0])
-	rows_qd3 := tree.NewList(chatPageTreeStatics[1])
-	for /*line page.templ:36:7*/ _, l := range p.Nav /*line page_live.go:19:75*/ {
-		row_qd2 := rows_qd3.Row()
-		/*line page.templ:37:13*/ _key35_6 := l.URL /*line page_live.go:21:72*/
-		root_qd4 := tree.NewRoot(chatPageTreeStatics[2])
-		root_qd4.Set(1, tree.Text(live.URL( /*line page.templ:37:28*/ templ.SafeURL(l.URL) /*line page_live.go:23:111*/)))
-		classes_qd5 := []any{ /*line page.templ:37:59*/ templ.KV("current", l.Current) /*line page_live.go:24:107*/}
-		root_qd4.Set(0, live.CSS(lv, classes_qd5...))
-		root_qd4.Set(2, tree.Text(live.Classes(classes_qd5...)))
-		root_qd4.Set(3, tree.Text( /*line page.templ:37:94*/ l.Label /*line page_live.go:27:88*/))
-		row_qd2.Set(0, root_qd4)
-		if err_qd6 := row_qd2.Add(_key35_6); err_qd6 != nil {
-			return nil, err_qd6
+	if /*line page.templ:37:5*/ len(p.Account) > 0 /*line page_live.go:19:73*/ {
+		branch_qd2 := tree.New(chatPageTreeStatics[1])
+		t_qd1.Set(0, branch_qd2)
+	} else {
+		branch_qd3 := tree.New(chatPageTreeStatics[2])
+		t_qd1.Set(0, branch_qd3)
+	}
+	rows_qd5 := tree.NewList(chatPageTreeStatics[3])
+	for /*line page.templ:44:7*/ _, l := range p.Nav /*line page_live.go:27:75*/ {
+		row_qd4 := rows_qd5.Row()
+		/*line page.templ:45:13*/ _key43_6 := l.URL /*line page_live.go:29:72*/
+		root_qd6 := tree.NewRoot(chatPageTreeStatics[4])
+		root_qd6.Set(1, tree.Text(live.URL( /*line page.templ:45:28*/ templ.SafeURL(l.URL) /*line page_live.go:31:111*/)))
+		classes_qd7 := []any{ /*line page.templ:45:59*/ templ.KV("current", l.Current) /*line page_live.go:32:107*/}
+		root_qd6.Set(0, live.CSS(lv, classes_qd7...))
+		root_qd6.Set(2, tree.Text(live.Classes(classes_qd7...)))
+		root_qd6.Set(3, tree.Text( /*line page.templ:45:94*/ l.Label /*line page_live.go:35:88*/))
+		row_qd4.Set(0, root_qd6)
+		if err_qd8 := row_qd4.Add(_key43_6); err_qd8 != nil {
+			return nil, err_qd8
 		}
 	}
-	t_qd1.Set(0, rows_qd3)
-	if /*line page.templ:39:6*/ len(p.Menu) > 0 /*line page_live.go:34:70*/ {
-		branch_qd7 := tree.New(chatPageTreeStatics[3])
-		branch_qd7.Set(0, tree.Text( /*line page.templ:41:16*/ p.Portal /*line page_live.go:36:91*/))
-		rows_qd9 := tree.NewList(chatPageTreeStatics[4])
-		for /*line page.templ:43:10*/ _, l := range p.Menu /*line page_live.go:38:78*/ {
-			row_qd8 := rows_qd9.Row()
-			/*line page.templ:44:16*/ _key42_9 := l.URL /*line page_live.go:40:73*/
-			root_qd10 := tree.NewRoot(chatPageTreeStatics[5])
-			root_qd10.Set(0, tree.Text(live.URL( /*line page.templ:44:31*/ templ.SafeURL(l.URL) /*line page_live.go:42:113*/)))
-			root_qd10.Set(1, tree.Text( /*line page.templ:44:56*/ l.Label /*line page_live.go:43:90*/))
-			row_qd8.Set(0, root_qd10)
-			if err_qd11 := row_qd8.Add(_key42_9); err_qd11 != nil {
-				return nil, err_qd11
+	t_qd1.Set(1, rows_qd5)
+	if /*line page.templ:47:6*/ len(p.Menu) > 0 /*line page_live.go:42:70*/ {
+		branch_qd9 := tree.New(chatPageTreeStatics[5])
+		branch_qd9.Set(0, tree.Text( /*line page.templ:49:16*/ p.Portal /*line page_live.go:44:91*/))
+		rows_qd11 := tree.NewList(chatPageTreeStatics[6])
+		for /*line page.templ:51:10*/ _, l := range p.Menu /*line page_live.go:46:78*/ {
+			row_qd10 := rows_qd11.Row()
+			/*line page.templ:52:16*/ _key50_9 := l.URL /*line page_live.go:48:73*/
+			root_qd12 := tree.NewRoot(chatPageTreeStatics[7])
+			root_qd12.Set(0, tree.Text(live.URL( /*line page.templ:52:31*/ templ.SafeURL(l.URL) /*line page_live.go:50:113*/)))
+			root_qd12.Set(1, tree.Text( /*line page.templ:52:56*/ l.Label /*line page_live.go:51:90*/))
+			row_qd10.Set(0, root_qd12)
+			if err_qd13 := row_qd10.Add(_key50_9); err_qd13 != nil {
+				return nil, err_qd13
 			}
 		}
-		branch_qd7.Set(1, rows_qd9)
-		t_qd1.Set(1, branch_qd7)
+		branch_qd9.Set(1, rows_qd11)
+		t_qd1.Set(2, branch_qd9)
 	} else {
-		branch_qd12 := tree.New(chatPageTreeStatics[6])
-		t_qd1.Set(1, branch_qd12)
+		branch_qd14 := tree.New(chatPageTreeStatics[8])
+		t_qd1.Set(2, branch_qd14)
 	}
-	t_qd1.Set(2, tree.Text( /*line page.templ:51:9*/ p.Heading /*line page_live.go:55:85*/))
-	rows_qd14 := tree.NewList(chatPageTreeStatics[7])
-	for /*line page.templ:54:8*/ _, m := range p.Messages /*line page_live.go:57:80*/ {
-		row_qd13 := rows_qd14.Row()
-		/*line page.templ:55:15*/ _key53_7 := m.ID /*line page_live.go:59:71*/
-		root_qd15 := tree.NewRoot(chatPageTreeStatics[8])
-		classes_qd16 := []any{ /*line page.templ:55:30*/ "message", templ.KV("mine", m.Mine), templ.KV("error", m.Error) /*line page_live.go:61:141*/}
-		root_qd15.Set(0, live.CSS(lv, classes_qd16...))
-		root_qd15.Set(1, tree.Text(live.Classes(classes_qd16...)))
-		markup_qd17, err_qd18 := live.Markup(lv /*line page.templ:56:7*/, templ.Raw(m.HTML) /*line page_live.go:64:113*/)
-		if err_qd18 != nil {
-			return nil, err_qd18
+	if /*line page.templ:56:6*/ len(p.Account) > 0 /*line page_live.go:63:73*/ {
+		branch_qd15 := tree.New(chatPageTreeStatics[9])
+		rows_qd17 := tree.NewList(chatPageTreeStatics[10])
+		for /*line page.templ:58:9*/ i, l := range p.Account /*line page_live.go:66:80*/ {
+			row_qd16 := rows_qd17.Row()
+			/*line page.templ:59:18*/ _key57_8 := strconv.Itoa(i) /*line page_live.go:68:83*/
+			root_qd18 := tree.NewRoot(chatPageTreeStatics[11])
+			if /*line page.templ:60:10*/ l.URL != "" /*line page_live.go:70:69*/ {
+				branch_qd19 := tree.New(chatPageTreeStatics[12])
+				branch_qd19.Set(0, tree.Text(live.URL( /*line page.templ:61:18*/ templ.URL(l.URL) /*line page_live.go:72:112*/)))
+				branch_qd19.Set(1, tree.Text( /*line page.templ:61:39*/ l.Label /*line page_live.go:73:93*/))
+				root_qd18.Set(0, branch_qd19)
+			} else {
+				branch_qd20 := tree.New(chatPageTreeStatics[13])
+				branch_qd20.Set(0, tree.Text( /*line page.templ:63:10*/ l.Label /*line page_live.go:77:93*/))
+				root_qd18.Set(0, branch_qd20)
+			}
+			row_qd16.Set(0, root_qd18)
+			if err_qd21 := row_qd16.Add(_key57_8); err_qd21 != nil {
+				return nil, err_qd21
+			}
 		}
-		root_qd15.Set(2, markup_qd17)
-		row_qd13.Set(0, root_qd15)
-		if err_qd19 := row_qd13.Add(_key53_7); err_qd19 != nil {
-			return nil, err_qd19
+		branch_qd15.Set(0, rows_qd17)
+		t_qd1.Set(3, branch_qd15)
+	} else {
+		branch_qd22 := tree.New(chatPageTreeStatics[14])
+		t_qd1.Set(3, branch_qd22)
+	}
+	t_qd1.Set(4, tree.Text( /*line page.templ:71:9*/ p.Heading /*line page_live.go:91:85*/))
+	rows_qd24 := tree.NewList(chatPageTreeStatics[15])
+	for /*line page.templ:74:8*/ _, m := range p.Messages /*line page_live.go:93:80*/ {
+		row_qd23 := rows_qd24.Row()
+		/*line page.templ:75:15*/ _key73_7 := m.ID /*line page_live.go:95:71*/
+		root_qd25 := tree.NewRoot(chatPageTreeStatics[16])
+		classes_qd26 := []any{ /*line page.templ:75:30*/ "message", templ.KV("mine", m.Mine), templ.KV("error", m.Error) /*line page_live.go:97:141*/}
+		root_qd25.Set(0, live.CSS(lv, classes_qd26...))
+		root_qd25.Set(1, tree.Text(live.Classes(classes_qd26...)))
+		markup_qd27, err_qd28 := live.Markup(lv /*line page.templ:76:7*/, templ.Raw(m.HTML) /*line page_live.go:100:114*/)
+		if err_qd28 != nil {
+			return nil, err_qd28
+		}
+		root_qd25.Set(2, markup_qd27)
+		row_qd23.Set(0, root_qd25)
+		if err_qd29 := row_qd23.Add(_key73_7); err_qd29 != nil {
+			return nil, err_qd29
 		}
 	}
-	t_qd1.Set(3, rows_qd14)
-	t_qd1.Set(4, tree.Text( /*line page.templ:60:14*/ p.FormID() /*line page_live.go:75:87*/))
-	t_qd1.Set(5, tree.Text( /*line page.templ:60:50*/ live.For(lv, p.Form) /*line page_live.go:76:97*/))
-	t_qd1.Set(6, tree.Text( /*line page.templ:60:86*/ live.On(lv, p.Ask) /*line page_live.go:77:95*/))
+	t_qd1.Set(5, rows_qd24)
+	t_qd1.Set(6, tree.Text( /*line page.templ:80:14*/ p.FormID() /*line page_live.go:111:88*/))
+	t_qd1.Set(7, tree.Text( /*line page.templ:80:50*/ live.For(lv, p.Form) /*line page_live.go:112:98*/))
+	t_qd1.Set(8, tree.Text( /*line page.templ:80:86*/ live.On(lv, p.Ask) /*line page_live.go:113:96*/))
 	return t_qd1, nil
 }
 
 // chatPageTreeStatics holds the statics of the trees that chatPageTree builds. Every render
 // shares them, and none changes them.
 var chatPageTreeStatics = [][]string{
-	{"<title>Chat</title><style>\n\t\tbody { margin: 0; font: 15px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; color: #1f2937; }\n\t\t.portal-nav { display: flex; gap: 1.25rem; align-items: center; height: 2.5rem; padding: 0 1rem; border-bottom: 1px solid #d8dde6; font: 14px Inter, ui-sans-serif, system-ui, sans-serif; }\n\t\t.portal-nav a { color: inherit; text-decoration: none; }\n\t\t.portal-nav a.current { font-weight: 600; }\n\t\t.portal-menu { margin-left: auto; position: relative; }\n\t\t.portal-menu summary { cursor: pointer; }\n\t\t.portal-menu-list { position: absolute; right: 0; top: 100%; z-index: 10; display: flex; flex-direction: column; min-width: 12rem; margin-top: .5rem; padding: .25rem 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; }\n\t\t.portal-menu-list a { padding: .375rem 1rem; }\n\t\t.portal-menu-list a:hover { background: #f1f3f6; }\n\t\t.chat { max-width: 760px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }\n\t\t.chat h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }\n\t\t.note { margin: 0 0 1.25rem; color: #6b7280; font-size: 0.9rem; }\n\t\t.messages { list-style: none; margin: 0; padding: 0; }\n\t\t.message { margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 8px; background: #f3f4f6; overflow-x: auto; }\n\t\t.message.mine { background: #e0e7ff; margin-left: 3rem; }\n\t\t.message.error { background: #fef2f2; color: #991b1b; }\n\t\t.message p:first-child { margin-top: 0; }\n\t\t.message p:last-child { margin-bottom: 0; }\n\t\t.message pre { background: #111827; color: #f9fafb; padding: 0.75rem; border-radius: 6px; overflow-x: auto; }\n\t\t.ask { display: flex; gap: 0.5rem; align-items: flex-end; }\n\t\t.ask textarea { flex: 1; font: inherit; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; }\n\t\t.ask button { font: inherit; padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: #111827; color: #fff; cursor: pointer; }\n\t\t.thinking { display: none; color: #6b7280; margin: 0 0 1rem; }\n\t\t.phx-submit-loading .thinking { display: block; }\n\t</style><nav class=\"portal-nav\">", "", "</nav><main class=\"chat\"><h1>", "</h1><p class=\"note\">Answers come from the API reference and the guides. Check the linked pages before you rely on an answer.</p><ol id=\"messages\" class=\"messages\">", "</ol><form id=\"", "\" class=\"ask-form\" for=\"", "\" phx-submit=\"", "\"><p class=\"thinking\">Looking it up...</p><div class=\"ask\"><textarea name=\"question\" rows=\"3\" aria-label=\"Your question\" placeholder=\"Ask a question about the API\" required></textarea> <button type=\"submit\" phx-disable-with=\"Sending...\">Send</button></div></form></main>"},
+	{"<title>Chat</title><style>\n\t\tbody { margin: 0; font: 15px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; color: #1f2937; }\n\t\t.portal-nav { display: flex; gap: 1.25rem; align-items: center; height: 2.5rem; padding: 0 1rem; border-bottom: 1px solid #d8dde6; font: 14px Inter, ui-sans-serif, system-ui, sans-serif; }\n\t\t.portal-nav a { color: inherit; text-decoration: none; }\n\t\t.portal-nav a.current { font-weight: 600; }\n\t\t.portal-menu { margin-left: auto; position: relative; }\n\t\t.portal-menu summary { cursor: pointer; }\n\t\t.portal-menu-list { position: absolute; right: 0; top: 100%; z-index: 10; display: flex; flex-direction: column; min-width: 12rem; margin-top: .5rem; padding: .25rem 0; background: #fff; border: 1px solid #d8dde6; border-radius: 4px; }\n\t\t.portal-menu-list a { padding: .375rem 1rem; }\n\t\t.portal-menu-list a:hover { background: #f1f3f6; }\n\t\t.chat { max-width: 760px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }\n\t\t.chat h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }\n\t\t.note { margin: 0 0 1.25rem; color: #6b7280; font-size: 0.9rem; }\n\t\t.messages { list-style: none; margin: 0; padding: 0; }\n\t\t.message { margin: 0 0 1rem; padding: 0.75rem 1rem; border-radius: 8px; background: #f3f4f6; overflow-x: auto; }\n\t\t.message.mine { background: #e0e7ff; margin-left: 3rem; }\n\t\t.message.error { background: #fef2f2; color: #991b1b; }\n\t\t.message p:first-child { margin-top: 0; }\n\t\t.message p:last-child { margin-bottom: 0; }\n\t\t.message pre { background: #111827; color: #f9fafb; padding: 0.75rem; border-radius: 6px; overflow-x: auto; }\n\t\t.ask { display: flex; gap: 0.5rem; align-items: flex-end; }\n\t\t.ask textarea { flex: 1; font: inherit; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 6px; }\n\t\t.ask button { font: inherit; padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: #111827; color: #fff; cursor: pointer; }\n\t\t.thinking { display: none; color: #6b7280; margin: 0 0 1rem; }\n\t\t.phx-submit-loading .thinking { display: block; }\n\t</style>", "<nav class=\"portal-nav\">", "", "", "</nav><main class=\"chat\"><h1>", "</h1><p class=\"note\">Answers come from the API reference and the guides. Check the linked pages before you rely on an answer.</p><ol id=\"messages\" class=\"messages\">", "</ol><form id=\"", "\" class=\"ask-form\" for=\"", "\" phx-submit=\"", "\"><p class=\"thinking\">Looking it up...</p><div class=\"ask\"><textarea name=\"question\" rows=\"3\" aria-label=\"Your question\" placeholder=\"Ask a question about the API\" required></textarea> <button type=\"submit\" phx-disable-with=\"Sending...\">Send</button></div></form></main>"},
+	{"<style>\n\t\t\t.portal-account { margin-left: auto; display: flex; gap: 1.25rem; }\n\t\t\t.portal-menu + .portal-account { margin-left: 0; }\n\t\t</style>"},
+	{""},
 	{"", " "},
 	{"", "<a href=\"", "\" class=\"", "\">", "</a>"},
 	{"<details class=\"portal-menu\"><summary>", "</summary><div class=\"portal-menu-list\">", "</div></details>"},
 	{"", ""},
 	{"<a href=\"", "\">", "</a>"},
+	{""},
+	{"<span class=\"portal-account\">", "</span>"},
+	{"", ""},
+	{"<span>", "</span>"},
+	{"<a href=\"", "\">", "</a>"},
+	{"", ""},
 	{""},
 	{"", ""},
 	{"", "<li class=\"", "\">", "</li>"},

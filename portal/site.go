@@ -213,7 +213,7 @@ var templates = template.Must(template.ParseFS(templateFiles, "templates/*.html"
 // render writes the named page template with the given status, with the
 // account links of r's reader at the right end of the page's navigation bar.
 func render(w http.ResponseWriter, r *http.Request, status int, name string, p page) {
-	// HOLE(1): put the account links of r's reader into the page's navigation bar
+	p.Nav.Account = viewOf(r).account
 	var buf bytes.Buffer
 	if err := templates.ExecuteTemplate(&buf, name, p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

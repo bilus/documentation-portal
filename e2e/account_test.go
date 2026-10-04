@@ -19,7 +19,6 @@ import (
 )
 
 func TestReaderSeesTheAccountLinks(t *testing.T) {
-	t.Skip("HOLE(1): end each navigation bar with the reader's account links")
 	cfg := portal.Config{Root: os.DirFS("../testdata"), Portals: []portal.Portal{
 		{Name: "Pets", Sections: sections("specs/petstore-3.1.yaml", "docs", "")},
 		{Name: "Store", Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "specs/petstore-3.0.yaml"}}},

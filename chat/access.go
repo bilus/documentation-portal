@@ -121,6 +121,10 @@ func (c *Chat) sessionOf(r *http.Request) (map[string]string, error) {
 		return nil, err
 	}
 	session["access"] = string(access)
-	// HOLE(1): put the account links of r's reader into the session, from portal.AccountLinksOf
+	links, err := json.Marshal(portal.AccountLinksOf(r))
+	if err != nil {
+		return nil, err
+	}
+	session["account"] = string(links)
 	return session, nil
 }

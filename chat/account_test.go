@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,7 +47,6 @@ func navOf(page string) string {
 }
 
 func TestAChatTabShowsTheAccountLinksOfItsGET(t *testing.T) {
-	t.Skip("HOLE(1): keep the account links of a chat page's GET in its page session")
 	c, err := New(Config{Model: fakemodel.New("opus", nil), Libraries: twoPortals(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -82,8 +82,39 @@ func TestAChatTabShowsTheAccountLinksOfItsGET(t *testing.T) {
 	}
 }
 
+func TestThePageSessionHoldsTheAccountLinks(t *testing.T) {
+	c, err := New(Config{Model: fakemodel.New("opus", nil), Libraries: twoPortals(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session map[string]string
+	keep := portal.Route{Pattern: "GET /session", Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		var err error
+		if session, err = c.sessionOf(r); err != nil {
+			t.Error(err)
+		}
+	})}
+	for name, tc := range map[string]struct {
+		h      http.Handler
+		reader string
+		want   []portal.AccountLink
+	}{
+		"Ada, with an account hook":    {servedWithAccount(t, c, keep), "Ada", adasLinks},
+		"a reader without links":       {servedWithAccount(t, c, keep), "", nil},
+		"Ada, without an account hook": {servedByPortal(t, c, keep), "Ada", nil},
+	} {
+		session = nil
+		r := httptest.NewRequest(http.MethodGet, "/session", nil)
+		r.Header.Set(readerHeader, tc.reader)
+		tc.h.ServeHTTP(httptest.NewRecorder(), r)
+		var got []portal.AccountLink
+		if err := json.Unmarshal([]byte(session["account"]), &got); err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s: the page session holds the account links %q, %v, want %v", name, session["account"], err, tc.want)
+		}
+	}
+}
+
 func TestReadAccountLinks(t *testing.T) {
-	t.Skip("HOLE(1): keep the account links of a chat page's GET in its page session")
 	if got := readAccountLinks(`[{"Label":"Ada"},{"Label":"Sign out","URL":"/auth/sign-out"}]`); !reflect.DeepEqual(got, adasLinks) {
 		t.Errorf("Ada's links read back: %v", got)
 	}
@@ -91,6 +122,29 @@ func TestReadAccountLinks(t *testing.T) {
 		if got := readAccountLinks(value); len(got) != 0 {
 			t.Errorf("%q: %v, want no links", value, got)
 		}
+	}
+}
+
+func TestAChatTabsAccountLinksAreText(t *testing.T) {
+	c, err := New(Config{Model: fakemodel.New("opus", nil), Libraries: twoPortals(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var portals []portal.Portal
+	for _, a := range c.currentAgents() {
+		portals = append(portals, portal.Portal{Name: a.lib.Name(), Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}})
+	}
+	h, err := portal.New(portal.Config{Root: fstest.MapFS{}, Portals: portals, Chat: c.Routes(), Account: func(*http.Request) []portal.AccountLink {
+		return []portal.AccountLink{{Label: "<img src=x onerror=alert(1)>Ada"}, {Label: "Sign out", URL: "javascript:alert(1)"}}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pet-shop/chat", nil))
+	nav := navOf(rec.Body.String())
+	if !strings.Contains(nav, "&lt;img src=x onerror=alert(1)&gt;Ada") || strings.Contains(nav, "<img") || strings.Contains(nav, "javascript:") {
+		t.Errorf("the chat page runs the account links' markup: %q", nav)
 	}
 }
 

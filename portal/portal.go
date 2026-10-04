@@ -156,8 +156,10 @@ func (rt *router) readerAccess(r *http.Request) Access {
 // accountLinks asks the account hook for the account links of r's reader,
 // once: none without a hook.
 func (rt *router) accountLinks(r *http.Request) []AccountLink {
-	// HOLE(1): ask the account hook, or give no links without one
-	return nil
+	if rt.account == nil {
+		return nil
+	}
+	return rt.account(r)
 }
 
 // viewFor builds the reader's view for access and links: the access, the
@@ -174,8 +176,7 @@ func (rt *router) viewFor(access Access, links []AccountLink) *view {
 // Cache-Control: private.
 func (rt *router) route(w http.ResponseWriter, r *http.Request, v *view) {
 	var h http.Handler = rt.mux
-	// HOLE(1): with an account hook too, write the response with Cache-Control: private
-	if rt.access != nil {
+	if rt.access != nil || rt.account != nil {
 		h = private(h)
 	}
 	h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), viewKey{}, v)))
