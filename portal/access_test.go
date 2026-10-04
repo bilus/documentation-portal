@@ -259,8 +259,8 @@ func TestHookErrorHidesEverything(t *testing.T) {
 			t.Errorf("%s: /: %d %q", name, rec.Code, rec.Body)
 		}
 		for _, path := range []string{"/portals/store/specs/api", "/portals/pet-shop/docs/guides/a.md", "/portals/store/chat"} {
-			if rec := getAs(h, partner, path); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Portal not found") {
-				t.Errorf("%s: %s: %d %q", name, path, rec.Code, rec.Body)
+			if rec := getAs(h, partner, path); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Portal not found") || rec.Header().Get("Cache-Control") != "private" {
+				t.Errorf("%s: %s: %d with Cache-Control %q: %q", name, path, rec.Code, rec.Header().Get("Cache-Control"), rec.Body)
 			}
 		}
 		if lines := strings.Count(logged.String(), tc.logs); lines != 4 {
@@ -449,5 +449,100 @@ func TestNewRefusesAChatPageWithoutAHandler(t *testing.T) {
 	cfg := portal.Config{Root: root, Portals: portals, Chat: []portal.Route{{Pattern: "GET /portals/store/chat"}}, Access: fakeaccess.Hook}
 	if _, err := portal.New(cfg); err == nil {
 		t.Error("the chat page of a portal without a handler: no error")
+	}
+}
+
+func TestLibraryPortal(t *testing.T) {
+	root, portals := accessRoot()
+	libs, err := portal.NewLibraries(portal.Config{Root: root, Portals: portals})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shop, ok := libs[0].For(fakeaccess.Parse("Pet Shop/Guides"))
+	if !ok {
+		t.Fatal("the Pet Shop library is hidden from a reader of its guides")
+	}
+	for name, lib := range map[string]*portal.Library{"the library": libs[0], "the library for a reader": shop} {
+		if got := lib.Portal(); !reflect.DeepEqual(got, portals[0]) {
+			t.Errorf("%s's portal: %+v, want the portal as configured: %+v", name, got, portals[0])
+		}
+	}
+}
+
+func TestGuardChecksEveryRouteOfAPortal(t *testing.T) {
+	root, portals := accessRoot()
+	page := func(name string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("The page of " + name + ".")) })
+	}
+	for _, tc := range []struct{ pattern, method, path string }{
+		{"GET  /portals/vault/chat", http.MethodGet, "/portals/vault/chat"},
+		{"GET\t/portals/vault/chat", http.MethodGet, "/portals/vault/chat"},
+		{"HEAD /portals/vault/chat", http.MethodHead, "/portals/vault/chat"},
+		{"GET /portals/vault/chat/{rest...}", http.MethodGet, "/portals/vault/chat/x"},
+		{"POST /portals/vault/ask", http.MethodPost, "/portals/vault/ask"},
+		{"GET /portals/{p}/extra", http.MethodGet, "/portals/vault/extra"},
+	} {
+		h, err := portal.New(portal.Config{Root: root, Portals: portals, Chat: []portal.Route{{Pattern: tc.pattern, Handler: page("Vault")}}, Access: fakeaccess.Hook})
+		if err != nil {
+			t.Fatalf("%q: %v", tc.pattern, err)
+		}
+		r := httptest.NewRequest(tc.method, tc.path, nil)
+		r.Header.Set(fakeaccess.Header, partner)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, r)
+		if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "The page of Vault.") {
+			t.Errorf("%q: %s %s answers %d %q, want the 404 of a missing portal", tc.pattern, tc.method, tc.path, rec.Code, rec.Body)
+		}
+	}
+	h, err := portal.New(portal.Config{Root: root, Portals: portals, Chat: []portal.Route{{Pattern: "GET  /portals/store/chat", Handler: page("Store")}}, Access: fakeaccess.Hook})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := getAs(h, partner, "/portals/store/chat"); rec.Code != http.StatusOK || rec.Body.String() != "The page of Store." {
+		t.Errorf("a visible portal's page: %d %q", rec.Code, rec.Body)
+	}
+}
+
+func TestASilentResponseIsPrivate(t *testing.T) {
+	root, portals := accessRoot()
+	silent := portal.Route{Pattern: "GET /silent", Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}
+	h, err := portal.New(portal.Config{Root: root, Portals: portals, Chat: []portal.Route{silent}, Access: fakeaccess.Hook})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/silent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Cache-Control") != "private" {
+		t.Errorf("a route that writes nothing: %d with Cache-Control %q, want private", resp.StatusCode, resp.Header.Get("Cache-Control"))
+	}
+}
+
+func TestATocProblemComesBackAfterARestrictedReader(t *testing.T) {
+	var logged bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	root := fstest.MapFS{
+		"overview/start.md": {Data: []byte("# Start\n")},
+		"internal/x.md":     {Data: []byte("# X\n")},
+	}
+	portals := []portal.Portal{{Name: "Shop", Sections: []portal.Section{
+		{Title: "Overview", Type: portal.DocsSection, Input: "overview", Toc: "toc.json"},
+		{Title: "Internal", Type: portal.DocsSection, Input: "internal"},
+	}}}
+	h := newAccessPortal(t, root, portals, fakeaccess.Hook)
+	page := func(reader string) { getAs(h, reader, "/portals/shop/docs/overview/start.md") }
+	page("Shop/Overview, Shop/Internal") // the toc file is missing: one line
+	root["toc.json"] = &fstest.MapFile{Data: []byte(`{"items": [{"type": "item", "title": "X", "uri": "internal/x.md"}]}`)}
+	page("Shop/Overview") // the whole site has no problem now, though this reader sees no page of the toc
+	delete(root, "toc.json")
+	page("Shop/Overview") // missing again: a second line
+	if n := strings.Count(logged.String(), "toc file toc.json"); n != 2 {
+		t.Errorf("a toc file missing, fixed and missing again logged %d lines, want 2:\n%s", n, logged.String())
 	}
 }

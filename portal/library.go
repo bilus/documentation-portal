@@ -42,6 +42,10 @@ func (l *Library) For(access Access) (*Library, bool) {
 	return &Library{s: s}, true
 }
 
+// Portal returns the library's portal as the portal configuration gives it,
+// with every section, visible or not.
+func (l *Library) Portal() Portal { return l.s.config }
+
 // Name returns the name of the library's portal.
 func (l *Library) Name() string { return l.s.name }
 

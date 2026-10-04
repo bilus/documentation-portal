@@ -192,3 +192,24 @@ func TestAccessOfANilView(t *testing.T) {
 		}
 	}
 }
+
+// countingWriter counts the statuses written through it.
+type countingWriter struct {
+	http.ResponseWriter
+	statuses int
+}
+
+func (c *countingWriter) WriteHeader(code int) {
+	c.statuses++
+	c.ResponseWriter.WriteHeader(code)
+}
+
+func TestPrivateWriterWritesOneStatus(t *testing.T) {
+	under := &countingWriter{ResponseWriter: httptest.NewRecorder()}
+	w := &privateWriter{ResponseWriter: under}
+	w.Write([]byte("tea, "))
+	w.Write([]byte("please"))
+	if under.statuses != 1 {
+		t.Errorf("two writes wrote %d statuses, want one", under.statuses)
+	}
+}

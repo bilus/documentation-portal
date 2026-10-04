@@ -128,6 +128,14 @@ type privateWriter struct {
 	wrote bool // whether the status went out
 }
 
+// newPrivateWriter returns w in a privateWriter, with Cache-Control: private
+// set already for a response whose handler writes nothing, whose status
+// net/http writes below the privateWriter.
+func newPrivateWriter(w http.ResponseWriter) *privateWriter {
+	w.Header().Set("Cache-Control", "private")
+	return &privateWriter{ResponseWriter: w}
+}
+
 // WriteHeader writes the status code with Cache-Control: private.
 func (w *privateWriter) WriteHeader(code int) {
 	w.Header().Set("Cache-Control", "private")

@@ -71,7 +71,7 @@ Terms of docportal, one per line.
 - hidden from the reader: of a portal or a section, not visible to the reader. It answers on every route as a missing one, and links and toc entries to its pages lead nowhere. Distinct from hidden, of a file.
 - reader's sites: the sites of the portals visible to one request's reader, each a copy of its portal's site with only its visible sections.
 - reader's view: portal.view: the access of one request's reader and the reader's sites, as the router builds them for the request and passes them to its pages.
-- page access: the access that a chat page keeps from its load: the titles of the sections visible to its reader, by the name of their portal. live-templ signs it into the page session, and the page's mount at the join and each of the page's questions read it from there.
+- page access: the access that a chat page keeps from its load: everything for a reader whose access is portal.Everything, else the titles of the sections visible to its reader, by portal, each portal with a digest of its configuration, which closes the portal to the page after a change of it. live-templ signs it into the page session, and the page's mount at the join and each of the page's questions read it from there.
 - live-templ: the module of live pages, github.com/bilus/live-templ, that serves the chat page: it renders the page at its GET, and runs it over the page's socket after the join.
 - page session: the values that live-templ signs into a chat page at its GET and gives back at the join: the client and the page access. Distinct from the chat's sessions, which hold its conversations.
 - join: a loaded chat page's first message over its socket, at which live-templ mounts the page again from its page session, with no request.

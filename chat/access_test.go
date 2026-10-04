@@ -74,15 +74,15 @@ func newAccessChat(t *testing.T, m model.LLM, more ...portal.Route) (*Chat, http
 }
 
 // servedByPortal returns a portal handler without an access hook that serves
-// routes, the routes of a chat, as the routes of the portal configuration's
-// Chat. The handler's own portal plays no part.
-func servedByPortal(t *testing.T, routes []portal.Route) http.Handler {
+// the routes of c and more, as the routes of the portal configuration's Chat,
+// with a portal of each of c's names. The handler's own pages play no part.
+func servedByPortal(t *testing.T, c *Chat, more ...portal.Route) http.Handler {
 	t.Helper()
-	h, err := portal.New(portal.Config{
-		Root:    fstest.MapFS{},
-		Portals: []portal.Portal{{Name: "Elsewhere", Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}}},
-		Chat:    routes,
-	})
+	var portals []portal.Portal
+	for _, a := range c.currentAgents() {
+		portals = append(portals, portal.Portal{Name: a.lib.Name(), Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}})
+	}
+	h, err := portal.New(portal.Config{Root: fstest.MapFS{}, Portals: portals, Chat: append(c.Routes(), more...)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func sessionThroughPortal(t *testing.T, c *Chat) map[string]string {
 			t.Error(err)
 		}
 	})}
-	servedByPortal(t, []portal.Route{keep}).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/session", nil))
+	servedByPortal(t, c, keep).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/session", nil))
 	return session
 }
 
@@ -257,5 +257,87 @@ func TestChatPageKeepsTheAccessOfItsLoad(t *testing.T) {
 	}
 	if _, err := c.mount(interpreter.NewCtx(t.Context(), u.Path, u, map[string]string{"client": "client"}, true), c.agents[0]); err == nil {
 		t.Error("a page whose session holds no access mounts")
+	}
+}
+
+// petsLibrary returns the library of a portal named Pets with sections,
+// over a root with a spec, a guide and a staff note.
+func petsLibrary(t *testing.T, sections ...portal.Section) *portal.Library {
+	t.Helper()
+	root := fstest.MapFS{
+		"api.yaml":          {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths: {}\n")},
+		"guides/new.md":     {Data: []byte("# New guide\n")},
+		"internal/staff.md": {Data: []byte("# Staff only\n\nThe secret plans.\n")},
+	}
+	lib, err := firstLibrary(portal.NewLibraries(portal.Config{Root: root, Portals: petsPortal(sections)}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lib
+}
+
+var (
+	petsAPI    = portal.Section{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}
+	petsGuides = portal.Section{Title: "Guides", Type: portal.DocsSection, Input: "guides"}
+)
+
+func TestOpenPageFollowsEachSnapshotWithoutAHook(t *testing.T) {
+	m := fakemodel.New("opus", []fakemodel.Exchange{
+		{Call: &fakemodel.Call{Name: "list_documents", Args: map[string]any{}}},
+		{Match: "guides/new.md", Reply: "The new guide."},
+	})
+	c, err := New(Config{Model: m, Libraries: []*portal.Library{petsLibrary(t, petsAPI)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	access := readPageAccess(sessionThroughPortal(t, c)["access"])
+	if err := c.Reload([]*portal.Library{petsLibrary(t, petsAPI, petsGuides)}); err != nil {
+		t.Fatal(err)
+	}
+	if answer, err := c.Ask(t.Context(), "pets", access, "client", "conv", "Which guides?"); err != nil || answer != "The new guide." {
+		t.Errorf("a page open before a snapshot that adds a section: %q, %v, want the new section's guide", answer, err)
+	}
+}
+
+// unlabelled allows the portals and the sections without labels.
+type unlabelled struct{}
+
+func (unlabelled) Portal(p portal.Portal) bool                    { return len(p.Labels) == 0 }
+func (unlabelled) Section(_ portal.Portal, s portal.Section) bool { return len(s.Labels) == 0 }
+
+func TestOpenPageClosesAPortalThatAChangeReconfigures(t *testing.T) {
+	notes := portal.Section{Title: "Notes", Type: portal.DocsSection, Input: "guides"}
+	staff := portal.Section{Title: "Internal", Type: portal.DocsSection, Input: "internal", Labels: []string{"staff"}}
+	m := fakemodel.New("opus", []fakemodel.Exchange{{Reply: "One."}})
+	c, err := New(Config{Model: m, Libraries: []*portal.Library{petsLibrary(t, petsAPI, notes, staff)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	access := pageAccessOf(unlabelled{}, c.currentAgents())
+	// The next snapshot renames Notes, and gives the staff section the old title.
+	renamed := notes
+	renamed.Title = "Public notes"
+	staff.Title = "Notes"
+	if err := c.Reload([]*portal.Library{petsLibrary(t, petsAPI, renamed, staff)}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Ask(t.Context(), "pets", access, "client", "conv", "What do the notes say?")
+	if !errors.Is(err, ErrNoPortal) {
+		t.Errorf("the open page of a reconfigured portal: %v, want ErrNoPortal", err)
+	}
+	if got := c.explain(err); !strings.Contains(got, "Reload the page") {
+		t.Errorf("the page tells the reader %q, want to load it again", got)
+	}
+	// A snapshot that leaves the portal as it was keeps the page open.
+	c2, err := New(Config{Model: fakemodel.New("opus", []fakemodel.Exchange{{Reply: "Two."}}), Libraries: []*portal.Library{petsLibrary(t, petsAPI, notes)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	same := pageAccessOf(unlabelled{}, c2.currentAgents())
+	if err := c2.Reload([]*portal.Library{petsLibrary(t, petsAPI, notes)}); err != nil {
+		t.Fatal(err)
+	}
+	if answer, err := c2.Ask(t.Context(), "pets", same, "client", "conv", "And now?"); err != nil || answer != "Two." {
+		t.Errorf("the open page of a portal that a snapshot left as it was: %q, %v", answer, err)
 	}
 }

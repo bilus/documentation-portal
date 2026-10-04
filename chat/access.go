@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -8,35 +10,67 @@ import (
 	"github.com/bilus/documentation-portal/portal"
 )
 
-// pageAccess is the access that a chat page keeps from its load: the titles
-// of the sections visible to its reader, by the name of their portal.
-// live-templ signs it into the page's session, and the page's mount at the
-// socket's join, which gets no request, reads it there.
-type pageAccess map[string][]string
-
-// Portal reports whether the page access names a section of p.
-func (a pageAccess) Portal(p portal.Portal) bool {
-	return len(a[p.Name]) > 0
+// pageAccess is the access that a chat page keeps from its load. For a
+// reader whose access is portal.Everything, as without an access hook, it
+// allows everything, so that the page follows each snapshot. Else it holds
+// the titles of the sections visible to the reader, by portal, with a digest
+// of each portal's configuration, so that a later snapshot that changes the
+// portal closes it to the page until the page loads again. live-templ signs
+// it into the page session, and the page's mount at the join, which gets no
+// request, reads it there.
+type pageAccess struct {
+	All     bool                  `json:"all,omitempty"`
+	Portals map[string]pagePortal `json:"portals,omitempty"` // by portal name
 }
 
-// Section reports whether the page access names s, a section of p.
+// pagePortal is a portal of a page access.
+type pagePortal struct {
+	Digest   string   `json:"digest"`   // of the portal's configuration at the page's load
+	Sections []string `json:"sections"` // the titles of its visible sections
+}
+
+// Portal reports whether the page access allows p: everything, or one of
+// its sections in a portal with p's name and configuration.
+func (a pageAccess) Portal(p portal.Portal) bool {
+	if a.All {
+		return true
+	}
+	pp, ok := a.Portals[p.Name]
+	return ok && len(pp.Sections) > 0 && pp.Digest == digest(p)
+}
+
+// Section reports whether the page access allows s, a section of p.
 func (a pageAccess) Section(p portal.Portal, s portal.Section) bool {
-	return slices.Contains(a[p.Name], s.Title)
+	return a.All || a.Portal(p) && slices.Contains(a.Portals[p.Name].Sections, s.Title)
+}
+
+// digest returns a digest of p as the portal configuration gives it, with
+// its labels and its sections, which changes with any change of them.
+func digest(p portal.Portal) string {
+	// A Portal holds strings and lists alone, which always marshal.
+	data, _ := json.Marshal(p)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:16])
 }
 
 // pageAccessOf returns the page access of a reader with access over the
-// portals of agents: the titles of the sections of each portal visible to
-// the reader.
+// portals of agents: everything for portal.Everything, else the titles of the
+// sections of each portal visible to the reader, with the portal's digest.
 func pageAccessOf(access portal.Access, agents []*portalAgent) pageAccess {
-	page := pageAccess{}
+	if access == portal.Everything {
+		return pageAccess{All: true}
+	}
+	page := pageAccess{Portals: map[string]pagePortal{}}
 	for _, a := range agents {
 		lib, ok := a.lib.For(access)
 		if !ok {
 			continue
 		}
+		pp := pagePortal{Digest: digest(a.lib.Portal())}
 		for _, s := range lib.Sections() {
-			page[lib.Name()] = append(page[lib.Name()], s.Title)
+			pp.Sections = append(pp.Sections, s.Title)
 		}
+		page.Portals[lib.Name()] = pp
 	}
 	return page
 }
@@ -45,7 +79,7 @@ func pageAccessOf(access portal.Access, agents []*portalAgent) pageAccess {
 // or an access that hides every portal for a value that does not hold one.
 func readPageAccess(value string) pageAccess {
 	var page pageAccess
-	if err := json.Unmarshal([]byte(value), &page); err != nil || page == nil {
+	if err := json.Unmarshal([]byte(value), &page); err != nil {
 		return pageAccess{}
 	}
 	return page
