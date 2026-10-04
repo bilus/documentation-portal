@@ -34,35 +34,35 @@ func mockProvider(t *testing.T) *mockoidc.MockOIDC {
 	return o
 }
 
-// TestSignInKeepsTheReloaderBehindTheSignIn is the smoke test of process 10:
+// TestSignInKeepsTheHandlerBehindTheSignIn is the smoke test of process 12:
 // with an issuer, a request without a session gets a redirect to the
-// sign-in and never reaches the reloader; without one, the reloader answers
-// every request itself.
-func TestSignInKeepsTheReloaderBehindTheSignIn(t *testing.T) {
+// sign-in and never reaches the wrapped handler, in docportal the previews
+// handler; without one, the handler answers every request itself.
+func TestSignInKeepsTheHandlerBehindTheSignIn(t *testing.T) {
 	o := mockProvider(t)
 	reached := 0
-	reloader := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached++ })
+	wrapped := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached++ })
 	h, err := signIn(t.Context(), signin.Config{
 		Issuer:       o.Issuer(),
 		ClientID:     o.ClientID,
 		ClientSecret: o.ClientSecret,
 		CallbackURL:  "http://docs.test/auth/callback",
 		Key:          []byte(sessionKey),
-	}, reloader)
+	}, wrapped)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/petstore/", nil))
 	if rec.Code != http.StatusFound || reached != 0 {
-		t.Errorf("a request without a session got %d and reached the reloader %d times, want a sign-in", rec.Code, reached)
+		t.Errorf("a request without a session got %d and reached the wrapped handler %d times, want a sign-in", rec.Code, reached)
 	}
-	if h, err := signIn(t.Context(), signin.Config{}, reloader); err != nil || h == nil {
+	if h, err := signIn(t.Context(), signin.Config{}, wrapped); err != nil || h == nil {
 		t.Fatalf("without an issuer: %v", err)
 	} else {
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/portals/petstore/", nil))
 		if reached != 1 {
-			t.Errorf("without an issuer, the request reached the reloader %d times", reached)
+			t.Errorf("without an issuer, the request reached the wrapped handler %d times", reached)
 		}
 	}
 }
@@ -264,6 +264,58 @@ func TestStartupSignsReadersIn(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "signed out") {
 		t.Errorf("the sign-out answered %d with %q", resp.StatusCode, page)
+	}
+}
+
+func TestStartupSignsAReaderIntoAPreview(t *testing.T) {
+	dir, url := bucketFolder(t)
+	writePreview(t, dir, "pr-1", "# The preview version\n")
+	o := mockProvider(t)
+	srv := httptest.NewUnstartedServer(nil)
+	defer srv.Close()
+	env := map[string]string{"DOCPORTAL_OIDC_CLIENT_SECRET": o.ClientSecret, "DOCPORTAL_SESSION_KEY": sessionKey}
+	_, h, err := startup(t.Context(), []string{
+		"-root", url, "-config", "environment.yaml", "-refresh", "0", "-previews", "previews",
+		"-oidc-issuer", o.Issuer(),
+		"-oidc-client-id", o.ClientID,
+		"-oidc-callback-url", "http://" + srv.Listener.Addr().String() + "/auth/callback",
+	}, func(k string) string { return env[k] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Config.Handler = h
+	srv.Start()
+
+	// Without a session, a preview link sends the reader to the provider,
+	// before any switch to the preview.
+	resp, err := (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Get(srv.URL + "/previews/pr-1/portals/pets/docs/guides/a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if loc := resp.Header.Get("Location"); resp.StatusCode != http.StatusFound || !strings.HasPrefix(loc, o.AuthorizationEndpoint()+"?") || slices.ContainsFunc(resp.Cookies(), func(c *http.Cookie) bool { return c.Name == "portal-preview" }) {
+		t.Errorf("a preview link without a session answered %d for %q with the cookies %v, want the provider's authorization endpoint", resp.StatusCode, loc, resp.Cookies())
+	}
+
+	// The reader signs in, switches to the preview and sees the account links
+	// on its page.
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &http.Client{Jar: jar}
+	resp, err = b.Get(srv.URL + "/previews/pr-1/portals/pets/docs/guides/a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	links := `<span class="portal-account"><span>jane.doe</span><span><a href="/auth/sign-out">Sign out</a></span></span>`
+	if resp.Request.URL.Path != "/portals/pets/docs/guides/a.md" || !strings.Contains(string(page), "The preview version") || !strings.Contains(string(page), `class="portal-banner"`) {
+		t.Fatalf("the sign-in ended at %s with %q, want the preview's page", resp.Request.URL, page)
+	}
+	if !strings.Contains(string(page), links) {
+		t.Errorf("the preview's page lacks the account links %s", links)
 	}
 }
 

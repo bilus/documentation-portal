@@ -1,23 +1,23 @@
-# Process 10.2, the body of signin.middleware.ServeHTTP: the sign-in
+# Process 12.2, the body of signin.middleware.ServeHTTP: the sign-in
 # middleware's answer to each request that the HTTP server sends it. Each
 # request takes one path through the boxes, by its URL path and its session
-# cookie: the sign-out path to box 10.2.1, the callback to box 10.2.2, a
-# request with a session to boxes 10.2.3 and 10.2.4, and any other request to
-# boxes 10.2.3 and 10.2.5. The reader's browser carries the sign-in attempt
-# from box 10.2.5 to box 10.2.2, and the session from box 10.2.2 to boxes
-# 10.2.1 and 10.2.3, each in a sealed cookie; the HTTP server carries each
+# cookie: the sign-out path to box 12.2.1, the callback to box 12.2.2, a
+# request with a session to boxes 12.2.3 and 12.2.4, and any other request to
+# boxes 12.2.3 and 12.2.5. The reader's browser carries the sign-in attempt
+# from box 12.2.5 to box 12.2.2, and the session from box 12.2.2 to boxes
+# 12.2.1 and 12.2.3, each in a sealed cookie; the HTTP server carries each
 # response to the browser. The revoked sessions and the held connections are
-# the middleware's own state, kept across requests: box 10.2.1 reads the
+# the middleware's own state, kept across requests: box 12.2.1 reads the
 # session through sessionOf, adds its ID and forgets the IDs past their
-# sessions' expiry, and box 10.2.3 refuses the IDs that the store holds; box
-# 10.2.4 holds a connection that the wrapped handler takes over, such as the
+# sessions' expiry, and box 12.2.3 refuses the IDs that the store holds; box
+# 12.2.4 holds a connection that the wrapped handler takes over, such as the
 # chat's socket, until the session's expiry, and a later request's sign-out,
-# box 10.2.1 drawn a second time, closes the session's held connections.
-# By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 10.2. docs/flow.10.2.dfd -o flow.10.2.svg
+# box 12.2.1 drawn a second time, closes the session's held connections.
+# By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 12.2. docs/flow.12.2.dfd -o flow.12.2.svg
 
 {HTTP server}
 > response writer, request
-[10.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that another site starts
+[12.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that another site starts
  (signin.middleware.signOut)]
     < session cookie
     > expired session cookie, logout URL, signed-out page, sign-out question
@@ -26,7 +26,7 @@
     > revoked sessions
     |Revoked sessions|
 > response writer, request
-[10.2.2. Finish the sign-in at the callback: check the attempt's state, exchange the code with the attempt's PKCE verifier, identify the reader from the verified ID token or through the Provider, and set the cookie of a new session and send the reader to the return target, or show the sign-in error page with a link to retry
+[12.2.2. Finish the sign-in at the callback: check the attempt's state, exchange the code with the attempt's PKCE verifier, identify the reader from the verified ID token or through the Provider, and set the cookie of a new session and send the reader to the return target, or show the sign-in error page with a link to retry
  (signin.middleware.finish)]
     < attempt cookie, code, state
     > expired attempt cookie, session cookie, return target, sign-in error page
@@ -40,26 +40,26 @@
     > sign-in problem
     <Log>
 > request
-[10.2.3. Read the reader's session from the session cookie: none for a cookie that is missing, tampered with, expired or revoked
+[12.2.3. Read the reader's session from the session cookie: none for a cookie that is missing, tampered with, expired or revoked
  (signin.middleware.sessionOf)]
     < session cookie
     <Browser>
     < revoked sessions
     |Revoked sessions|
 > response writer, request, session
-[10.2.4. Serve the request with the reader's identity in its context, privately, and hold a connection that the wrapped handler takes over, such as the chat's socket, until the session's expiry
+[12.2.4. Serve the request with the reader's identity in its context, privately, and hold a connection that the wrapped handler takes over, such as the chat's socket, until the session's expiry
  (signin.middleware.serve)]
     > response writer, request
     <Wrapped handler>
     > held connections
     |Held connections|
 > response writer, request
-[10.2.5. Start a sign-in: keep a new state, nonce and PKCE verifier with the return target in the attempt cookie, and send the reader to the identity provider, or refuse a request that cannot follow the redirect
+[12.2.5. Start a sign-in: keep a new state, nonce and PKCE verifier with the return target in the attempt cookie, and send the reader to the identity provider, or refuse a request that cannot follow the redirect
  (signin.middleware.start)]
     > attempt cookie, authorization URL, refusal
     <Browser>
 > response writer, request
-[10.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that another site starts
+[12.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that another site starts
  (signin.middleware.signOut)]
     < held connections
     > held connections

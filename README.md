@@ -430,11 +430,13 @@ docportal signs its readers in through an OpenID Connect provider, such as
 Auth0, Okta, Google, Keycloak or Microsoft Entra ID, when `-oidc-issuer`
 (`DOCPORTAL_OIDC_ISSUER`) names the provider's issuer. A reader without a
 session then goes to the provider first, and comes back to the page of the
-first request. Every page ends its navigation bar with the reader's name and
-a sign-out link, and with a chat model the chat counts each signed-in
-reader's questions against one limit, from any address. Every signed-in
-reader sees every portal: a program that embeds the portal maps the
-reader's claims to portals and sections (below).
+first request, through the switch of a preview link to its preview. Every
+page, a preview's too, ends its navigation bar with the reader's name and a
+sign-out link, and with a chat model the chat counts each signed-in reader's
+questions against one limit, from any address. Every signed-in reader sees
+every portal and may open every preview: a program that embeds the portal
+maps the reader's claims to portals and sections (below), and to previews
+(see Previews).
 
 For Auth0, create a Regular Web Application, add
 `https://docs.example.com/auth/callback` to its Allowed Callback URLs and
@@ -561,6 +563,6 @@ The browser test needs Chrome or Chromium. Set `CHROME_BIN` if chromedp does
 not find it.
 
 The design lives in `docs/`: the data flow diagrams (`flow.dfd` and its
-child diagrams `flow.3.dfd`, `flow.3.4.dfd`, `flow.9.dfd`, `flow.10.dfd`,
-`flow.10.2.dfd` and `flow.11.dfd`), the vocabulary, and the plans and
+child diagrams `flow.3.dfd`, `flow.3.4.dfd`, `flow.9.dfd`, `flow.11.dfd`,
+`flow.12.dfd` and `flow.12.2.dfd`), the vocabulary, and the plans and
 ledgers of the changes.
