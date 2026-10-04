@@ -5,9 +5,15 @@ package source
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
+	"testing/fstest"
 	"time"
 
 	"gocloud.dev/blob"
@@ -66,12 +72,15 @@ type Snapshot struct {
 
 // Load loads the snapshot of src: it lists src and reads the listing's files.
 func Load(ctx context.Context, src Source) (Snapshot, error) {
-	// HOLE(1): list the source and read the listing's files into the snapshot
-	root, err := src.Read(ctx, nil)
+	listing, err := src.List(ctx)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{Root: root}, nil
+	root, err := src.Read(ctx, listing)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{Root: root, Listing: listing}, nil
 }
 
 // Directory is a local directory as a documentation source: its listing is
@@ -94,14 +103,12 @@ func OpenDirectory(name string) (*Directory, error) {
 // List returns the empty listing: a directory is read live, so the reloader
 // never finds a change in it.
 func (d *Directory) List(ctx context.Context) (Listing, error) {
-	// HOLE(1): return the empty listing
 	return nil, nil
 }
 
 // Read returns the directory as a documentation root handle, whatever the
 // listing.
 func (d *Directory) Read(ctx context.Context, listing Listing) (fs.FS, error) {
-	// HOLE(1): return the directory's root as an fs.FS
 	return d.root.FS(), nil
 }
 
@@ -134,15 +141,49 @@ func OpenBucket(ctx context.Context, rawURL string, limit int64) (*Bucket, error
 // the zero-byte objects whose keys end in a slash, and refuses a key that is
 // not a valid io/fs path.
 func (b *Bucket) List(ctx context.Context) (Listing, error) {
-	// HOLE(1): list the bucket's objects into a listing
-	return nil, nil
+	var listing Listing
+	it := b.bucket.List(nil)
+	for {
+		o, err := it.Next(ctx)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("list the bucket folder: %w", err)
+		}
+		if o.Size == 0 && strings.HasSuffix(o.Key, "/") {
+			continue
+		}
+		if !fs.ValidPath(o.Key) {
+			return nil, fmt.Errorf("list the bucket folder: the key %q is not a valid path", o.Key)
+		}
+		listing = append(listing, Object{Key: o.Key, Size: o.Size, ModTime: o.ModTime, MD5: o.MD5})
+	}
+	// The drivers list in key order; sorting keeps Equal exact without them.
+	slices.SortFunc(listing, func(a, b Object) int { return strings.Compare(a.Key, b.Key) })
+	return listing, nil
 }
 
 // Read reads the objects of listing into a documentation root handle held in
 // memory, or refuses a listing over the size limit.
 func (b *Bucket) Read(ctx context.Context, listing Listing) (fs.FS, error) {
-	// HOLE(1): read each object of the listing into an in-memory file system
-	return nil, nil
+	if b.limit > 0 && listing.Size() > b.limit {
+		return nil, fmt.Errorf("the bucket folder holds %d bytes, over the size limit of %d", listing.Size(), b.limit)
+	}
+	root := make(fstest.MapFS, len(listing))
+	var read int64
+	for _, o := range listing {
+		data, err := b.bucket.ReadAll(ctx, o.Key)
+		if err != nil {
+			return nil, fmt.Errorf("read %s from the bucket folder: %w", o.Key, err)
+		}
+		// An object that grew since the listing counts with its new size.
+		if read += int64(len(data)); b.limit > 0 && read > b.limit {
+			return nil, fmt.Errorf("the bucket folder holds over %d bytes, the size limit", b.limit)
+		}
+		root[o.Key] = &fstest.MapFile{Data: data, Mode: 0o444, ModTime: o.ModTime}
+	}
+	return root, nil
 }
 
 // NewReloader wraps first, the portal handler of src's snapshot with

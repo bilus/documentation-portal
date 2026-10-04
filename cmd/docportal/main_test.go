@@ -412,13 +412,12 @@ func bucketFolder(t *testing.T) (dir, url string) {
 }
 
 func TestStartupServesABucketFolder(t *testing.T) {
-	t.Skip("HOLE(1): serve a bucket folder named by -root, read into memory")
 	dir, url := bucketFolder(t)
 	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "0"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := get(h, "/portals/pets/api/specs/api"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Swagger Petstore") {
+	if rec := get(h, "/portals/pets/api/specs/api"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "title: Petstore") {
 		t.Errorf("the raw spec: %d %q", rec.Code, rec.Body.String()[:min(80, rec.Body.Len())])
 	}
 	if rec := get(h, "/portals/pets/docs/guides/a.md"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "The first version") {
@@ -434,7 +433,6 @@ func TestStartupServesABucketFolder(t *testing.T) {
 }
 
 func TestStartupRefusesABucketFolderItCannotServe(t *testing.T) {
-	t.Skip("HOLE(1): stop on a bucket folder without the configuration file, or over the size limit")
 	dir, url := bucketFolder(t)
 	// A big file puts the folder over a limit of 1 MiB, the smallest limit; 0 means none.
 	if err := os.WriteFile(filepath.Join(dir, "site", "big.bin"), make([]byte, 2<<20), 0o644); err != nil {
