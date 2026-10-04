@@ -1,6 +1,7 @@
 // Command docportal serves the documentation of API specs and markdown files
 // from a local directory or a bucket folder, as the portals of a
-// configuration file, each a set of sections.
+// configuration file, each a set of sections, and with an issuer signs each
+// reader in through an OpenID Connect provider.
 package main
 
 import (
@@ -17,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	// The drivers of the bucket folder URLs that -root accepts.
 	_ "gocloud.dev/blob/fileblob"
@@ -26,6 +28,7 @@ import (
 	"github.com/bilus/documentation-portal/anthropicmodel"
 	"github.com/bilus/documentation-portal/chat"
 	"github.com/bilus/documentation-portal/portal"
+	"github.com/bilus/documentation-portal/signin"
 	"github.com/bilus/documentation-portal/source"
 )
 
@@ -39,7 +42,22 @@ type config struct {
 	PreviewIdle time.Duration // after which an unused preview's snapshot leaves memory; 0 never
 	MaxPreviews int           // preview snapshots in memory; 0 means no limit
 	HideTryIt   bool
-	ChatModel   string // empty without a chat
+	ChatModel   string       // empty without a chat
+	SignIn      signInConfig // the sign-in settings; without an issuer, readers do not sign in
+}
+
+// signInConfig holds the sign-in settings: the OpenID Connect provider of
+// the readers' sign-in, and their sessions.
+type signInConfig struct {
+	Issuer       string // the provider's issuer URL; empty for no sign-in
+	ClientID     string
+	ClientSecret string // from the environment alone
+	CallbackURL  string
+	LogoutURL    string        // empty for the signed-out page
+	Scopes       string        // separated by commas or spaces; empty for openid, profile and email
+	Audience     string        // the authorization request's audience parameter, or empty
+	Lifetime     time.Duration // of a session; 0 means 8 hours
+	Key          string        // seals the session cookie; from the environment alone, and empty for a random key
 }
 
 func main() {
@@ -54,9 +72,12 @@ func main() {
 
 // startup reads the configuration, opens the documentation source, loads its
 // snapshot, builds the portal handler from it, wraps it in the reloader,
-// which rebuilds it for each settled change of the source until ctx ends,
-// opens the previews location, and wraps the reloader in the previews
-// handler. It returns the address to listen on and the previews handler.
+// which rebuilds it for each settled change of the source until the end of
+// ctx, opens the previews location, wraps the reloader in the previews
+// handler, makes the sign-in configuration of the sign-in settings, and with
+// an issuer wraps the previews handler in the sign-in middleware. It returns
+// the address to listen on and the handler: the previews handler, behind the
+// sign-in middleware with an issuer.
 func startup(ctx context.Context, args []string, getenv func(string) string) (string, http.Handler, error) {
 	cfg, err := parseConfig(args, getenv)
 	if err != nil {
@@ -80,7 +101,11 @@ func startup(ctx context.Context, args []string, getenv func(string) string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	return cfg.Addr, portal.WithPreviews(reloader, previews), nil
+	h, err = signIn(ctx, signInConfigOf(cfg.SignIn), portal.WithPreviews(reloader, previews))
+	if err != nil {
+		return "", nil, err
+	}
+	return cfg.Addr, h, nil
 }
 
 // builder builds the portal handler of each snapshot of the documentation
@@ -92,16 +117,18 @@ type builder struct {
 }
 
 // build builds the portal handler of the snapshot at root: it reads the
-// portal configuration from the configuration file, adds the Try It setting
-// and the chat, and builds the handler, as startup's boxes do for the first
-// snapshot. A build that fails leaves the chat as it was.
+// portal configuration from the configuration file, adds the Try It setting,
+// the sign-in's account hook and the chat, and builds the handler, as
+// startup's boxes do for the first snapshot. A build that fails leaves the
+// chat as it was.
 func (b *builder) build(root fs.FS) (http.Handler, error) {
 	pcfg, err := portal.ReadConfig(root, b.configPath)
 	if err != nil {
 		return nil, err
 	}
 	pcfg = setTryIt(pcfg, b.cfg.HideTryIt)
-	pcfg, b.chat, err = addChat(pcfg, b.cfg.ChatModel, b.chat)
+	pcfg = addAccount(pcfg, b.cfg.SignIn.Issuer)
+	pcfg, b.chat, err = addChat(pcfg, b.cfg.ChatModel, b.chat, b.cfg.SignIn.Issuer)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +201,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		}
 		cfg.MaxPreviews = n
 	}
+	// HOLE(3): read the sign-in settings from their flags and the environment, the client secret and the session key from the environment alone, and refuse sign-in settings without an issuer
 
 	// The flag package's message and usage go into the error, which main prints.
 	var out strings.Builder
@@ -272,14 +300,24 @@ func setTryIt(pcfg portal.Config, hide bool) portal.Config {
 	return pcfg
 }
 
+// addAccount adds the account hook of the sign-in to the portal
+// configuration when issuer is not empty, so that every page ends with the
+// reader's name and a sign-out link.
+func addAccount(pcfg portal.Config, issuer string) portal.Config {
+	// HOLE(3): with an issuer, set the account hook to signin.AccountLinks
+	return pcfg
+}
+
 // addChat adds the chat's routes to the portal configuration when modelID
 // names a model, so that the portal handler serves a chat page in every
-// portal. It builds the chat for the first snapshot, when c is nil, and gives
-// an existing chat the new snapshot's libraries, so that the chat keeps its
-// conversations across snapshots. It returns the chat for the next snapshot:
-// the one it built or was given, and on a failure the one it was given, so
-// that a snapshot that fails never costs the chat its conversations.
-func addChat(pcfg portal.Config, modelID string, c *chat.Chat) (portal.Config, *chat.Chat, error) {
+// portal. It builds the chat for the first snapshot, when c is nil, with the
+// reader hook of the sign-in when issuer is not empty, so that a signed-in
+// reader's questions count against one limit, and gives an existing chat the
+// new snapshot's libraries, so that the chat keeps its conversations across
+// snapshots. It returns the chat for the next snapshot: the one it built or
+// was given, and on a failure the one it was given, so that a snapshot that
+// fails never costs the chat its conversations.
+func addChat(pcfg portal.Config, modelID string, c *chat.Chat, issuer string) (portal.Config, *chat.Chat, error) {
 	if modelID == "" {
 		return pcfg, nil, nil
 	}
@@ -292,7 +330,9 @@ func addChat(pcfg portal.Config, modelID string, c *chat.Chat) (portal.Config, *
 		if err != nil {
 			return portal.Config{}, nil, err
 		}
-		if c, err = chat.New(chat.Config{Model: m, Libraries: libs}); err != nil {
+		var reader func(*http.Request) string
+		// HOLE(3): with an issuer, count each signed-in reader's questions by signin.ReaderID
+		if c, err = chat.New(chat.Config{Model: m, Libraries: libs, Reader: reader}); err != nil {
 			return portal.Config{}, nil, err
 		}
 	} else if err := c.Reload(libs); err != nil {
@@ -300,4 +340,39 @@ func addChat(pcfg portal.Config, modelID string, c *chat.Chat) (portal.Config, *
 	}
 	pcfg.Chat = c.Routes()
 	return pcfg, c, nil
+}
+
+// signInConfigOf makes the sign-in configuration of the sign-in settings s:
+// none without an issuer, and with one a random session key, with a notice
+// in the log, when s holds none, so that the sessions last until
+// docportal's exit.
+func signInConfigOf(s signInConfig) signin.Config {
+	if s.Issuer == "" {
+		return signin.Config{}
+	}
+	// HOLE(3): without a session key in s, make a random one of 32 bytes and write a notice to the log
+	key := []byte(s.Key)
+	return signin.Config{
+		Issuer:       s.Issuer,
+		ClientID:     s.ClientID,
+		ClientSecret: s.ClientSecret,
+		CallbackURL:  s.CallbackURL,
+		LogoutURL:    s.LogoutURL,
+		Scopes:       strings.FieldsFunc(s.Scopes, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }),
+		Audience:     s.Audience,
+		Lifetime:     s.Lifetime,
+		Key:          key,
+	}
+}
+
+// signIn wraps h, the reloader, in the sign-in middleware of cfg when cfg
+// names an issuer: the middleware signs each reader in through the identity
+// provider and puts the reader's identity into each request's context, so
+// that the request hooks read it. Without an issuer, it returns h
+// unchanged.
+func signIn(ctx context.Context, cfg signin.Config, h http.Handler) (http.Handler, error) {
+	if cfg.Issuer == "" {
+		return h, nil
+	}
+	return signin.New(ctx, cfg, h)
 }

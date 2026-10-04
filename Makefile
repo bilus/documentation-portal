@@ -19,11 +19,12 @@ export CHROME_BIN
 .PHONY: setup generate build lint test test-e2e run
 
 # The core packages leave sign-in to the program that embeds them: none may
-# import an OAuth or OpenID Connect library or an identity provider's
-# package. docportal is such a program, so the check leaves it out: its GCS
-# and S3 drivers need OAuth for the bucket's credentials.
+# import the sign-in package, an OAuth or OpenID Connect library or an
+# identity provider's package. docportal is such a program, so the check
+# leaves it out: its GCS and S3 drivers need OAuth for the bucket's
+# credentials, and its sign-in needs the sign-in package.
 CORE_PACKAGES := ./portal ./source ./chat ./anthropicmodel
-SIGN_IN       := ^(golang\.org/x/oauth2|github\.com/coreos/go-oidc|github\.com/zitadel/oidc|github\.com/markbates/goth|github\.com/auth0|github\.com/okta)(/|$$)
+SIGN_IN       := ^(github\.com/bilus/documentation-portal/signin|golang\.org/x/oauth2|github\.com/coreos/go-oidc|github\.com/zitadel/oidc|github\.com/markbates/goth|github\.com/auth0|github\.com/okta)(/|$$)
 
 setup: $(ELEMENTS_FILES)
 

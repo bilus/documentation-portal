@@ -1,8 +1,10 @@
 # docportal starts up: main.startup runs these steps in order, and main hands
-# the address and the previews handler to the HTTP server. The builder, the
-# build method of main.builder, runs boxes 7, 5, 6 and 3 again for each new
+# the address and the handler, the previews handler behind the sign-in
+# middleware with an issuer, to the HTTP server. The builder, the build
+# method of main.builder, runs boxes 7, 5, 11, 6 and 3 again for each new
 # snapshot, and the preview builder, its buildPreview method, runs boxes 7, 5
-# and 3 for the snapshot of each preview folder, without the chat.
+# and 3 for the snapshot of each preview folder, without the chat. The
+# previews handler passes box 12 on its way to box 10.
 # By hand: dfd --box 300x150 --per-row 5 --number docs/flow.dfd -o flow.svg
 
 {Operator}
@@ -38,9 +40,13 @@
 [5. Add the Try It setting to the portal configuration
  so that the viewer page shows or hides the Try It console
  (main.setTryIt)]
-> portal configuration, chat model, chat
-[6. Add the chat to the portal configuration, if a chat model is named, with the chat kept from the last snapshot
- so that the portal handler serves a chat page in every portal and the chat keeps its conversations
+> portal configuration, issuer
+[11. Add the account hook of the sign-in to the portal configuration, with an issuer
+ so that every page ends with the reader's name and a sign-out link
+ (main.addAccount)]
+> portal configuration, chat model, chat, issuer
+[6. Add the chat to the portal configuration, if a chat model is named, with the chat kept from the last snapshot, and with an issuer the reader hook of the sign-in
+ so that the portal handler serves a chat page in every portal, the chat keeps its conversations, and a signed-in reader's questions count against one limit
  (main.addChat)]
     > chat
     < chat
@@ -62,7 +68,15 @@
 > reloader, previews configuration
 [11. Wrap the reloader in the previews handler, which switches readers in and out of previews at /previews/ and sends each request to the portal handler of the reader's preview or to the reloader
  (portal.WithPreviews, portal.previews.ServeHTTP)]
-> address, previews handler
+> sign-in settings
+[12. Make the sign-in configuration of the sign-in settings: none without an issuer, and with one a random session key, with a notice in the log, when the settings hold none
+ (main.signInConfigOf)]
+    > notice
+    <Log>
+> sign-in configuration, previews handler
+[10. Wrap the previews handler in the sign-in middleware, with an issuer: the middleware signs each reader in through the identity provider and puts the reader's identity into each request's context
+ (main.signIn)]
+> address, handler
 {HTTP server}
 
 # type: arguments = []string
@@ -88,6 +102,11 @@
 # type: builder = func(io/fs.FS) (net/http.Handler, error)
 # type: preview builder = func(io/fs.FS) (net/http.Handler, error)
 # type: previews configuration = portal.PreviewsConfig
+# type: issuer = string
+# type: sign-in settings = main.signInConfig
+# type: notice = string
+# type: sign-in configuration = signin.Config
 # type: address = string
 # type: reloader = net/http.Handler
 # type: previews handler = net/http.Handler
+# type: handler = net/http.Handler
