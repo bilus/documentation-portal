@@ -1,0 +1,2 @@
+# The settings that cmd/mocks prints for a local run.
+/mocks.env

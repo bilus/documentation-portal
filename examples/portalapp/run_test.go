@@ -38,7 +38,6 @@ func (b *lockedBuffer) String() string {
 // does: the mocks print their settings, and the example, given them, the
 // demo documentation and the demo access file, signs two readers in.
 func TestTheExampleRunsAgainstTheMocks(t *testing.T) {
-	t.Skip("HOLE(5): run the mock providers for a local run")
 	bin := t.TempDir()
 	for name, pkg := range map[string]string{"portalapp": ".", "mocks": "./cmd/mocks"} {
 		if out, err := exec.Command("go", "build", "-o", filepath.Join(bin, name), pkg).CombinedOutput(); err != nil {
