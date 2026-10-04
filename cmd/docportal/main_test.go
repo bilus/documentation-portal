@@ -601,7 +601,6 @@ func writePreview(t *testing.T, dir, name, text string) {
 }
 
 func TestParseConfigReadsThePreviewSettings(t *testing.T) {
-	t.Skip("HOLE(3): read the preview settings")
 	env := map[string]string{"DOCPORTAL_ROOT": "gs://docs?prefix=portal/", "DOCPORTAL_PREVIEWS": "previews/", "DOCPORTAL_PREVIEW_IDLE": "30m", "DOCPORTAL_MAX_PREVIEWS": "3"}
 	lookup := func(k string) string { return env[k] }
 	cfg, err := parseConfig(nil, lookup)
@@ -633,7 +632,6 @@ func TestParseConfigReadsThePreviewSettings(t *testing.T) {
 }
 
 func TestStartupLeavesThePreviewsOutOfThePublishedDocumentation(t *testing.T) {
-	t.Skip("HOLE(3): leave the previews location out of the published documentation")
 	dir, url := bucketFolder(t)
 	writePreview(t, dir, "pr-1", "# The preview version\n")
 	// A file of a preview puts the bucket folder over a limit of 1 MiB.
@@ -650,7 +648,6 @@ func TestStartupLeavesThePreviewsOutOfThePublishedDocumentation(t *testing.T) {
 }
 
 func TestStartupServesAPreviewWithoutTheChat(t *testing.T) {
-	t.Skip("HOLE(3): docportal's previews, without the chat")
 	dir, url := bucketFolder(t)
 	writePreview(t, dir, "pr-1", "# The preview version\n")
 	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "0", "-previews", "previews", "-chat-model", "claude-opus-5-5"}, noEnv)
@@ -675,7 +672,6 @@ func TestStartupServesAPreviewWithoutTheChat(t *testing.T) {
 }
 
 func TestStartupEndsADeletedPreview(t *testing.T) {
-	t.Skip("HOLE(3): a deleted preview returns its readers to the published documentation")
 	dir, url := bucketFolder(t)
 	writePreview(t, dir, "pr-1", "# The preview version\n")
 	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "5ms", "-previews", "previews"}, noEnv)

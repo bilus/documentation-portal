@@ -157,7 +157,23 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		}
 		cfg.HideTryIt = hide
 	}
-	// HOLE(3): read DOCPORTAL_PREVIEWS, DOCPORTAL_PREVIEW_IDLE and DOCPORTAL_MAX_PREVIEWS and their flags, and refuse -previews without -root and a negative idle time or limit
+	if v := getenv("DOCPORTAL_PREVIEWS"); v != "" {
+		cfg.Previews = v
+	}
+	if v := getenv("DOCPORTAL_PREVIEW_IDLE"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return config{}, fmt.Errorf("DOCPORTAL_PREVIEW_IDLE: %q is not a duration", v)
+		}
+		cfg.PreviewIdle = d
+	}
+	if v := getenv("DOCPORTAL_MAX_PREVIEWS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return config{}, fmt.Errorf("DOCPORTAL_MAX_PREVIEWS: %q is not a number", v)
+		}
+		cfg.MaxPreviews = n
+	}
 
 	// The flag package's message and usage go into the error, which main prints.
 	var out strings.Builder
@@ -168,6 +184,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&cfg.Root, "root", cfg.Root, "bucket folder that holds the documentation, as a Go CDK URL such as gs://bucket?prefix=docs/; without it, the directory of -config")
 	flags.DurationVar(&cfg.Refresh, "refresh", cfg.Refresh, "how often to check the bucket folder for changes; 0 never")
 	flags.Int64Var(&maxSizeMiB, "max-size", maxSizeMiB, "largest total size of the bucket folder's objects, in MiB; 0 means no limit")
+	flags.StringVar(&cfg.Previews, "previews", cfg.Previews, "previews location: a folder of the bucket folder, such as previews/, with a preview folder for each preview at /previews/{folder}; none turns previews off")
+	flags.DurationVar(&cfg.PreviewIdle, "preview-idle", cfg.PreviewIdle, "how long an unused preview's snapshot stays in memory; 0 means no limit")
+	flags.IntVar(&cfg.MaxPreviews, "max-previews", cfg.MaxPreviews, "most preview snapshots in memory; 0 means no limit")
 	flags.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	flags.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
 	if err := flags.Parse(args); err != nil {
@@ -178,6 +197,14 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	}
 	if maxSizeMiB < 0 || maxSizeMiB > math.MaxInt64>>20 {
 		return config{}, fmt.Errorf("-max-size: %d MiB is not a size between 0 and %d", maxSizeMiB, math.MaxInt64>>20)
+	}
+	switch {
+	case cfg.Previews != "" && cfg.Root == "":
+		return config{}, errors.New("-previews needs -root: previews are folders of the bucket folder")
+	case cfg.PreviewIdle < 0:
+		return config{}, fmt.Errorf("-preview-idle: %v is negative", cfg.PreviewIdle)
+	case cfg.MaxPreviews < 0:
+		return config{}, fmt.Errorf("-max-previews: %d is negative", cfg.MaxPreviews)
 	}
 	cfg.MaxSize = maxSizeMiB << 20
 	return cfg, nil
@@ -195,8 +222,14 @@ func openSource(ctx context.Context, cfg config) (source.Source, string, error) 
 		if err != nil {
 			return nil, "", fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
 		}
-		// HOLE(3): leave the previews location out of the bucket folder's listing
-		return bucket, cfg.ConfigName, nil
+		if cfg.Previews == "" {
+			return bucket, cfg.ConfigName, nil
+		}
+		published, err := bucket.Without(cfg.Previews)
+		if err != nil {
+			return nil, "", fmt.Errorf("-previews: %w", err)
+		}
+		return published, cfg.ConfigName, nil
 	}
 	// The root stays open for as long as docportal runs.
 	dir, err := source.OpenDirectory(filepath.Dir(cfg.ConfigName))
@@ -211,8 +244,26 @@ func openSource(ctx context.Context, cfg config) (source.Source, string, error) 
 // portal handler of each preview folder, loaded at the folder's first
 // request with build. Without a previews location, previews are off.
 func openPreviews(ctx context.Context, cfg config, build func(fs.FS) (http.Handler, error)) (portal.PreviewsConfig, error) {
-	// HOLE(3): the preview snapshots of the previews location, with cfg's refresh interval, idle time and preview limit
-	return portal.PreviewsConfig{}, nil
+	if cfg.Previews == "" {
+		return portal.PreviewsConfig{}, nil
+	}
+	bucket, err := source.OpenBucket(ctx, cfg.Root, cfg.MaxSize)
+	if err != nil {
+		return portal.PreviewsConfig{}, fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
+	}
+	location, err := bucket.Folder(cfg.Previews)
+	if err != nil {
+		return portal.PreviewsConfig{}, fmt.Errorf("-previews: %w", err)
+	}
+	folder := func(name string) (source.Source, error) {
+		f, err := location.Folder(name)
+		if err != nil {
+			return nil, err
+		}
+		return f, nil
+	}
+	previews := source.NewPreviews(ctx, folder, build, cfg.Refresh, cfg.PreviewIdle, cfg.MaxPreviews)
+	return portal.PreviewsConfig{Open: previews.Handler}, nil
 }
 
 // setTryIt adds the Try It setting to the portal configuration.
