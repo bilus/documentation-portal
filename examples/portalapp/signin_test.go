@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bilus/documentation-portal/examples/portalapp/mocks"
 	"github.com/bilus/documentation-portal/portal"
 	"github.com/bilus/documentation-portal/signin"
 )
@@ -23,7 +24,11 @@ func (p *portalTest) serveSignIn(t *testing.T, next http.Handler) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, err := signIn(t.Context(), s.providers, next)
+	rules, err := readAccessFile(s.accessFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := signIn(t.Context(), s.providers, rules, next)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,32 +270,52 @@ func TestSignOutClearsTheChoice(t *testing.T) {
 	}
 }
 
+func TestAReaderInManyTeamsSignsIn(t *testing.T) {
+	org := mocks.GitHubOrg{Login: "acme-corporation-of-many-teams", ID: 1001}
+	reader := mocks.GitHubReader{ID: 8, Login: "busy", Name: "A Busy Reader", Orgs: []mocks.GitHubOrg{org},
+		Teams: []mocks.GitHubTeam{{Org: org, Slug: "partners", ID: 2002}}, PageSize: 100}
+	for i := range 150 {
+		reader.Teams = append(reader.Teams, mocks.GitHubTeam{Org: org, Slug: fmt.Sprintf("a-team-with-a-long-slug-%03d", i), ID: int64(5000 + i)})
+	}
+	github := httptest.NewServer(mocks.GitHub(reader))
+	defer github.Close()
+	p := newPortalTest(t)
+	p.env["GITHUB_URL"], p.env["GITHUB_API_URL"] = github.URL, github.URL
+	p.serveSignIn(t, echo)
+	busy := signInAs(t, p.srv.URL, "github")
+	if page := get(t, busy, p.srv.URL+"/portals/pets/"); page.body != "github github|8" {
+		t.Errorf("the reader of 151 teams got %d %q", page.status, page.body)
+	}
+}
+
 func TestTheChoiceCookieOverHTTPS(t *testing.T) {
-	h, err := signIn(t.Context(), providerSettings{appURL: "https://docs.example.com", sessionKey: testKey,
-		github: githubSettings{clientID: "c", clientSecret: "s", apiURL: gitHubAPI}}, echo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rt, ok := h.(*router)
-	if !ok {
-		t.Fatalf("signIn returned %T, want the sign-in router", h)
-	}
-	c := rt.choiceCookie("github", 60)
-	if c.Name != "__Host-signin_provider" || !c.Secure || c.Path != "/" || c.Domain != "" || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
-		t.Errorf("the choice cookie over https: %+v", c)
-	}
-	if got := rt.providers[0].callbackPath; got != "/auth/github/callback" {
-		t.Errorf("GitHub's callback path is %q", got)
+	for _, app := range []string{"https://docs.example.com", "HTTPS://docs.example.com"} {
+		h, err := signIn(t.Context(), providerSettings{appURL: app, sessionKey: testKey,
+			github: githubSettings{clientID: "c", clientSecret: "s", apiURL: gitHubAPI}}, accessRules{}, echo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rt, ok := h.(*router)
+		if !ok {
+			t.Fatalf("signIn returned %T, want the sign-in router", h)
+		}
+		c := rt.choiceCookie("github", 60)
+		if c.Name != "__Host-signin_provider" || !c.Secure || c.Path != "/" || c.Domain != "" || !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
+			t.Errorf("the choice cookie at %s: %+v", app, c)
+		}
+		if got := rt.providers[0].callbackPath; got != "/auth/github/callback" {
+			t.Errorf("GitHub's callback path is %q", got)
+		}
 	}
 }
 
 func TestSignInNeedsAProvider(t *testing.T) {
-	if h, err := signIn(t.Context(), providerSettings{appURL: "https://docs.example.com", sessionKey: testKey}, echo); err == nil {
+	if h, err := signIn(t.Context(), providerSettings{appURL: "https://docs.example.com", sessionKey: testKey}, accessRules{}, echo); err == nil {
 		t.Errorf("signIn without a provider returned %T", h)
 	}
 	// A provider's own refusal names the provider.
 	_, err := signIn(t.Context(), providerSettings{appURL: "https://docs.example.com", sessionKey: "short",
-		github: githubSettings{clientID: "c", clientSecret: "s", apiURL: gitHubAPI}}, echo)
+		github: githubSettings{clientID: "c", clientSecret: "s", apiURL: gitHubAPI}}, accessRules{}, echo)
 	if err == nil || !strings.Contains(err.Error(), "GitHub") {
 		t.Errorf("signIn with a short session key: %v, want GitHub's refusal", err)
 	}

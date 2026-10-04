@@ -33,10 +33,12 @@ type router struct {
 
 // signIn puts the sign-in in front of h, the previews handler: a sign-in
 // middleware for each configured identity provider of s, Auth0 by its
-// issuer and GitHub through the GitHub provider, each with its provider's
+// issuer and GitHub through the GitHub provider, which keeps the
+// memberships named by a GitHub rule of rules, each with its provider's
 // name in the context of each request, and the sign-in router before them.
-func signIn(ctx context.Context, s providerSettings, h http.Handler) (http.Handler, error) {
-	rt := &router{secure: strings.HasPrefix(s.appURL, "https://")}
+func signIn(ctx context.Context, s providerSettings, rules accessRules, h http.Handler) (http.Handler, error) {
+	app, err := url.Parse(s.appURL)
+	rt := &router{secure: err == nil && app.Scheme == "https"}
 	add := func(p provider, cfg signin.Config) error {
 		cfg.CallbackURL, cfg.SignOutPath, cfg.Key = s.appURL+p.callbackPath, p.signOutPath, []byte(s.sessionKey)
 		mw, err := signin.New(ctx, cfg, withProvider(p.name, h))
@@ -59,7 +61,7 @@ func signIn(ctx context.Context, s providerSettings, h http.Handler) (http.Handl
 	}
 	if s.github.clientID != "" {
 		if err := add(newProvider("github", "GitHub"), signin.Config{
-			Provider:     newGitHub(s.github),
+			Provider:     newGitHub(s.github, func(claim, value string) bool { return rules.names("github", claim, value) }),
 			ClientID:     s.github.clientID,
 			ClientSecret: s.github.clientSecret,
 			Scopes:       []string{"read:org"},

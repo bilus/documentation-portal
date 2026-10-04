@@ -63,8 +63,8 @@ type chatSettings struct {
 // origin, a missing bucket folder URL, a session key under 32 bytes, a
 // refresh interval that is no duration or a negative one, settings without
 // an identity provider, and a provider with some of its settings missing. A
-// provider is on when its client ID is set, and the chat when the API key
-// is.
+// provider is on with any of its settings, and then needs its client ID and
+// secret, and Auth0 its issuer too; the chat is on with the API key.
 func readSettings(getenv func(string) string) (settings, error) {
 	or := func(name, fallback string) string { return cmp.Or(getenv(name), fallback) }
 	s := settings{
@@ -114,6 +114,9 @@ func readSettings(getenv func(string) string) (settings, error) {
 	if err := s.providers.check(); err != nil {
 		return settings{}, err
 	}
+	// The scheme and the host in lower case, as the providers compare them.
+	app, _ := url.Parse(s.providers.appURL) // webURL parsed it
+	s.providers.appURL = app.Scheme + "://" + strings.ToLower(app.Host)
 	return s, nil
 }
 

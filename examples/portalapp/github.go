@@ -24,17 +24,22 @@ import (
 // from GitHub's API.
 type githubProvider struct {
 	endpoint oauth2.Endpoint
-	api      string       // the API's URL, without a trailing slash
-	client   *http.Client // for the API, with a timeout of its own
+	api      string                         // the API's URL, without a trailing slash
+	client   *http.Client                   // for the API, with a timeout of its own
+	keep     func(claim, value string) bool // whether a rule names a membership; nil keeps every one
 }
 
 // newGitHub returns the GitHub provider of s: GitHub's OAuth endpoints, or
-// with a web URL the same paths on its host, and the API at the API URL.
-func newGitHub(s githubSettings) githubProvider {
+// with a web URL the same paths on its host, the API at the API URL, and
+// keep, which tells the memberships that the claims keep: those of the
+// claims orgs and org_ids, and teams and team_ids, for which keep holds,
+// and every one for a nil keep.
+func newGitHub(s githubSettings, keep func(claim, value string) bool) githubProvider {
 	g := githubProvider{
 		endpoint: github.Endpoint,
 		api:      strings.TrimSuffix(cmp.Or(s.apiURL, gitHubAPI), "/"),
-		client:   &http.Client{Timeout: 30 * time.Second},
+		client:   &http.Client{Timeout: 30 * time.Second, CheckRedirect: noRedirect},
+		keep:     keep,
 	}
 	if web := strings.TrimSuffix(s.webURL, "/"); web != "" {
 		g.endpoint = oauth2.Endpoint{AuthURL: web + "/login/oauth/authorize", TokenURL: web + "/login/oauth/access_token"}
@@ -48,11 +53,13 @@ func (g githubProvider) Endpoint() oauth2.Endpoint {
 }
 
 // Identity identifies the reader to whom GitHub gave token: the subject,
-// the name and the email from GET /user, and the claims login, orgs and
-// teams from GET /user/orgs and GET /user/teams, or fails the sign-in with
-// an error for any answer of the API other than 200. The subject is
+// the name and the email from GET /user, the claims login and id, and the
+// claims orgs, org_ids, teams and team_ids of the memberships named by a
+// GitHub rule, from GET /user/orgs and GET /user/teams, or fails the sign-in
+// with an error for any answer of the API other than 200. The subject is
 // github| and the user's numeric ID, and the name is the user's name, else
-// the login. The claims hold the names as GitHub spells them, from every
+// the login. The claims hold the names as GitHub spells them and the IDs
+// in decimal, of the memberships allowed by the provider's keep, from every
 // page of each list, and the token goes to no host other than the API's.
 func (g githubProvider) Identity(ctx context.Context, token *oauth2.Token) (signin.Identity, error) {
 	var user struct {
@@ -68,12 +75,14 @@ func (g githubProvider) Identity(ctx context.Context, token *oauth2.Token) (sign
 		return signin.Identity{}, errors.New("github: the user has no ID or login")
 	}
 	orgs, err := pages[struct {
+		ID    int64  `json:"id"`
 		Login string `json:"login"`
 	}](ctx, g, token, "/user/orgs")
 	if err != nil {
 		return signin.Identity{}, err
 	}
 	teams, err := pages[struct {
+		ID           int64  `json:"id"`
 		Slug         string `json:"slug"`
 		Organization struct {
 			Login string `json:"login"`
@@ -82,19 +91,39 @@ func (g githubProvider) Identity(ctx context.Context, token *oauth2.Token) (sign
 	if err != nil {
 		return signin.Identity{}, err
 	}
-	var orgNames, teamNames []string
+	var orgNames, orgIDs, teamNames, teamIDs []string
 	for _, o := range orgs {
-		orgNames = append(orgNames, o.Login)
+		name, id := o.Login, strconv.FormatInt(o.ID, 10)
+		if g.keeps("orgs", name) || g.keeps("org_ids", id) {
+			orgNames, orgIDs = append(orgNames, name), append(orgIDs, id)
+		}
 	}
 	for _, t := range teams {
-		teamNames = append(teamNames, t.Organization.Login+"/"+t.Slug)
+		name, id := t.Organization.Login+"/"+t.Slug, strconv.FormatInt(t.ID, 10)
+		if g.keeps("teams", name) || g.keeps("team_ids", id) {
+			teamNames, teamIDs = append(teamNames, name), append(teamIDs, id)
+		}
 	}
+	id := strconv.FormatInt(user.ID, 10)
 	return signin.Identity{
-		Subject: "github|" + strconv.FormatInt(user.ID, 10),
+		Subject: "github|" + id,
 		Name:    cmp.Or(user.Name, user.Login),
 		Email:   user.Email,
-		Claims:  signin.Claims{"login": user.Login, "orgs": orgNames, "teams": teamNames},
+		Claims: signin.Claims{"login": user.Login, "id": id, "orgs": orgNames, "org_ids": orgIDs,
+			"teams": teamNames, "team_ids": teamIDs},
 	}, nil
+}
+
+// noRedirect stops the API's client at a redirect, whose answer then fails
+// the identity, so that the token reaches the API's host alone.
+func noRedirect(*http.Request, []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
+// keeps reports whether the claims keep the membership value of claim:
+// every one without a filter.
+func (g githubProvider) keeps(claim, value string) bool {
+	return g.keep == nil || g.keep(claim, value)
 }
 
 // maxPages bounds the pages of one list, of 100 entries each.
@@ -134,7 +163,7 @@ func (g githubProvider) get(ctx context.Context, token *oauth2.Token, u string, 
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	client := g.client
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: 30 * time.Second, CheckRedirect: noRedirect}
 	}
 	resp, err := client.Do(req)
 	if err != nil {

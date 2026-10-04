@@ -14,7 +14,9 @@
 # the access hook, for the reader's access, and that access, box 13,
 # whether the reader may see each portal and section and open a preview.
 # The access rules of box 2 come back as the receiver of box 12, and the
-# GitHub provider of box 8 as the receiver of box 10. The library is outside
+# GitHub provider of box 8 as the receiver of box 10, which asks the access
+# rules for the memberships named by a rule, so that the session cookie
+# holds those alone. The library is outside
 # the example's module, so a box names its functions by import path.
 # By hand: dfd --box 300x150 --per-row 4 --number examples/portalapp/docs/flow.dfd -o flow.svg
 
@@ -59,8 +61,8 @@
     > keys
     < listing, files
     <Bucket folder>
-> provider settings, previews handler
-[8. Put the sign-in in front of the previews handler: a sign-in middleware for each configured identity provider, Auth0 by its issuer and GitHub through the GitHub provider, each with its provider's name in the context of each request, and the sign-in router before them
+> provider settings, access rules, previews handler
+[8. Put the sign-in in front of the previews handler: a sign-in middleware for each configured identity provider, Auth0 by its issuer and GitHub through the GitHub provider, which keeps the memberships named by a GitHub rule of the access rules, each with its provider's name in the context of each request, and the sign-in router before them
  (main.signIn, main.newGitHub, main.githubProvider.Endpoint)]
     > issuer
     < provider metadata
@@ -76,8 +78,8 @@
 > response writer, request
 {Sign-in middleware}
 > access token
-[10. Identify the reader to whom GitHub gave the access token: the subject, the name and the email from GET /user, and the claims login, orgs and teams from GET /user/orgs and GET /user/teams, or fail the sign-in
- (main.githubProvider.Identity)]
+[10. Identify the reader to whom GitHub gave the access token: the subject, the name and the email from GET /user, the claims login and id, and the claims orgs, org_ids, teams and team_ids of the memberships named by a GitHub rule, from GET /user/orgs and GET /user/teams, or fail the sign-in
+ (main.githubProvider.Identity, main.accessRules.names)]
     > access token
     < user, organizations, teams
     <GitHub API>

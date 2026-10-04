@@ -34,14 +34,14 @@ func TestReadAccessFile(t *testing.T) {
 		Labels: map[string][]rule{
 			"staff": {
 				{Provider: "auth0", Claim: mocks.RolesClaim, Values: []string{"staff"}},
-				{Provider: "github", Claim: "teams", Values: []string{"acme/staff"}},
+				{Provider: "github", Claim: "team_ids", Values: []string{"2001"}},
 			},
 			"partner": {
 				{Provider: "auth0", Claim: mocks.RolesClaim, Values: []string{"partner"}},
-				{Provider: "github", Claim: "teams", Values: []string{"acme/partners"}},
+				{Provider: "github", Claim: "team_ids", Values: []string{"2002"}},
 			},
 		},
-		Previews: []rule{{Provider: "github", Claim: "orgs", Values: []string{"acme"}}},
+		Previews: []rule{{Provider: "github", Claim: "org_ids", Values: []string{"1001"}}},
 	}
 	if !reflect.DeepEqual(rules, want) {
 		t.Errorf("the demo's access rules:\n got %+v\nwant %+v", rules, want)
@@ -94,6 +94,58 @@ func TestReadAccessFileRefusesAnInvalidFile(t *testing.T) {
 	}
 }
 
+func TestAGitHubRuleMayNameAnID(t *testing.T) {
+	rules, err := readAccessFile(writeAccessFile(t, `
+labels:
+  partner:
+    - {provider: github, claim: team_ids, values: [2002]}
+  staff:
+    - {provider: github, claim: id, values: [2]}
+previews:
+  - {provider: github, claim: org_ids, values: [1001]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	grace := rules.accessOf("github", signin.Claims{"id": "2", "orgs": []any{"Acme"}, "org_ids": []any{"1001"}, "teams": []any{"Acme/partners"}, "team_ids": []any{"2002"}})
+	if !grace.Portal(partners) || !grace.Section(pets, staffNotes) || !grace.Preview("pr-1") {
+		t.Errorf("Grace's IDs open nothing: %+v", grace)
+	}
+	// Another account, in an organization and a team of Grace's names but
+	// of other IDs, as after a rename, opens nothing.
+	other := rules.accessOf("github", signin.Claims{"id": "7", "orgs": []any{"Acme"}, "org_ids": []any{"7001"}, "teams": []any{"Acme/partners"}, "team_ids": []any{"7002"}})
+	if other.Portal(partners) || other.Section(pets, staffNotes) || other.Preview("pr-1") {
+		t.Errorf("Grace's names open to another account: %+v", other)
+	}
+}
+
+func TestTheRulesNameTheirValues(t *testing.T) {
+	rules := accessRules{
+		Labels: map[string][]rule{
+			"staff":   {{Provider: "auth0", Claim: mocks.RolesClaim, Values: []string{"staff"}}},
+			"partner": {{Provider: "github", Claim: "team_ids", Values: []string{"2002"}}},
+		},
+		Previews: []rule{{Provider: "github", Claim: "orgs", Values: []string{"acme"}}},
+	}
+	for name, tc := range map[string]struct {
+		provider, claim, value string
+		want                   bool
+	}{
+		"a label's value":                {"github", "team_ids", "2002", true},
+		"a previews rule's value":        {"github", "orgs", "acme", true},
+		"a GitHub name in another case":  {"github", "orgs", "ACME", true},
+		"an Auth0 value":                 {"auth0", mocks.RolesClaim, "staff", true},
+		"an Auth0 value in another case": {"auth0", mocks.RolesClaim, "Staff", false},
+		"a value of another claim":       {"github", "teams", "2002", false},
+		"a value of another provider":    {"auth0", "team_ids", "2002", false},
+		"a value that no rule names":     {"github", "team_ids", "2001", false},
+	} {
+		if got := rules.names(tc.provider, tc.claim, tc.value); got != tc.want {
+			t.Errorf("%s: names(%s, %s, %s) is %v", name, tc.provider, tc.claim, tc.value, got)
+		}
+	}
+}
+
 // The demo's portals and sections, with their labels.
 var (
 	pets       = portal.Portal{Name: "Pets"}
@@ -112,18 +164,19 @@ func TestTheAccessRulesMapClaimsToLabels(t *testing.T) {
 		claims          signin.Claims
 		partners, staff bool
 	}{
-		"Ada, staff at Auth0":                {"auth0", signin.Claims{mocks.RolesClaim: []any{"staff"}}, false, true},
-		"a partner at Auth0, in a string":    {"auth0", signin.Claims{mocks.RolesClaim: "partner"}, true, false},
-		"Grace, a partner at GitHub":         {"github", signin.Claims{"orgs": []any{"acme"}, "teams": []any{"acme/partners"}}, true, false},
-		"a staff team at GitHub":             {"github", signin.Claims{"teams": []any{"acme/staff", "acme/partners"}}, true, true},
-		"Auth0's claim through GitHub":       {"github", signin.Claims{mocks.RolesClaim: []any{"staff"}}, false, false},
-		"GitHub's claim through Auth0":       {"auth0", signin.Claims{"teams": []any{"acme/staff"}}, false, false},
-		"a role in another letter case":      {"auth0", signin.Claims{mocks.RolesClaim: []any{"Staff"}}, false, false},
-		"a reader without claims":            {"auth0", nil, false, false},
-		"a claim of other values":            {"auth0", signin.Claims{mocks.RolesClaim: []any{"visitor"}}, false, false},
-		"a provider of no rule":              {"okta", signin.Claims{mocks.RolesClaim: []any{"staff"}}, false, false},
-		"a claim that holds no string":       {"auth0", signin.Claims{mocks.RolesClaim: []any{map[string]any{"name": "staff"}}}, false, false},
-		"a team of the right slug elsewhere": {"github", signin.Claims{"teams": []any{"globex/staff"}}, false, false},
+		"Ada, staff at Auth0":             {"auth0", signin.Claims{mocks.RolesClaim: []any{"staff"}}, false, true},
+		"a partner at Auth0, in a string": {"auth0", signin.Claims{mocks.RolesClaim: "partner"}, true, false},
+		"Grace, a partner at GitHub":      {"github", signin.Claims{"org_ids": []any{"1001"}, "team_ids": []any{"2002"}}, true, false},
+		"a staff team at GitHub":          {"github", signin.Claims{"team_ids": []any{"2001", "2002"}}, true, true},
+		"Auth0's claim through GitHub":    {"github", signin.Claims{mocks.RolesClaim: []any{"staff"}}, false, false},
+		"GitHub's claim through Auth0":    {"auth0", signin.Claims{"team_ids": []any{"2001"}}, false, false},
+		"a role in another letter case":   {"auth0", signin.Claims{mocks.RolesClaim: []any{"Staff"}}, false, false},
+		"a reader without claims":         {"auth0", nil, false, false},
+		"a claim of other values":         {"auth0", signin.Claims{mocks.RolesClaim: []any{"visitor"}}, false, false},
+		"a provider of no rule":           {"okta", signin.Claims{mocks.RolesClaim: []any{"staff"}}, false, false},
+		"a claim that holds no string":    {"auth0", signin.Claims{mocks.RolesClaim: []any{map[string]any{"name": "staff"}}}, false, false},
+		"the names of the teams, not IDs": {"github", signin.Claims{"teams": []any{"Acme/staff", "Acme/partners"}}, false, false},
+		"a team of another ID":            {"github", signin.Claims{"team_ids": []any{"3001"}}, false, false},
 	} {
 		a := rules.accessOf(tc.provider, tc.claims)
 		if !a.Portal(pets) || !a.Section(pets, api) {
@@ -180,7 +233,7 @@ func TestPreviewsOpenToTheReadersOfThePreviewRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var grace portal.Access = rules.accessOf("github", signin.Claims{"orgs": []any{"acme"}, "teams": []any{"acme/partners"}})
+	var grace portal.Access = rules.accessOf("github", signin.Claims{"org_ids": []any{"1001"}, "team_ids": []any{"2002"}})
 	previews, ok := grace.(portal.PreviewAccess)
 	if !ok {
 		t.Fatalf("the access %T opens no previews", grace)
@@ -192,8 +245,9 @@ func TestPreviewsOpenToTheReadersOfThePreviewRules(t *testing.T) {
 	}
 	for name, a := range map[string]readerAccess{
 		"Ada at Auth0":                   rules.accessOf("auth0", signin.Claims{mocks.RolesClaim: []any{"staff"}}),
-		"another organization":           rules.accessOf("github", signin.Claims{"orgs": []any{"globex"}}),
-		"the organization through Auth0": rules.accessOf("auth0", signin.Claims{"orgs": []any{"acme"}}),
+		"another organization":           rules.accessOf("github", signin.Claims{"org_ids": []any{"1002"}}),
+		"the organization's name alone":  rules.accessOf("github", signin.Claims{"orgs": []any{"Acme"}}),
+		"the organization through Auth0": rules.accessOf("auth0", signin.Claims{"org_ids": []any{"1001"}}),
 	} {
 		if a.Preview("pr-1") {
 			t.Errorf("%s may open the preview pr-1", name)

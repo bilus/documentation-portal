@@ -60,7 +60,7 @@ func startup(ctx context.Context, getenv func(string) string) (string, http.Hand
 	}
 	reloader := source.NewReloader(ctx, published, snap.Listing, h, s.refresh, b.build)
 	previews := withPreviews(ctx, reloader, location, s.refresh, rules, b.buildPreview)
-	h, err = signIn(ctx, s.providers, previews)
+	h, err = signIn(ctx, s.providers, rules, previews)
 	if err != nil {
 		return "", nil, err
 	}

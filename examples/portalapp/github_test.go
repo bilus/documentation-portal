@@ -45,12 +45,81 @@ func stubToken(t *testing.T, base string) *oauth2.Token {
 	return token
 }
 
+// The organizations of the tests at the stub GitHub.
+var (
+	acme    = mocks.GitHubOrg{Login: "Acme", ID: 1001}
+	globex  = mocks.GitHubOrg{Login: "globex", ID: 1002}
+	initech = mocks.GitHubOrg{Login: "Initech", ID: 1003}
+)
+
+func TestTheGitHubProviderGivesTheIDs(t *testing.T) {
+	srv := httptest.NewServer(mocks.GitHub(mocks.Grace))
+	defer srv.Close()
+	id, err := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, nil).Identity(t.Context(), stubToken(t, srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for claim, want := range map[string][]string{"id": {"2"}, "org_ids": {"1001"}, "team_ids": {"2002"}} {
+		if got := id.Claims.Strings(claim); !slices.Equal(got, want) {
+			t.Errorf("the claim %s holds %q, want %q", claim, got, want)
+		}
+	}
+}
+
+func TestTheGitHubProviderKeepsTheNamedMemberships(t *testing.T) {
+	srv := httptest.NewServer(mocks.GitHub(mocks.GitHubReader{ID: 583231, Login: "Octocat", Orgs: []mocks.GitHubOrg{acme, globex, initech},
+		Teams: []mocks.GitHubTeam{{Org: acme, Slug: "staff", ID: 2001}, {Org: globex, Slug: "docs", ID: 3001}, {Org: initech, Slug: "partners", ID: 4001}}}))
+	defer srv.Close()
+	rules := accessRules{
+		Labels:   map[string][]rule{"partner": {{Provider: "github", Claim: "team_ids", Values: []string{"4001"}}}},
+		Previews: []rule{{Provider: "github", Claim: "orgs", Values: []string{"GLOBEX"}}, {Provider: "auth0", Claim: "orgs", Values: []string{"acme"}}},
+	}
+	keep := func(claim, value string) bool { return rules.names("github", claim, value) }
+	id, err := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, keep).Identity(t.Context(), stubToken(t, srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for claim, want := range map[string][]string{
+		"login": {"Octocat"}, "id": {"583231"},
+		"orgs": {"globex"}, "org_ids": {"1002"},
+		"teams": {"Initech/partners"}, "team_ids": {"4001"},
+	} {
+		if got := id.Claims.Strings(claim); !slices.Equal(got, want) {
+			t.Errorf("the claim %s holds %q, want %q", claim, got, want)
+		}
+	}
+}
+
+func TestTheGitHubProviderFollowsNoRedirect(t *testing.T) {
+	var tokens atomic.Int32
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			tokens.Add(1)
+		}
+		w.Write([]byte(`{"id":2,"login":"grace"}`))
+	}))
+	defer elsewhere.Close()
+	stub := mocks.GitHub(mocks.Grace)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user" {
+			http.Redirect(w, r, elsewhere.URL+"/user", http.StatusTemporaryRedirect)
+			return
+		}
+		stub.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, nil)
+	if id, err := g.Identity(t.Context(), stubToken(t, srv.URL)); err == nil || tokens.Load() != 0 {
+		t.Errorf("a redirect of GET /user: the identity %+v, the error %v, %d tokens elsewhere", id, err, tokens.Load())
+	}
+}
+
 func TestTheGitHubEndpoint(t *testing.T) {
-	if got := newGitHub(githubSettings{apiURL: "https://api.github.com"}).Endpoint(); got != github.Endpoint {
+	if got := newGitHub(githubSettings{apiURL: "https://api.github.com"}, nil).Endpoint(); got != github.Endpoint {
 		t.Errorf("without a web URL, the endpoint is %+v, want GitHub's", got)
 	}
 	for _, web := range []string{"http://127.0.0.1:9200", "http://127.0.0.1:9200/"} {
-		got := newGitHub(githubSettings{webURL: web, apiURL: "http://127.0.0.1:9200"}).Endpoint()
+		got := newGitHub(githubSettings{webURL: web, apiURL: "http://127.0.0.1:9200"}, nil).Endpoint()
 		if got.AuthURL != "http://127.0.0.1:9200/login/oauth/authorize" || got.TokenURL != "http://127.0.0.1:9200/login/oauth/access_token" {
 			t.Errorf("with the web URL %s, the endpoint is %+v", web, got)
 		}
@@ -69,9 +138,10 @@ func TestTheGitHubProviderNamesTheReader(t *testing.T) {
 			login:  []string{"grace"}, orgs: []string{"Acme"}, teams: []string{"Acme/partners"},
 		},
 		"a reader of several pages, without a name": {
-			reader: mocks.GitHubReader{ID: 583231, Login: "Octocat", Orgs: []string{"Acme", "globex", "Initech"}, Teams: []string{"Acme/staff", "globex/docs", "Initech/partners"}},
-			want:   signin.Identity{Subject: "github|583231", Name: "Octocat"},
-			login:  []string{"Octocat"}, orgs: []string{"Acme", "globex", "Initech"}, teams: []string{"Acme/staff", "globex/docs", "Initech/partners"},
+			reader: mocks.GitHubReader{ID: 583231, Login: "Octocat", Orgs: []mocks.GitHubOrg{acme, globex, initech},
+				Teams: []mocks.GitHubTeam{{Org: acme, Slug: "staff", ID: 2001}, {Org: globex, Slug: "docs", ID: 3001}, {Org: initech, Slug: "partners", ID: 4001}}},
+			want:  signin.Identity{Subject: "github|583231", Name: "Octocat"},
+			login: []string{"Octocat"}, orgs: []string{"Acme", "globex", "Initech"}, teams: []string{"Acme/staff", "globex/docs", "Initech/partners"},
 		},
 		"a reader of no organization": {
 			reader: mocks.GitHubReader{ID: 9, Login: "solo", Name: "Solo"},
@@ -80,7 +150,7 @@ func TestTheGitHubProviderNamesTheReader(t *testing.T) {
 		},
 	} {
 		srv := httptest.NewServer(mocks.GitHub(tc.reader))
-		g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL})
+		g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, nil)
 		id, err := g.Identity(t.Context(), stubToken(t, srv.URL))
 		srv.Close()
 		if err != nil {
@@ -99,7 +169,8 @@ func TestTheGitHubProviderNamesTheReader(t *testing.T) {
 }
 
 func TestTheGitHubProviderFailsOnAnAPIError(t *testing.T) {
-	stub := mocks.GitHub(mocks.GitHubReader{ID: 2, Login: "grace", Name: "Grace Hopper", Orgs: []string{"Acme", "Globex"}, Teams: []string{"Acme/partners", "Globex/docs"}})
+	stub := mocks.GitHub(mocks.GitHubReader{ID: 2, Login: "grace", Name: "Grace Hopper", Orgs: []mocks.GitHubOrg{acme, globex},
+		Teams: []mocks.GitHubTeam{{Org: acme, Slug: "partners", ID: 2002}, {Org: globex, Slug: "docs", ID: 3001}}})
 	for name, change := range map[string]func(w http.ResponseWriter, r *http.Request) bool{
 		"a refused token": func(w http.ResponseWriter, r *http.Request) bool {
 			r.Header.Set("Authorization", "Bearer an unknown token")
@@ -135,7 +206,7 @@ func TestTheGitHubProviderFailsOnAnAPIError(t *testing.T) {
 			}
 			stub.ServeHTTP(w, r)
 		}))
-		g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL})
+		g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, nil)
 		if id, err := g.Identity(t.Context(), stubToken(t, srv.URL)); err == nil {
 			t.Errorf("%s: the provider named %+v", name, id)
 		}
@@ -158,7 +229,7 @@ func TestTheGitHubProviderFailsOnAnAPIError(t *testing.T) {
 		stub.ServeHTTP(w, r)
 	}))
 	defer srv.Close()
-	g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL})
+	g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, nil)
 	if id, err := g.Identity(t.Context(), stubToken(t, srv.URL)); err == nil || elsewhere.Load() != 0 {
 		t.Errorf("a next page on another host: the identity %+v, the error %v, %d requests there", id, err, elsewhere.Load())
 	}
@@ -175,7 +246,7 @@ func stubAuthorized(w http.ResponseWriter, r *http.Request, stub http.Handler) b
 }
 
 func TestNextPage(t *testing.T) {
-	g := newGitHub(githubSettings{apiURL: "https://api.github.com"})
+	g := newGitHub(githubSettings{apiURL: "https://api.github.com"}, nil)
 	for link, want := range map[string]string{
 		"": "",
 		`<https://api.github.com/user/teams?page=2>; rel="next", <https://api.github.com/user/teams?page=5>; rel="last"`: "https://api.github.com/user/teams?page=2",

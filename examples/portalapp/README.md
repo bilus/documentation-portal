@@ -82,9 +82,8 @@ file that portalapp reads at startup, never a file of the bucket folder, so
 that whoever uploads documentation cannot grant themselves access. Under
 `labels`, each label of the configuration file has a list of rules; under
 `previews`, a list of previews rules opens every preview to each matching
-reader.
-A rule matches a reader who signed in through its provider and whose claim
-holds one of its values:
+reader. A rule matches a reader who signed in through its provider and
+whose claim holds one of its values:
 
     labels:
       staff:
@@ -92,26 +91,41 @@ holds one of its values:
           claim: https://docs.example.com/roles
           values: [staff]
         - provider: github
-          claim: teams
-          values: [acme/staff]
+          claim: team_ids
+          values: ["2001"] # acme/staff
       partner:
         - provider: github
-          claim: teams
-          values: [acme/partners]
+          claim: team_ids
+          values: ["2002"] # acme/partners
     previews:
       - provider: github
-        claim: orgs
-        values: [acme]
+        claim: org_ids
+        values: ["1001"] # acme
 
 A portal or a section without labels opens to every signed-in reader, and
 one with labels to a reader with one of them; a section needs its portal
 open too. An Auth0 rule may name any claim of the ID token, and matches its
-values exactly. A GitHub rule names one of the claims of the GitHub
-provider: `login`, the reader's login; `orgs`, the logins of the reader's
-organizations; and `teams`, each of the reader's teams as `org/team-slug`.
-It matches them in any letter case, as on GitHub. portalapp refuses to
-start with a missing access file, one with an unknown key, or a rule
-without a provider, a claim or values.
+values exactly. Keep it to a claim under the administrators' control, such
+as the roles claim or one from `app_metadata`: a rule on `email`, `name` or
+`nickname` opens to whoever sets that claim, and Auth0 gives an email
+whether or not anyone verified it.
+
+A GitHub rule names one of the claims of the GitHub provider: `login` and
+`id`, the reader's login and numeric ID; `orgs` and `org_ids`, the logins
+and IDs of the reader's organizations; and `teams` and `team_ids`, each of
+the reader's teams as `org/team-slug` and by its ID. It matches the names
+in any letter case, as on GitHub. A name changes hands: after a rename,
+another account may take an organization's or a user's old name, and with
+it the rules on that name. Write rules on the IDs, which never change
+hands, and keep the names in comments; `gh api orgs/acme --jq .id` gives an
+organization's ID, and `gh api orgs/acme/teams/partners --jq .id` a team's.
+The GitHub provider keeps in a reader's session only the organizations and
+teams named by some rule, so that a reader in many teams still fits the
+session cookie; after a change of the access file, a reader signs in again
+for the new rules to see the reader's other memberships.
+
+portalapp refuses to start with a missing access file, one with an unknown
+key, or a rule without a provider, a claim or values.
 
 ## Auth0
 
@@ -182,16 +196,19 @@ Each setting comes from the environment.
 | `PORTAL_ACCESS_FILE` | `access.yaml` | the access file |
 | `PORTAL_SESSION_KEY` | required | 32 bytes or more of secret for the session cookies, the same for every replica |
 | `PORTAL_CHAT_MODEL` | `claude-opus-5-5` | the chat's model |
-| `AUTH0_ISSUER`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` | none | Auth0, on with its client ID |
+| `AUTH0_ISSUER`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET` | none | Auth0, on with any of its settings |
 | `AUTH0_LOGOUT_URL` | none | the reader's destination after a sign-out from Auth0; none for the signed-out page |
-| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | none | GitHub, on with its client ID |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | none | GitHub, on with any of its settings |
 | `GITHUB_URL`, `GITHUB_API_URL` | GitHub's | GitHub's web and API hosts, for the stub |
 | `ANTHROPIC_API_KEY` | none | the chat, on with the key |
 | `ANTHROPIC_BASE_URL` | Anthropic's | the Messages API's host |
 
-At least one identity provider must be on. portalapp refuses to start
-without the required settings, with a provider whose settings are
-incomplete, or with an application URL that has a path.
+At least one identity provider must be on. A provider is on with any of
+its settings, and then needs its client ID and secret, and Auth0 its
+issuer too, so that a stray setting of a provider stops startup with its
+name. portalapp refuses to start without the required settings, with a
+provider whose settings are incomplete, or with an application URL that
+has a path.
 
 ## Docker
 
@@ -202,7 +219,16 @@ module `github.com/bilus/live-templ`, which Go fetches with git, so pass a
 keeps it:
 
     docker build -f examples/portalapp/Dockerfile --secret id=netrc,src=$HOME/.netrc -t portalapp .
-    docker run -p 8080:8080 --env-file portalapp.env portalapp
+
+The image holds the program alone, so mount the access file, and for GCS
+outside Google Cloud the service account's key, beside the settings in a
+file of `NAME=value` lines; on Cloud Run, the service's own account reads
+the bucket, with no key:
+
+    docker run -p 8080:8080 --env-file portalapp.env \
+      -v "$PWD/access.yaml:/etc/portalapp/access.yaml:ro" -e PORTAL_ACCESS_FILE=/etc/portalapp/access.yaml \
+      -v "$PWD/key.json:/etc/portalapp/key.json:ro" -e GOOGLE_APPLICATION_CREDENTIALS=/etc/portalapp/key.json \
+      portalapp
 
 ## Tests
 

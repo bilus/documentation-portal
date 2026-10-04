@@ -46,15 +46,35 @@ type Auth0Reader struct {
 type GitHubReader struct {
 	ID                 int64
 	Login, Name, Email string
-	Orgs               []string // organization logins, as GitHub spells them
-	Teams              []string // each org/team-slug
+	Orgs               []GitHubOrg
+	Teams              []GitHubTeam
+	PageSize           int // the entries on each page of a list; 0 for one
 }
 
+// GitHubOrg is an organization of the stub GitHub: its login, as GitHub
+// spells it, and its ID.
+type GitHubOrg struct {
+	Login string
+	ID    int64
+}
+
+// GitHubTeam is a team of the stub GitHub: its organization, its slug and
+// its ID.
+type GitHubTeam struct {
+	Org  GitHubOrg
+	Slug string
+	ID   int64
+}
+
+// The demo's organization at the stub GitHub.
+var acme = GitHubOrg{Login: "Acme", ID: 1001}
+
 // The demo readers: Ada with the role staff at Auth0, and Grace in the
-// organization Acme and its team partners at GitHub.
+// organization Acme, 1001, and its team partners, 2002, at GitHub.
 var (
 	Ada   = Auth0Reader{Subject: "auth0|ada", Name: "Ada Lovelace", Email: "ada@example.com", Roles: []string{"staff"}}
-	Grace = GitHubReader{ID: 2, Login: "grace", Name: "Grace Hopper", Email: "grace@example.com", Orgs: []string{"Acme"}, Teams: []string{"Acme/partners"}}
+	Grace = GitHubReader{ID: 2, Login: "grace", Name: "Grace Hopper", Email: "grace@example.com",
+		Orgs: []GitHubOrg{acme}, Teams: []GitHubTeam{{Org: acme, Slug: "partners", ID: 2002}}}
 )
 
 // StartAuth0 starts the mock Auth0 on ln: mockoidc with the client
@@ -222,7 +242,7 @@ func (g *stubGitHub) user(w http.ResponseWriter, r *http.Request) {
 func (g *stubGitHub) orgs(w http.ResponseWriter, r *http.Request) {
 	var list []any
 	for _, org := range g.reader.Orgs {
-		list = append(list, map[string]any{"login": org})
+		list = append(list, map[string]any{"login": org.Login, "id": org.ID})
 	}
 	g.page(w, r, list)
 }
@@ -231,15 +251,14 @@ func (g *stubGitHub) orgs(w http.ResponseWriter, r *http.Request) {
 func (g *stubGitHub) teams(w http.ResponseWriter, r *http.Request) {
 	var list []any
 	for _, team := range g.reader.Teams {
-		org, slug, _ := strings.Cut(team, "/")
-		list = append(list, map[string]any{"slug": slug, "organization": map[string]any{"login": org}})
+		list = append(list, map[string]any{"id": team.ID, "slug": team.Slug, "organization": map[string]any{"login": team.Org.Login, "id": team.Org.ID}})
 	}
 	g.page(w, r, list)
 }
 
-// page serves the entry of list on the page of r's query, from 1, with a
-// Link header to the next page when there is one, or an empty list for a
-// token without the scope read:org.
+// page serves the entries of list on the page of r's query, from 1, the
+// reader's page size each, with a Link header to the next page when there
+// is one, or an empty list for a token without the scope read:org.
 func (g *stubGitHub) page(w http.ResponseWriter, r *http.Request, list []any) {
 	ok, readOrg := g.authorized(r)
 	if !ok {
@@ -253,11 +272,12 @@ func (g *stubGitHub) page(w http.ResponseWriter, r *http.Request, list []any) {
 	if err != nil || n < 1 {
 		n = 1
 	}
-	entries := []any{}
-	if n <= len(list) {
-		entries = list[n-1 : n]
+	size := max(g.reader.PageSize, 1)
+	entries := list[min((n-1)*size, len(list)):min(n*size, len(list))]
+	if entries == nil {
+		entries = []any{}
 	}
-	if n < len(list) {
+	if n*size < len(list) {
 		next := url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path, RawQuery: "page=" + strconv.Itoa(n+1)}
 		w.Header().Set("Link", fmt.Sprintf(`<%s>; rel="next"`, next.String()))
 	}
