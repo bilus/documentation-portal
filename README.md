@@ -411,7 +411,9 @@ and keeps the ID in the page's session for the page's socket. live-templ signs
 the session, so a reader cannot change the ID, but does not encrypt it, so the
 reader's browser can read it: return an ID that the reader may see. A loaded
 page asks as its reader for up to 14 days, the life of live-templ's session,
-even after a sign-out, and so does any copy of the page. With the
+even after a sign-out, and so does any copy of the page, unless the
+program's sign-in middleware ends the page's socket with the session, as the
+package `signin` does. With the
 hook, a chat page answers with `Cache-Control: private`, so that no shared
 cache gives one reader's page to another. A reader without an ID, and every
 reader without the hook, counts by client, and `chat.Limits` sets the limit
@@ -484,9 +486,11 @@ SameSite=Lax, and over https Secure. `/auth/sign-out` deletes the cookie
 and revokes the session in docportal's memory until its expiry, so that a
 copy of the cookie stops working there. Another replica, or docportal after
 a restart with the same key, accepts such a copy until the session's
-expiry, so keep the lifetime short for sensitive documentation. A sign-out
-that another site starts shows a page with a sign-out link in its place, so
-no other site can end a reader's session. A failed or cancelled sign-in
+expiry, so keep the lifetime short for sensitive documentation. An open
+chat page's socket closes at the session's expiry and at its sign-out, and a
+new one needs a session. A sign-out that another site starts shows a page
+with a sign-out link in its place, so no other site can end a reader's
+session. A failed or cancelled sign-in
 shows an error page with a link to try again, and opens nothing. Every
 response to a signed-in reader carries `Cache-Control: private`.
 

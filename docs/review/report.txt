@@ -1,10 +1,11 @@
-design flow.dfd: 6 diagrams, 31 boxes
+design flow.dfd: 6 diagrams, 32 boxes
 
 items at home flow.9.dfd, level 1
   Reloader: snapshot in service  live range 4  read distance 1  writers 9.1  readers 9.2, 9.4
 
 items at home flow.10.2.dfd, level 2
-  Revoked sessions: revoked sessions  live range 2  read distance 2  writers 10.2.1  readers 10.2.1, 10.2.3
+  Revoked sessions: revoked sessions  live range 2  read distance 2  writers 10.2.1          readers 10.2.1, 10.2.3
+  Held connections: held connections  live range 2  read distance 0  writers 10.2.1, 10.2.4  readers 10.2.1
 
 private items
   Chat: chat                           writers 6      readers 6
@@ -18,7 +19,7 @@ pressure
   flow.3.4.dfd   max 0 in 3 gaps, first between 3.4.1 and 3.4.4
   flow.9.dfd     max 1 in 4 gaps, first between 9.1 and 9.2
   flow.10.dfd    max 0 in 1 gaps, first between 10.1 and 10.2
-  flow.10.2.dfd  max 1 in 2 gaps, first between 10.2.1 and 10.2.2
+  flow.10.2.dfd  max 1 in 4 gaps, first between 10.2.1 and 10.2.2
 
 findings
   none
@@ -32,7 +33,7 @@ design packages
   flow.10.2.dfd, depth 2  signin
 
 totals
-  shared items by level                               1: 1, 2: 1
+  shared items by level                               1: 1, 2: 2
   private items                                       4
   unlabeled arrow                                     0
   dead item                                           0

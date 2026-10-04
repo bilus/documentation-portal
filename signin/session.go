@@ -1,6 +1,7 @@
 package signin
 
 import (
+	"bufio"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -11,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"net"
 	"net/http"
 	"time"
 
@@ -43,9 +45,10 @@ type signedIn struct {
 
 // signOut ends the reader's session: it revokes its session ID, which
 // sessionOf reads from the session cookie, until the session's expiry,
-// forgets the revoked sessions past theirs, deletes the session cookie, and
-// sends the reader to the logout URL or the signed-out page. A sign-out
-// that another site starts asks the reader first.
+// closes its held connections, forgets the revoked sessions past theirs,
+// deletes the session cookie, and sends the reader to the logout URL or the
+// signed-out page. A sign-out that another site starts asks the reader
+// first.
 func (m *middleware) signOut(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 		// Another site sent the reader here: the reader confirms first.
@@ -64,11 +67,11 @@ func (m *middleware) signOut(w http.ResponseWriter, r *http.Request) {
 	page{Title: "You have signed out", Message: "Your session has ended.", Link: "/", LinkText: "Sign in again"}.write(w, http.StatusOK)
 }
 
-// revoke revokes the session s until its expiry, and forgets the revoked
-// sessions past theirs.
+// revoke revokes the session s until its expiry, closes the connections
+// of s that handlers took over, and forgets the revoked sessions past
+// their expiry.
 func (m *middleware) revoke(s session) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	now := m.now()
 	for id, expires := range m.revoked {
 		if !expires.After(now) {
@@ -76,6 +79,14 @@ func (m *middleware) revoke(s session) {
 		}
 	}
 	m.revoked[s.ID] = s.Expires
+	var held []*heldConn
+	for c := range m.held[s.ID] {
+		held = append(held, c)
+	}
+	m.mu.Unlock()
+	for _, c := range held {
+		c.Close()
+	}
 }
 
 // sessionOf reads the reader's session from the session cookie of r: none
@@ -99,10 +110,68 @@ func (m *middleware) sessionOf(r *http.Request) (session, bool) {
 }
 
 // serve serves r with the identity of the session s in its context,
-// privately, so that the request hooks read it.
+// privately, so that the request hooks read it, and holds a connection that
+// the wrapped handler takes over, such as the chat's socket, until the
+// session's expiry.
 func (m *middleware) serve(w http.ResponseWriter, r *http.Request, s session) {
 	ctx := context.WithValue(r.Context(), readerKey{}, signedIn{identity: s.Identity, signOut: m.signOutPath})
-	portal.Private(m.next).ServeHTTP(w, r.WithContext(ctx))
+	portal.Private(m.next).ServeHTTP(&sessionWriter{ResponseWriter: w, m: m, s: s}, r.WithContext(ctx))
+}
+
+// sessionWriter is the response writer of a signed-in reader's request.
+type sessionWriter struct {
+	http.ResponseWriter
+	m *middleware
+	s session
+}
+
+// Hijack hands the connection over to the caller, with a close at the
+// session's expiry and at its sign-out.
+func (w *sessionWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(w.ResponseWriter).Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+	return w.m.hold(w.s, conn), rw, nil
+}
+
+// Unwrap returns the response writer under w, for the other methods of
+// http.ResponseController.
+func (w *sessionWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// hold returns conn, a connection of the session s that a handler took
+// over, which the middleware closes at the session's expiry and at its
+// revocation.
+func (m *middleware) hold(s session, conn net.Conn) net.Conn {
+	h := &heldConn{Conn: conn, m: m, id: s.ID}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.held[s.ID] == nil {
+		m.held[s.ID] = map[*heldConn]bool{}
+	}
+	m.held[s.ID][h] = true
+	h.timer = time.AfterFunc(s.Expires.Sub(m.now()), func() { h.Close() })
+	return h
+}
+
+// heldConn is a connection of a session that a handler took over.
+type heldConn struct {
+	net.Conn
+	m     *middleware
+	id    string      // the session's ID
+	timer *time.Timer // closes the connection at the session's expiry
+}
+
+// Close closes the connection, and forgets it.
+func (c *heldConn) Close() error {
+	c.m.mu.Lock()
+	delete(c.m.held[c.id], c)
+	if len(c.m.held[c.id]) == 0 {
+		delete(c.m.held, c.id)
+	}
+	c.timer.Stop()
+	c.m.mu.Unlock()
+	return c.Conn.Close()
 }
 
 // cookie returns the cookie name with value for path, which lasts maxAge
