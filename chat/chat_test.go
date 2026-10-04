@@ -60,7 +60,7 @@ func TestAskLooksUpTheAnswer(t *testing.T) {
 		{Match: "the Pets API", Call: &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}},
 		{Match: `"url":"/portals/pets/docs/documents/a.md","where":"docs/a.md:3"`, Reply: "Call GET /pets, as [Getting started](/portals/pets/docs/documents/a.md) shows."},
 	})
-	answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "pets", "client", "conv", "How do I list pets?")
+	answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "pets", portal.Everything, "client", "conv", "How do I list pets?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestAskRefusesOverLimits(t *testing.T) {
 		Limits{QuestionLength: 10, Questions: 2, Window: time.Hour, Turns: 2, Idle: 2 * time.Hour})
 	c.now = func() time.Time { return now }
 	ask := func(client, conv, q string) error {
-		_, err := c.Ask(t.Context(), "pets", client, conv, q)
+		_, err := c.Ask(t.Context(), "pets", portal.Everything, client, conv, q)
 		return err
 	}
 	if err := ask("a", "c1", "   "); !errors.Is(err, ErrEmpty) {
@@ -113,7 +113,7 @@ func TestAskRefusesOverLimits(t *testing.T) {
 func TestAskStopsAfterTooManyLookups(t *testing.T) {
 	search := &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Call: search}, {Call: search}, {Reply: "never"}})
-	if _, err := newChat(t, m, Limits{ToolCalls: 1}).Ask(t.Context(), "pets", "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
+	if _, err := newChat(t, m, Limits{ToolCalls: 1}).Ask(t.Context(), "pets", portal.Everything, "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
 		t.Errorf("err = %v, want ErrTooManyTools", err)
 	}
 }
@@ -121,7 +121,7 @@ func TestAskStopsAfterTooManyLookups(t *testing.T) {
 func TestAskAllowsTheLastLookup(t *testing.T) {
 	search := &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Call: search}, {Call: search}, {Reply: "Call GET /pets."}})
-	if answer, err := newChat(t, m, Limits{ToolCalls: 2}).Ask(t.Context(), "pets", "a", "c", "pets?"); err != nil || answer != "Call GET /pets." {
+	if answer, err := newChat(t, m, Limits{ToolCalls: 2}).Ask(t.Context(), "pets", portal.Everything, "a", "c", "pets?"); err != nil || answer != "Call GET /pets." {
 		t.Errorf("answer %q, err %v", answer, err)
 	}
 }
@@ -156,10 +156,10 @@ func TestAskContinuesAfterTooManyLookups(t *testing.T) {
 	search := &fakemodel.Call{Name: "search", Args: map[string]any{"query": "pets"}}
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Call: search}, {Call: search}, {Match: "And cats?", Reply: "No cats."}})
 	c := newChat(t, strict{m, t}, Limits{ToolCalls: 1})
-	if _, err := c.Ask(t.Context(), "pets", "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
 		t.Fatalf("err = %v, want ErrTooManyTools", err)
 	}
-	if answer, err := c.Ask(t.Context(), "pets", "a", "c", "And cats?"); err != nil || answer != "No cats." {
+	if answer, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c", "And cats?"); err != nil || answer != "No cats." {
 		t.Errorf("the next question: answer %q, err %v", answer, err)
 	}
 }
@@ -168,7 +168,7 @@ func TestAskRunsNoLookupOverTheLimit(t *testing.T) {
 	search := func(q string) fakemodel.Call { return fakemodel.Call{Name: "search", Args: map[string]any{"query": q}} }
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Calls: []fakemodel.Call{search("pets"), search("cats"), search("dogs")}}})
 	c := newChat(t, m, Limits{ToolCalls: 2})
-	if _, err := c.Ask(t.Context(), "pets", "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
 		t.Fatalf("err = %v, want ErrTooManyTools", err)
 	}
 	got, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "pets/c"})
@@ -205,14 +205,14 @@ func (f failing) GenerateContent(context.Context, *model.LLMRequest, bool) iter.
 }
 
 func TestAskReportsACutOffAnswer(t *testing.T) {
-	if _, err := newChat(t, failing{anthropicmodel.ErrTruncated}, Limits{}).Ask(t.Context(), "pets", "a", "c", "Tell me everything"); !errors.Is(err, ErrCutOff) {
+	if _, err := newChat(t, failing{anthropicmodel.ErrTruncated}, Limits{}).Ask(t.Context(), "pets", portal.Everything, "a", "c", "Tell me everything"); !errors.Is(err, ErrCutOff) {
 		t.Errorf("err = %v, want ErrCutOff", err)
 	}
 }
 
 func TestAskLeavesThoughtsOut(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Thought: "The guide says GET /pets.", Reply: "Call GET /pets."}})
-	if answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "pets", "a", "c", "pets?"); err != nil || answer != "Call GET /pets." {
+	if answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "pets", portal.Everything, "a", "c", "pets?"); err != nil || answer != "Call GET /pets." {
 		t.Errorf("answer %q, err %v", answer, err)
 	}
 }
@@ -230,7 +230,7 @@ func TestAskCountsOnlyAdmittedQuestions(t *testing.T) {
 		want    error
 	}{{0, "c1", nil}, {10, "c1", nil}, {65, "c1", ErrTurns}, {66, "c2", nil}, {67, "c2", nil}} {
 		now = time.Date(2026, 9, 30, 12, step.minutes, 0, 0, time.UTC)
-		if _, err := c.Ask(t.Context(), "pets", "a", step.conv, "q"); !errors.Is(err, step.want) {
+		if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", step.conv, "q"); !errors.Is(err, step.want) {
 			t.Errorf("at +%dm in %s: err %v, want %v", step.minutes, step.conv, err, step.want)
 		}
 	}
@@ -241,12 +241,12 @@ func TestAskForgetsClientsAfterTheWindow(t *testing.T) {
 	c := newChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "1"}, {Reply: "2"}, {Reply: "3"}}), Limits{Window: time.Hour})
 	c.now = func() time.Time { return now }
 	for _, client := range []string{"a", "b"} {
-		if _, err := c.Ask(t.Context(), "pets", client, "c-"+client, "q"); err != nil {
+		if _, err := c.Ask(t.Context(), "pets", portal.Everything, client, "c-"+client, "q"); err != nil {
 			t.Fatal(err)
 		}
 	}
 	now = now.Add(time.Hour)
-	if _, err := c.Ask(t.Context(), "pets", "z", "c-z", "q"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "z", "c-z", "q"); err != nil {
 		t.Fatal(err)
 	}
 	if len(c.asked) != 1 {
@@ -262,14 +262,14 @@ func TestIdleConversationsLoseTheirSessions(t *testing.T) {
 		_, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "pets/c1"})
 		return err
 	}
-	if _, err := c.Ask(t.Context(), "pets", "a", "c1", "q"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c1", "q"); err != nil {
 		t.Fatal(err)
 	}
 	if err := session1(); err != nil {
 		t.Fatalf("c1's session: %v", err)
 	}
 	now = now.Add(time.Hour)
-	if _, err := c.Ask(t.Context(), "pets", "a", "c2", "q"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c2", "q"); err != nil {
 		t.Fatal(err)
 	}
 	if session1() == nil {
@@ -280,10 +280,10 @@ func TestIdleConversationsLoseTheirSessions(t *testing.T) {
 func TestAskEndsAConversationThatGrewTooLong(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Reply: strings.Repeat("x", 600)}, {Reply: "never"}})
 	c := newChat(t, m, Limits{History: 500})
-	if _, err := c.Ask(t.Context(), "pets", "a", "c", "q1"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c", "q1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Ask(t.Context(), "pets", "a", "c", "q2"); !errors.Is(err, ErrTurns) {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c", "q2"); !errors.Is(err, ErrTurns) {
 		t.Errorf("err = %v, want ErrTurns", err)
 	}
 }
@@ -298,7 +298,7 @@ func (declining) GenerateContent(context.Context, *model.LLMRequest, bool) iter.
 }
 
 func TestAskReportsARefusal(t *testing.T) {
-	if _, err := newChat(t, declining{}, Limits{}).Ask(t.Context(), "pets", "a", "c", "Tell me a secret"); !errors.Is(err, ErrDeclined) {
+	if _, err := newChat(t, declining{}, Limits{}).Ask(t.Context(), "pets", portal.Everything, "a", "c", "Tell me a secret"); !errors.Is(err, ErrDeclined) {
 		t.Errorf("err = %v, want ErrDeclined", err)
 	}
 }
@@ -324,7 +324,7 @@ func TestChatToolsNameTheSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	answer, err := c.Ask(t.Context(), "pets", "client", "conv", "How do I list orders?")
+	answer, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "conv", "How do I list orders?")
 	if err != nil || !strings.Contains(answer, "/portals/pets/specs/store#/operations/listOrders") || !m.Exhausted() {
 		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
 	}
@@ -348,13 +348,10 @@ func TestChatNamesEveryAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer, err := c.Ask(t.Context(), "pets", "client", "conv", "What can you help with?"); err != nil || !m.Exhausted() {
+	if answer, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "conv", "What can you help with?"); err != nil || !m.Exhausted() {
 		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
 	}
-	mux := http.NewServeMux()
-	for _, r := range c.Routes() {
-		mux.Handle(r.Pattern, r.Handler)
-	}
+	mux := servedByPortal(t, c.Routes())
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))
 	if !strings.Contains(rec.Body.String(), "Ask about the Pets and Store APIs") {
@@ -367,7 +364,7 @@ func TestReadSpecNamesItsSpec(t *testing.T) {
 		{Match: "Show me listPets.", Call: &fakemodel.Call{Name: "read_spec", Args: map[string]any{"spec": "api", "pointer": "paths/~1pets/get"}}},
 		{Match: `"spec":"api","truncated":false`, Reply: "Here it is."},
 	})
-	if answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "pets", "client", "conv", "Show me listPets."); err != nil || !m.Exhausted() {
+	if answer, err := newChat(t, m, Limits{}).Ask(t.Context(), "pets", portal.Everything, "client", "conv", "Show me listPets."); err != nil || !m.Exhausted() {
 		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
 	}
 }
@@ -408,16 +405,13 @@ func TestChatInEveryPortal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer, err := c.Ask(t.Context(), "store", "client", "conv", "How do I list orders?"); err != nil || !m.Exhausted() {
+	if answer, err := c.Ask(t.Context(), "store", portal.Everything, "client", "conv", "How do I list orders?"); err != nil || !m.Exhausted() {
 		t.Errorf("answer %q, %v, script exhausted: %v", answer, err, m.Exhausted())
 	}
-	if answer, err := c.Ask(t.Context(), "other", "client", "conv", "How?"); err == nil {
+	if answer, err := c.Ask(t.Context(), "other", portal.Everything, "client", "conv", "How?"); err == nil {
 		t.Errorf("a slug of no portal: %q", answer)
 	}
-	mux := http.NewServeMux()
-	for _, r := range c.Routes() {
-		mux.Handle(r.Pattern, r.Handler)
-	}
+	mux := servedByPortal(t, c.Routes())
 	for path, want := range map[string]string{"/portals/pet-shop/chat": "Ask about the Pets API", "/portals/store/chat": "Ask about the Store API"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -440,11 +434,11 @@ func TestChatLimitSpansPortals(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, q := range []struct{ portal, conv string }{{"pet-shop", "a"}, {"store", "b"}} {
-		if _, err := c.Ask(t.Context(), q.portal, "client", q.conv, "A question?"); err != nil {
+		if _, err := c.Ask(t.Context(), q.portal, portal.Everything, "client", q.conv, "A question?"); err != nil {
 			t.Fatalf("%s: %v", q.portal, err)
 		}
 	}
-	if _, err := c.Ask(t.Context(), "pet-shop", "client", "c", "A third?"); !errors.Is(err, ErrRateLimited) {
+	if _, err := c.Ask(t.Context(), "pet-shop", portal.Everything, "client", "c", "A third?"); !errors.Is(err, ErrRateLimited) {
 		t.Errorf("a third question across two portals: err = %v, want ErrRateLimited", err)
 	}
 }
@@ -480,10 +474,7 @@ func TestChatPageMenu(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mux := http.NewServeMux()
-	for _, r := range c.Routes() {
-		mux.Handle(r.Pattern, r.Handler)
-	}
+	mux := servedByPortal(t, c.Routes())
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/store/chat", nil))
 	page := rec.Body.String()
@@ -495,7 +486,7 @@ func TestChatPageMenu(t *testing.T) {
 }
 
 func TestAskNamesNoPortal(t *testing.T) {
-	if _, err := newChat(t, fakemodel.New("opus", nil), Limits{}).Ask(t.Context(), "other", "client", "conv", "How?"); !errors.Is(err, ErrNoPortal) {
+	if _, err := newChat(t, fakemodel.New("opus", nil), Limits{}).Ask(t.Context(), "other", portal.Everything, "client", "conv", "How?"); !errors.Is(err, ErrNoPortal) {
 		t.Errorf("err = %v, want ErrNoPortal", err)
 	}
 }
@@ -527,7 +518,7 @@ func TestChatReloadKeepsConversations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer, err := c.Ask(t.Context(), "pets", "client", "conv", "What does the guide say?"); err != nil || !strings.Contains(answer, "the old text") {
+	if answer, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "conv", "What does the guide say?"); err != nil || !strings.Contains(answer, "the old text") {
 		t.Fatalf("before the reload: %q, %v", answer, err)
 	}
 	if err := c.Reload([]*portal.Library{libraryOf(t, "The new text.")}); err != nil {
@@ -535,17 +526,17 @@ func TestChatReloadKeepsConversations(t *testing.T) {
 	}
 	// The conversation goes on, with the model reading the new library, and
 	// its second turn is its last.
-	if answer, err := c.Ask(t.Context(), "pets", "client", "conv", "And now?"); err != nil || !strings.Contains(answer, "the new text") {
+	if answer, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "conv", "And now?"); err != nil || !strings.Contains(answer, "the new text") {
 		t.Fatalf("after the reload: %q, %v", answer, err)
 	}
-	if _, err := c.Ask(t.Context(), "pets", "client", "conv", "A third?"); !errors.Is(err, ErrTurns) {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "conv", "A third?"); !errors.Is(err, ErrTurns) {
 		t.Errorf("a third turn after the reload: err = %v, want ErrTurns", err)
 	}
 	// The client's questions before the reload count against its limit too.
-	if _, err := c.Ask(t.Context(), "pets", "client", "other", "Another?"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "other", "Another?"); err != nil {
 		t.Fatalf("a third question: %v", err)
 	}
-	if _, err := c.Ask(t.Context(), "pets", "client", "another", "A fourth?"); !errors.Is(err, ErrRateLimited) {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "another", "A fourth?"); !errors.Is(err, ErrRateLimited) {
 		t.Errorf("a fourth question after the reload: err = %v, want ErrRateLimited", err)
 	}
 }
@@ -559,10 +550,10 @@ func TestChatReloadServesTheNewPortals(t *testing.T) {
 	if err := c.Reload(twoPortals(t)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Ask(t.Context(), "pets", "client", "conv", "Gone?"); !errors.Is(err, ErrNoPortal) {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "conv", "Gone?"); !errors.Is(err, ErrNoPortal) {
 		t.Errorf("a removed portal: err = %v, want ErrNoPortal", err)
 	}
-	if _, err := c.Ask(t.Context(), "store", "client", "conv", "Here?"); err != nil {
+	if _, err := c.Ask(t.Context(), "store", portal.Everything, "client", "conv", "Here?"); err != nil {
 		t.Errorf("an added portal: %v", err)
 	}
 	var paths []string
@@ -586,7 +577,7 @@ func TestChatReloadRefusesWhatNewRefuses(t *testing.T) {
 			t.Errorf("%s: no error", name)
 		}
 	}
-	if _, err := c.Ask(t.Context(), "pets", "client", "conv", "Still here?"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "client", "conv", "Still here?"); err != nil {
 		t.Errorf("after the refused reloads: %v", err)
 	}
 }

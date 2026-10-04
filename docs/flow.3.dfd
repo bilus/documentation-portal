@@ -1,4 +1,10 @@
-# Process 3, the body of portal.New: its steps in the order it calls them.
+# Process 3, the body of portal.New: boxes 3.1 to 3.3 in the order it calls
+# them, and box 3.4, the portal handler's answer to each request that box 9
+# sends it. New does not call box 3.4: a handler's answer is drawn in the
+# diagram of the function that builds the handler, after the entity that
+# calls it, as box 9.4 is in flow.9.dfd. The router travels to box 9 as the
+# portal handler and comes back as the receiver of box 3.4, whose fixed
+# fields, like the reloader's source and builder, need no store.
 # By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 3. docs/flow.3.dfd -o flow.3.svg
 
 {6 Add the chat}
@@ -14,14 +20,19 @@
  or refuse to start without them
  (portal.loadAssets)]
 > portal configuration, sites, Elements assets
-[3.3. Build the router
- that sends each request to a portal's page by the portal's slug: a spec section's viewer page or raw spec, or a docs section's document list, document page or raw file, with the document sidebar from the section's toc file when it names one; and the home page, the Elements assets, and with a chat its routes
+[3.3. Build the router, whose routes send each request to a portal's page by the portal's slug: a spec section's viewer page or raw spec, or a docs section's document list, document page or raw file, with the document sidebar from the section's toc file when it names one; the home page, the Elements assets, and with a chat its routes, each portal's chat page behind the check of the other routes of its portal
+ so that box 3.4 answers each request with the router's sites, access hook and routes
  (portal.newRouter)]
 > portal handler
 {9 Wrap the portal handler in the reloader}
+> response writer, request
+[3.4. Answer each request with the pages of the portals and sections visible to its reader
+ (portal.router.ServeHTTP)]
 
 # type: portal configuration = portal.Config
 # type: sites = []*portal.site
 # type: content directory handle = io/fs.FS
 # type: Elements assets = io/fs.FS
 # type: portal handler = net/http.Handler
+# type: response writer = net/http.ResponseWriter
+# type: request = *net/http.Request

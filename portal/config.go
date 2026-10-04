@@ -16,10 +16,11 @@ import (
 // Section is a spec or a content directory of the documentation root, shown
 // under its title in the navigation bar.
 type Section struct {
-	Title string      `yaml:"title"`
-	Type  SectionType `yaml:"type"`
-	Input string      `yaml:"input"` // the spec path or the content directory path, relative to Root
-	Toc   string      `yaml:"toc"`   // a docs section's toc path, relative to Root, or empty
+	Title  string      `yaml:"title"`
+	Type   SectionType `yaml:"type"`
+	Input  string      `yaml:"input"`  // the spec path or the content directory path, relative to Root
+	Toc    string      `yaml:"toc"`    // a docs section's toc path, relative to Root, or empty
+	Labels []string    `yaml:"labels"` // for the access hook's rules; the portal reads none
 }
 
 // SectionType says what a section's input names.
@@ -35,6 +36,7 @@ const (
 type Portal struct {
 	Name     string    `yaml:"name"`
 	Sections []Section `yaml:"sections"`
+	Labels   []string  `yaml:"labels"` // for the access hook's rules; the portal reads none
 }
 
 // ReadConfig reads the portals from the configuration file at name, a path
@@ -57,6 +59,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 		Portals []*struct {
 			Name     string     `yaml:"name"`
 			Sections []*Section `yaml:"sections"`
+			Labels   []string   `yaml:"labels"`
 		} `yaml:"portals"`
 	}
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
@@ -80,7 +83,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			}
 			sections = append(sections, *sec)
 		}
-		portals = append(portals, Portal{Name: p.Name, Sections: sections})
+		portals = append(portals, Portal{Name: p.Name, Sections: sections, Labels: p.Labels})
 	}
 	return Config{Root: root, Portals: portals}, nil
 }
@@ -127,9 +130,10 @@ func openPortals(cfg Config) ([]*site, error) {
 // checked it, with its slug and, for a docs section, its content directory.
 type section struct {
 	Section
-	slug string
-	base string // the URL path of its portal, such as /portals/pets, or empty
-	docs fs.FS  // a docs section's content directory handle, else nil
+	config Section // the section as the portal configuration gives it, for the access hook
+	slug   string
+	base   string // the URL path of its portal, such as /portals/pets, or empty
+	docs   fs.FS  // a docs section's content directory handle, else nil
 
 	tocMu      sync.Mutex
 	tocProblem string // the toc file's problem that the log named last, or empty
@@ -172,7 +176,7 @@ func openSections(root fs.FS, sections []Section) ([]*section, error) {
 // openSection checks s, a section with a title, with its paths cleaned, and
 // opens its content directory when it is a docs section.
 func openSection(root fs.FS, s Section) (*section, error) {
-	sec := &section{Section: s, slug: slugOf(s.Title)}
+	sec := &section{Section: s, config: s, slug: slugOf(s.Title)}
 	sec.Input, sec.Toc = cleanPath(s.Input), cleanPath(s.Toc)
 	switch {
 	case sec.slug == "":

@@ -6,8 +6,6 @@ import (
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/functiontool"
-
-	"github.com/bilus/documentation-portal/portal"
 )
 
 // Size caps on what one tool call returns, in bytes.
@@ -31,8 +29,9 @@ type (
 	}
 )
 
-// tools returns the read-only tools over lib.
-func tools(lib *portal.Library) ([]tool.Tool, error) {
+// tools returns the read-only tools over the library of each answer, as
+// libraryIn finds it in the answer's context.
+func tools() ([]tool.Tool, error) {
 	var out []tool.Tool
 	add := func(t tool.Tool, err error) error {
 		out = append(out, t)
@@ -41,7 +40,11 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 	err := add(functiontool.New(functiontool.Config{
 		Name:        "list_documents",
 		Description: "Lists the guides: each one's path, title and page url.",
-	}, func(agent.Context, noArgs) (map[string]any, error) {
+	}, func(ctx agent.Context, _ noArgs) (map[string]any, error) {
+		lib, err := libraryIn(ctx)
+		if err != nil {
+			return nil, err
+		}
 		docs, err := lib.Documents()
 		return map[string]any{"documents": docs}, err
 	}))
@@ -49,7 +52,11 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 		err = add(functiontool.New(functiontool.Config{
 			Name:        "read_document",
 			Description: "Returns the text of one guide's page, in markdown, with its links pointed at the portal's pages.",
-		}, func(_ agent.Context, a documentArg) (map[string]any, error) {
+		}, func(ctx agent.Context, a documentArg) (map[string]any, error) {
+			lib, err := libraryIn(ctx)
+			if err != nil {
+				return nil, err
+			}
 			text, err := lib.ReadDocument(a.Path)
 			if err != nil {
 				return nil, err
@@ -62,7 +69,11 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 		err = add(functiontool.New(functiontool.Config{
 			Name:        "list_operations",
 			Description: "Lists the operations of every API reference: each one's spec, method, path, operationId, summary, pointer and page url.",
-		}, func(agent.Context, noArgs) (map[string]any, error) {
+		}, func(ctx agent.Context, _ noArgs) (map[string]any, error) {
+			lib, err := libraryIn(ctx)
+			if err != nil {
+				return nil, err
+			}
 			ops, err := lib.Operations()
 			return map[string]any{"operations": ops}, err
 		}))
@@ -71,7 +82,11 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 		err = add(functiontool.New(functiontool.Config{
 			Name:        "read_spec",
 			Description: "Returns one part of an API reference, an OpenAPI spec, as YAML: an operation, a schema, or any other part named by its spec and a JSON pointer. Follow a $ref such as #/components/schemas/Pet by reading components/schemas/Pet of the same spec.",
-		}, func(_ agent.Context, a pointerArg) (map[string]any, error) {
+		}, func(ctx agent.Context, a pointerArg) (map[string]any, error) {
+			lib, err := libraryIn(ctx)
+			if err != nil {
+				return nil, err
+			}
 			part, err := lib.SpecPart(a.Spec, a.Pointer)
 			if err != nil {
 				return nil, err
@@ -84,7 +99,11 @@ func tools(lib *portal.Library) ([]tool.Tool, error) {
 		err = add(functiontool.New(functiontool.Config{
 			Name:        "search",
 			Description: "Finds a word or phrase in the guides and the API references: each match's place (a guide's path and line, or a spec and a JSON pointer into it), text and page url.",
-		}, func(_ agent.Context, a queryArg) (map[string]any, error) {
+		}, func(ctx agent.Context, a queryArg) (map[string]any, error) {
+			lib, err := libraryIn(ctx)
+			if err != nil {
+				return nil, err
+			}
 			matches, err := lib.Search(a.Query, maxMatches)
 			return map[string]any{"matches": matches}, err
 		}))

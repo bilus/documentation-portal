@@ -320,12 +320,16 @@ func (s *site) sidebar(sec *section, current string) []sidebarGroup {
 // tocContents returns the groups that the toc file of the docs section sec
 // lays out, with its file at current marked, and the set of its markdown
 // files among their links, or false for a section without a toc file and for
-// a problem with the file, which goes to the log.
+// a problem with the file, which goes to the log. On a reader's site, a toc
+// file whose pages are all hidden from the reader gives false too, and the
+// log judges the file by the whole site, so that no reader's access changes
+// the log.
 func (s *site) tocContents(sec *section, current string) ([]sidebarGroup, map[string]bool, bool) {
 	if sec.Toc == "" {
 		return nil, nil, false
 	}
 	groups, linked, err := s.tocSidebar(sec, current)
+	// HOLE(1): on a reader's site, note the whole site's problem for errNoPage in place of the reader's
 	sec.noteTocProblem(err)
 	return groups, linked, err == nil
 }
