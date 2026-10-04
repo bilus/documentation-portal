@@ -1,5 +1,11 @@
 // Package chat answers customers' questions about an API from its published
 // documentation, with a model, read-only tools and a live page.
+//
+// New builds the chat over the libraries of the portals, and Routes gives
+// their chat pages for the Chat of the portal configuration, whose access
+// hook and account hook the pages follow. Config.Reader, a request hook,
+// names each request's reader, so that a signed-in reader's questions count
+// against one question limit from any client.
 package chat
 
 import (

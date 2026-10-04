@@ -1,6 +1,11 @@
 // Package source reads the documentation root from a documentation source: a
 // local directory, read live, or a bucket folder on GCS, S3 or the local file
 // system, read into snapshots that a reloader swaps as the folder changes.
+//
+// A program opens a source with OpenDirectory or OpenBucket, after a blank
+// import of the Go CDK drivers it needs, loads its first snapshot with Load,
+// builds the portal handler from the snapshot's root, and wraps the handler
+// in NewReloader, which builds it again for each settled change.
 package source
 
 import (
