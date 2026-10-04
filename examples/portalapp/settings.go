@@ -156,6 +156,6 @@ func (s providerSettings) check() error {
 // withPath.
 func webURL(raw string, withPath bool) bool {
 	u, err := url.Parse(raw)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil &&
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" && u.User == nil &&
 		u.RawQuery == "" && !u.ForceQuery && !strings.Contains(raw, "#") && (withPath || u.Path == "")
 }

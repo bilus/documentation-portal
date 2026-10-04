@@ -126,6 +126,7 @@ func TestReadSettingsRefusesIncompleteSettings(t *testing.T) {
 		"a portal URL with a query":           {map[string]string{"PORTAL_URL": "https://docs.example.com/?a=b"}, "PORTAL_URL"},
 		"a portal URL with a fragment":        {map[string]string{"PORTAL_URL": "https://docs.example.com/#top"}, "PORTAL_URL"},
 		"a portal URL with a user":            {map[string]string{"PORTAL_URL": "https://ada@docs.example.com"}, "PORTAL_URL"},
+		"a portal URL without a host":         {map[string]string{"PORTAL_URL": "http://:8080"}, "PORTAL_URL"},
 		"no bucket folder":                    {map[string]string{"PORTAL_BUCKET": ""}, "PORTAL_BUCKET"},
 		"no session key":                      {map[string]string{"PORTAL_SESSION_KEY": ""}, "PORTAL_SESSION_KEY"},
 		"a short session key":                 {map[string]string{"PORTAL_SESSION_KEY": "31 bytes of session key, no more"[:31]}, "PORTAL_SESSION_KEY"},
