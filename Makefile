@@ -30,6 +30,11 @@ LAYERS    = $(wildcard docs/diagrams/layers.toml)
 CORE_PACKAGES := ./portal ./source ./chat ./anthropicmodel
 SIGN_IN       := ^(github\.com/bilus/documentation-portal/signin|golang\.org/x/oauth2|github\.com/coreos/go-oidc|github\.com/zitadel/oidc|github\.com/markbates/goth|github\.com/auth0|github\.com/okta)(/|$$)
 
+# The example application, a module of its own, which builds against the
+# library of this checkout. Its browser tests end their names in
+# InTheBrowser.
+EXAMPLE := examples/portalapp
+
 setup: $(ELEMENTS_FILES)
 
 # &: makes one run of the recipe produce all three assets. The Makefile
@@ -51,10 +56,12 @@ generate:
 
 build: setup
 	go build -o bin/docportal ./cmd/docportal
+	cd $(EXAMPLE) && go build -o ../../bin/portalapp .
 
 lint:
 	go vet ./...
 	go vet -tags e2e ./e2e/...
+	cd $(EXAMPLE) && go vet ./... && go vet -tags e2e ./...
 	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
 	@deps=$$(go list -deps $(CORE_PACKAGES)) || exit 1; \
 	found=$$(echo "$$deps" | grep -E '$(SIGN_IN)'); \
@@ -62,9 +69,11 @@ lint:
 
 test: setup
 	go test ./...
+	cd $(EXAMPLE) && go test ./...
 
 test-e2e: setup
 	go test -tags e2e ./e2e/...
+	cd $(EXAMPLE) && go test -tags e2e -run InTheBrowser ./...
 
 run: build
 	./bin/docportal $(ARGS)

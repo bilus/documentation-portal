@@ -1,0 +1,12 @@
+# The preview folder pr-1, as a CI job uploads it for a pull request. Its
+# staff notes open, as the published ones do, to the staff alone.
+portals:
+  - name: Pets
+    sections:
+      - title: Guides
+        type: docs
+        input: guides
+      - title: Staff notes
+        type: docs
+        input: staff
+        labels: [staff]

@@ -1,0 +1,23 @@
+# The access file of the demo: under labels, the rules of the readers who
+# have each label of the configuration file; under previews, the rules of
+# the readers who may open previews. A rule matches a reader who signed in
+# through its provider and whose claim holds one of its values.
+labels:
+  staff:
+    - provider: auth0
+      claim: https://docs.example.com/roles
+      values: [staff]
+    - provider: github
+      claim: teams
+      values: [acme/staff]
+  partner:
+    - provider: auth0
+      claim: https://docs.example.com/roles
+      values: [partner]
+    - provider: github
+      claim: teams
+      values: [acme/partners]
+previews:
+  - provider: github
+    claim: orgs
+    values: [acme]

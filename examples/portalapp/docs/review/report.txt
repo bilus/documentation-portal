@@ -1,0 +1,28 @@
+design flow.dfd: 1 diagram, 13 boxes
+
+private items
+  Chat: chat  writers 5  readers 5
+
+pressure
+  flow.dfd  max 0 in 12 gaps, first between 1 and 2
+
+findings
+  none
+
+design packages
+  flow.dfd, depth 0  main
+
+totals
+  shared items by level                               none
+  private items                                       1
+  unlabeled arrow                                     0
+  dead item                                           0
+  orphan item                                         0
+  read before write                                   0
+  arrow candidate                                     0
+  unmatched summary                                   0
+  missing summary                                     0
+  summary above home                                  0
+  mixed box                                           0
+  mixed diagram                                       0
+  diagrams with two or more design packages by depth  none
