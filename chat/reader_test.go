@@ -88,8 +88,49 @@ func (o openPage) limited(t *testing.T) bool {
 	return false
 }
 
+func TestAReaderAndAClientNeverShareAnAsker(t *testing.T) {
+	for _, text := range []string{"192.0.2.7", "", "alice"} {
+		reader, client := ReaderAsker(text), ClientAsker(text)
+		if reader == client {
+			t.Errorf("%q: ReaderAsker and ClientAsker give one asker", text)
+		}
+		// No text of the other kind names the same asker either.
+		if ClientAsker(reader.key) == reader || ReaderAsker(client.key) == client {
+			t.Errorf("%q: the key of one kind of asker, as the other kind's text, names the same asker", text)
+		}
+	}
+	if ReaderAsker("alice") != ReaderAsker("alice") || ClientAsker("192.0.2.7") != ClientAsker("192.0.2.7") {
+		t.Error("one reader ID or one client gives two askers")
+	}
+}
+
+func TestThePageSessionHoldsTheReaderID(t *testing.T) {
+	for name, tc := range map[string]struct {
+		hook         func(*http.Request) string
+		reader, want string
+	}{
+		"a signed-in reader":            {headerReader, "alice", "alice"},
+		"a reader who is not signed in": {headerReader, "", ""},
+		"no reader hook":                {nil, "alice", ""},
+	} {
+		c := newReaderChat(t, tc.hook, 1, 0)
+		var session map[string]string
+		keep := portal.Route{Pattern: "GET /session", Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			var err error
+			if session, err = c.sessionOf(r); err != nil {
+				t.Error(err)
+			}
+		})}
+		r := httptest.NewRequest(http.MethodGet, "/session", nil)
+		r.Header.Set(readerHeader, tc.reader)
+		servedByPortal(t, c, keep).ServeHTTP(httptest.NewRecorder(), r)
+		if session["readerID"] != tc.want || session["client"] != "192.0.2.1" {
+			t.Errorf("%s: the page session %v, want the reader ID %q", name, session, tc.want)
+		}
+	}
+}
+
 func TestOneLimitForAReaderFromAnyClient(t *testing.T) {
-	t.Skip("HOLE(1): count a signed-in reader's questions by the reader ID")
 	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
 	c := newReaderChat(t, headerReader, 2, 4)
 	c.now = func() time.Time { return now }
@@ -133,7 +174,6 @@ func TestPagesWithoutAReaderIDCountByClient(t *testing.T) {
 }
 
 func TestAReaderIDNeverSharesAClientsLimit(t *testing.T) {
-	t.Skip("HOLE(1): count a signed-in reader's questions by the reader ID")
 	c := newReaderChat(t, headerReader, 1, 2)
 	if loadPage(t, c, "192.0.2.7", "192.0.2.7:5555").limited(t) {
 		t.Fatal("the first question of the reader 192.0.2.7 is over the limit")
@@ -144,7 +184,6 @@ func TestAReaderIDNeverSharesAClientsLimit(t *testing.T) {
 }
 
 func TestAskCountsAReaderApartFromAClient(t *testing.T) {
-	t.Skip("HOLE(1): count a signed-in reader's questions by the reader ID")
 	c := newReaderChat(t, headerReader, 1, 2)
 	if _, err := c.Ask(t.Context(), "pets", portal.Everything, ReaderAsker("192.0.2.7"), "a", "Is it there?"); err != nil {
 		t.Fatal(err)
@@ -160,7 +199,6 @@ func TestAskCountsAReaderApartFromAClient(t *testing.T) {
 }
 
 func TestTheChatPageIsPrivateWithAReaderHook(t *testing.T) {
-	t.Skip("HOLE(1): mark a chat page private with a reader hook")
 	for name, tc := range map[string]struct {
 		hook func(*http.Request) string
 		want string

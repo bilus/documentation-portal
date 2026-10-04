@@ -43,13 +43,24 @@ An embedding program gives `chat.Config` a reader hook, a request hook that name
 
 Each stage ends with `devbox run make build lint test test-e2e`, the hole census (`grep -rn "HOLE(" --include='*.go' .`), the score card, the review page and a ledger line in place of the halt.
 
-The plan gate declares the reader hook, `Config.Reader`, kept by `New`, the type `Asker`, and five holes in a new file `chat/reader.go`: `ReaderAsker`, `ClientAsker`, `Chat.readerOf`, `askerOf` and `Chat.privatePage`, whose mocks keep today's behavior: an asker named by its text alone, no reader ID, the client as the page's asker, and the page's responses as they are. Inline, the session reader puts the reader ID into the page session, the mount takes the page's asker from `askerOf`, `Routes` wraps each chat page in `privatePage`, and `Ask`, `admit` and the question counts take an `Asker` in place of the client string; a script changes the tests' calls of `Ask` and `admit` to ask as `ClientAsker` of their client. It writes the acceptance tests, skipped with their tags.
+The plan gate declares the reader hook, `Config.Reader`, kept by `New`, the type `Asker`, and five holes in a new file `chat/reader.go`: `ReaderAsker`, `ClientAsker`, `Chat.readerIDOf`, `askerOf` and `Chat.privatePage`, whose mocks keep today's behavior: an asker named by its text alone, no reader ID, the client as the page's asker, and the page's responses as they are. Inline, the session reader puts the reader ID into the page session, the mount takes the page's asker from `askerOf`, `Routes` wraps each chat page in `privatePage`, and `Ask`, `admit` and the question counts take an `Asker` in place of the client string; a script changes the tests' calls of `Ask` and `admit` to ask as `ClientAsker` of their client. It writes the acceptance tests, skipped with their tags.
 
 ### Stage 1: the question limit of each reader
 
 - Goal: a signed-in reader's questions count against one question limit from any address, a reader without a reader ID and every reader without a hook count by client, the chat page is private with a reader hook, and the README documents the hook.
 - Requirement: 1 to 8.
 - Dependencies: none.
-- Holes: `1 chat.ReaderAsker`, `1 chat.ClientAsker`, `1 chat.Chat.readerOf`, `1 chat.askerOf`, `1 chat.Chat.privatePage`.
+- Holes: `1 chat.ReaderAsker`, `1 chat.ClientAsker`, `1 chat.Chat.readerIDOf`, `1 chat.askerOf`, `1 chat.Chat.privatePage`.
 - Acceptance: `TestOneLimitForAReaderFromAnyClient`, `TestAReaderIDNeverSharesAClientsLimit`, `TestAskCountsAReaderApartFromAClient`, `TestTheChatPageIsPrivateWithAReaderHook`, and the browser test `TestOneQuestionLimitForAReaderInTheBrowser` in `e2e`. `TestPagesWithoutAReaderIDCountByClient` passes on the mocks, as a guard of today's behavior.
 - Size: 150 lines, with the README.
+
+### Stage 2: the reviews' findings
+
+Added after the second design review and the defect review of AGENTS.md; the ledger records a decision on each finding.
+
+- Goal: a program's question for a reader without a reader ID counts against the reader's client, `Ask` refuses an asker that names nobody, the reader ID survives the page session byte for byte, the chat page is private through the portal's guard, the design draws the chat's socket, conversations and model exchange behind box 3.4.3, and the reviewer's wrong implementations W1 to W5 each fail a test.
+- Requirement: 2, 3, 4, 6 and 7.
+- Dependencies: stage 1.
+- Holes: none. The asker's constructors become `AskerOf(readerID, client)`, a plan diff of this change's own interface, `Ask` refuses the zero `Asker` with `ErrNoAsker`, and `portal.Private` exports the portal's private guard for the chat page.
+- Acceptance: the new tests of the ledger's decisions.
+- Size: 200 lines.

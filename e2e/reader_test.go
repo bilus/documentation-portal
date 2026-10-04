@@ -20,7 +20,6 @@ import (
 )
 
 func TestOneQuestionLimitForAReaderInTheBrowser(t *testing.T) {
-	t.Skip("HOLE(1): count a signed-in reader's questions by the reader ID")
 	cfg := portal.Config{Root: os.DirFS("../testdata"), Portals: petsPortal(sections("specs/petstore-3.1.yaml", "docs", ""))}
 	lib, err := firstLibrary(portal.NewLibraries(cfg))
 	if err != nil {

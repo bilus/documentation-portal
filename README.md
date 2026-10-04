@@ -134,7 +134,8 @@ Each client may ask 20 questions an hour, in all portals together, a
 conversation holds 20 questions
 and 512 KiB of messages and lookups, and one answer may make 12 lookups. A
 client is an IPv4 address or an IPv6 /64 network. Behind a proxy, every reader
-shares the proxy's address. The page uses live-templ, a private module that Go
+shares the proxy's address, unless the program that embeds the chat names its
+readers (see below). The page uses live-templ, a private module that Go
 fetches with git, so devbox sets `GOPRIVATE` for it. After changing
 `chat/page.templ`, run `devbox run make generate`.
 
@@ -242,6 +243,32 @@ no portal handler; `Library.For(access)` limits a library to a reader, and
 `chat.Chat.Ask` takes the reader's access. A conversation keeps a separate
 history for each set of visible sections, so that no answer reads an earlier
 lookup from a section hidden from its reader.
+
+## The chat's question limit per reader
+
+A program that signs its readers in can count each reader's questions against
+one limit, from every address the reader uses. `chat.Config.Reader` takes a
+reader hook, a function of the request that returns the reader's ID, such as
+the subject of the reader's verified token, or an empty string for a reader
+who is not signed in:
+
+    c, err := chat.New(chat.Config{Model: m, Libraries: libs,
+    	Reader: func(r *http.Request) string {
+    		id, _ := r.Context().Value(subjectKey{}).(string) // from the program's middleware
+    		return id
+    	}})
+
+The chat asks the hook when a chat page loads, through the portal handler,
+and keeps the ID in the page's session for the page's socket. live-templ signs
+the session, so a reader cannot change the ID, but does not encrypt it, so the
+reader's browser can read it: return an ID that the reader may see. With the
+hook, a chat page answers with `Cache-Control: private`, so that no shared
+cache gives one reader's page to another. A reader without an ID, and every
+reader without the hook, counts by client, and `chat.Limits` sets the limit
+and its window for readers and clients alike. A program that calls
+`chat.Chat.Ask` itself names the asker: `chat.ReaderAsker(id)` shares the
+limit of that reader's chat pages, and `chat.ClientAsker(client)` the limit of
+a client.
 
 ## Tests
 

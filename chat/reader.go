@@ -12,35 +12,42 @@ type Asker struct {
 
 // ReaderAsker returns the asker of the signed-in reader whose reader ID is id.
 func ReaderAsker(id string) Asker {
-	// HOLE(1): name the reader in a namespace of its own, apart from every client
-	return Asker{key: id}
+	return Asker{key: "reader " + id}
 }
 
 // ClientAsker returns the asker of a reader without a reader ID, by the
 // reader's client, such as an IPv4 address.
 func ClientAsker(client string) Asker {
-	// HOLE(1): name the client in a namespace of its own, apart from every reader
-	return Asker{key: client}
+	return Asker{key: "client " + client}
 }
 
 // readerIDOf returns the reader ID of r's reader from the reader hook, or ""
 // without a hook.
 func (c *Chat) readerIDOf(r *http.Request) string {
-	// HOLE(1): ask the reader hook, or name no reader without one
-	return ""
+	if c.reader == nil {
+		return ""
+	}
+	return c.reader(r)
 }
 
 // askerOf returns the asker of a chat tab whose page session holds readerID
 // and client: the signed-in reader with the reader ID readerID, whatever the
 // client, or for an empty readerID, the client.
 func askerOf(readerID, client string) Asker {
-	// HOLE(1): ask as the signed-in reader, else as the client
+	if readerID != "" {
+		return ReaderAsker(readerID)
+	}
 	return ClientAsker(client)
 }
 
 // privatePage returns h, the handler of a chat page, which with a reader hook
 // answers with Cache-Control: private, since the page holds its reader's ID.
 func (c *Chat) privatePage(h http.Handler) http.Handler {
-	// HOLE(1): with a reader hook, set Cache-Control: private before h runs
-	return h
+	if c.reader == nil {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "private")
+		h.ServeHTTP(w, r)
+	})
 }
