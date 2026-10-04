@@ -516,14 +516,14 @@ func libraryOf(t *testing.T, text string) *portal.Library {
 }
 
 func TestChatReloadKeepsConversations(t *testing.T) {
-	t.Skip("HOLE(3): rebuild the agents for new libraries, keeping the sessions and the counters")
 	m := fakemodel.New("opus", []fakemodel.Exchange{
-		{Match: "What does the guide say?", Call: &fakemodel.Call{Name: "read_document", Args: map[string]any{"path": "a.md"}}},
+		{Match: "What does the guide say?", Call: &fakemodel.Call{Name: "read_document", Args: map[string]any{"path": "docs/a.md"}}},
 		{Match: "The old text.", Reply: "The guide says: the old text."},
-		{Match: "And now?", Call: &fakemodel.Call{Name: "read_document", Args: map[string]any{"path": "a.md"}}},
+		{Match: "And now?", Call: &fakemodel.Call{Name: "read_document", Args: map[string]any{"path": "docs/a.md"}}},
 		{Match: "The new text.", Reply: "The guide says: the new text."},
+		{Match: "Another?", Reply: "Three."},
 	})
-	c, err := New(Config{Model: m, Libraries: []*portal.Library{libraryOf(t, "The old text.")}, Limits: Limits{Questions: 2, Window: time.Hour, Turns: 2}})
+	c, err := New(Config{Model: m, Libraries: []*portal.Library{libraryOf(t, "The old text.")}, Limits: Limits{Questions: 3, Window: time.Hour, Turns: 2}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,14 +541,16 @@ func TestChatReloadKeepsConversations(t *testing.T) {
 	if _, err := c.Ask(t.Context(), "pets", "client", "conv", "A third?"); !errors.Is(err, ErrTurns) {
 		t.Errorf("a third turn after the reload: err = %v, want ErrTurns", err)
 	}
-	// The client's two questions count against its limit too.
-	if _, err := c.Ask(t.Context(), "pets", "client", "other", "A third?"); !errors.Is(err, ErrRateLimited) {
-		t.Errorf("a third question after the reload: err = %v, want ErrRateLimited", err)
+	// The client's questions before the reload count against its limit too.
+	if _, err := c.Ask(t.Context(), "pets", "client", "other", "Another?"); err != nil {
+		t.Fatalf("a third question: %v", err)
+	}
+	if _, err := c.Ask(t.Context(), "pets", "client", "another", "A fourth?"); !errors.Is(err, ErrRateLimited) {
+		t.Errorf("a fourth question after the reload: err = %v, want ErrRateLimited", err)
 	}
 }
 
 func TestChatReloadServesTheNewPortals(t *testing.T) {
-	t.Skip("HOLE(3): a reload adds and removes portals")
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Reply: "one"}})
 	c, err := New(Config{Model: m, Libraries: []*portal.Library{library(t)}})
 	if err != nil {
@@ -573,7 +575,6 @@ func TestChatReloadServesTheNewPortals(t *testing.T) {
 }
 
 func TestChatReloadRefusesWhatNewRefuses(t *testing.T) {
-	t.Skip("HOLE(3): a refused reload keeps the old agents")
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Reply: "one"}})
 	c, err := New(Config{Model: m, Libraries: []*portal.Library{library(t)}})
 	if err != nil {

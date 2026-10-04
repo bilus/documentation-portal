@@ -41,7 +41,6 @@ func writeFolder(t *testing.T, dir, guide string) {
 }
 
 func TestRefreshShowsTheNewDocument(t *testing.T) {
-	t.Skip("HOLE(3): a reader sees the new document after a settled change of the bucket folder")
 	dir := t.TempDir()
 	writeFolder(t, dir, "# Guide\n\nThe first version of the guide.\n")
 	bucket, err := fileblob.OpenBucket(dir, &fileblob.Options{Metadata: fileblob.MetadataDontWrite})

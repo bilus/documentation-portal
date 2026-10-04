@@ -451,7 +451,6 @@ func TestStartupRefusesABucketFolderItCannotServe(t *testing.T) {
 }
 
 func TestStartupRefreshesTheBucket(t *testing.T) {
-	t.Skip("HOLE(3): a settled change of the bucket folder replaces the snapshot in service")
 	dir, url := bucketFolder(t)
 	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "5ms"}, noEnv)
 	if err != nil {

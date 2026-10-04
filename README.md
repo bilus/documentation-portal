@@ -34,6 +34,38 @@ variable: `-addr` to `DOCPORTAL_ADDR` (default `:8080`), `-config` to
 handler passes the portals in `portal.Config`, or reads them with
 `portal.ReadConfig`.
 
+## A bucket folder as the documentation root
+
+`-root` (`DOCPORTAL_ROOT`) names a folder of a bucket as the documentation
+root instead of a local directory, by its [Go CDK](https://gocloud.dev/howto/blob/)
+URL: `gs://docs-bucket?prefix=portal/` on GCS, `s3://docs-bucket?region=eu-west-1&prefix=portal/`
+on S3, or `file:///srv/docs?prefix=portal/` on the local file system, where
+`prefix` selects the folder and ends in a slash. `-config` then names the
+configuration file by its path inside the folder. docportal needs read access
+alone, with credentials from the platform's usual sources: Application Default
+Credentials on GCP, and the SDK's default chain on AWS.
+
+    docportal -root 'gs://docs-bucket?prefix=portal/' -config environment.yaml
+
+docportal reads the whole folder into memory at startup, as one snapshot, and
+refuses a folder over `-max-size` (`DOCPORTAL_MAX_SIZE`) MiB, 256 by default
+and 0 for no limit. Every `-refresh` (`DOCPORTAL_REFRESH`, a duration, one
+minute by default, 0 for never) it lists the folder again, and a change that
+two checks in a row report alike becomes a new snapshot, whose pages replace
+the old ones in one step, so that every request reads one version of the
+documentation and links between documents lead to one version. A check or a
+reload that fails, from an unreachable bucket or a configuration file that
+docportal refuses, keeps the old snapshot and writes the cause to the log, and
+the next check tries again. The chat keeps its conversations and its question
+counts across snapshots. A local directory is read live, as before.
+
+A program that uses the library opens the folder with `source.OpenBucket`,
+after a blank import of the Go CDK drivers it needs, such as
+`gocloud.dev/blob/gcsblob`; loads the first snapshot with `source.Load`;
+builds the portal handler from the snapshot's root; and wraps the handler in
+`source.NewReloader`, which rebuilds it with the program's own builder for
+each settled change.
+
 Portals and sections have slugs: the name or the title in lower case, with
 each run of characters other than letters and digits as one dash, such as
 `store-api` for Store API. Every page of a portal is under

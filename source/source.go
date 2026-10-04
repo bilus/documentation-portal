@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"slices"
@@ -210,8 +211,9 @@ type reloader struct {
 	build func(fs.FS) (http.Handler, error)
 
 	inService atomic.Pointer[snapshotInService]
-	last      Listing // the last check's listing, when it differed from the snapshot in service
-	problem   string  // the last problem logged, so that a check logs it once
+	// run alone touches last and problem, after the first swap.
+	last    Listing // the last check's listing, when it differed from the snapshot in service
+	problem string  // the last problem logged, so that a check logs it once
 }
 
 // snapshotInService is the listing of the snapshot in service and its portal
@@ -246,10 +248,22 @@ func (r *reloader) run(ctx context.Context, interval time.Duration) {
 
 // swap puts the snapshot with listing and its portal handler h in service,
 // in one step, so that every request from now on reads that snapshot, and
-// logs the swap.
+// logs the swap, unless the listing is empty, as a directory's is. It forgets
+// the last problem, so that the log names it again if it comes back.
 func (r *reloader) swap(listing Listing, h http.Handler) {
-	// HOLE(3): put the snapshot in service and log the swap
 	r.inService.Store(&snapshotInService{listing: listing, handler: h})
+	if len(listing) > 0 {
+		log.Printf("documentation source: %d objects in service", len(listing))
+	}
+	r.problem = ""
+}
+
+// note logs problem, unless the log already named the same problem last.
+func (r *reloader) note(problem string) {
+	if problem != r.problem {
+		log.Printf("documentation source: %s", problem)
+	}
+	r.problem = problem
 }
 
 // check lists the source and compares the listing with the snapshot in
@@ -258,9 +272,18 @@ func (r *reloader) swap(listing Listing, h http.Handler) {
 // that the last check reported too. A failed listing goes to the log, once
 // until the problem changes, and counts as no change.
 func (r *reloader) check(ctx context.Context) (Listing, bool) {
-	// HOLE(3): return the listing once two checks in a row report it, and log a failed listing once
 	listing, err := r.src.List(ctx)
-	if err != nil || listing.Equal(r.inService.Load().listing) {
+	if err != nil {
+		r.note("check: " + err.Error())
+		return nil, false
+	}
+	if listing.Equal(r.inService.Load().listing) {
+		r.last = nil
+		return nil, false
+	}
+	// A listing seen for the first time may be an upload in progress.
+	if r.last == nil || !listing.Equal(r.last) {
+		r.last = listing
 		return nil, false
 	}
 	return listing, true
@@ -270,17 +293,21 @@ func (r *reloader) check(ctx context.Context) (Listing, bool) {
 // handler with the builder, or logs the failure, so that the snapshot in
 // service stays until the next check.
 func (r *reloader) rebuild(ctx context.Context, listing Listing) (http.Handler, error) {
-	// HOLE(3): read the snapshot and build its handler, logging a failure once until the problem changes
 	root, err := r.src.Read(ctx, listing)
 	if err != nil {
+		r.note("refresh: " + err.Error())
 		return nil, err
 	}
-	return r.build(root)
+	h, err := r.build(root)
+	if err != nil {
+		r.note("refresh: " + err.Error())
+		return nil, err
+	}
+	return h, nil
 }
 
 // ServeHTTP answers the request with the portal handler of the snapshot in
 // service, which the request keeps to its end.
 func (r *reloader) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// HOLE(3): answer with the handler in service
 	r.inService.Load().handler.ServeHTTP(w, req)
 }
