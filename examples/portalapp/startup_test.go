@@ -9,8 +9,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/bilus/documentation-portal/examples/portalapp/mocks"
@@ -139,6 +141,85 @@ func get(t *testing.T, c *http.Client, url string) page {
 	return page{status: resp.StatusCode, url: resp.Request.URL.String(), header: resp.Header, body: string(body)}
 }
 
+func TestOpenBucketLeavesThePreviewsOut(t *testing.T) {
+	_, bucket := demoBucket(t)
+	published, location, err := openBucket(t.Context(), bucket, "previews")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing, err := published.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, o := range listing {
+		keys = append(keys, o.Key)
+	}
+	want := []string{"environment.yaml", "guides/getting-started.md", "specs/partners.yaml", "specs/pets.yaml", "staff/on-call.md"}
+	if !slices.Equal(keys, want) {
+		t.Errorf("the published documentation lists %q, want %q", keys, want)
+	}
+	pr1, err := location.Folder("pr-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listing, err := pr1.List(t.Context()); err != nil || len(listing) != 3 || listing[0].Key != "environment.yaml" {
+		t.Errorf("the preview folder pr-1 lists %v, %v", listing, err)
+	}
+	if _, _, err := openBucket(t.Context(), "nosuchscheme://docs", "previews"); err == nil {
+		t.Error("a bucket folder URL of no driver opened")
+	}
+	if _, _, err := openBucket(t.Context(), bucket, "../previews"); err == nil {
+		t.Error("a previews location outside the bucket folder opened")
+	}
+}
+
+func TestBuildKeepsOneChatAcrossSnapshots(t *testing.T) {
+	demo := os.DirFS("demo/docs")
+	broken := fstest.MapFS{"environment.yaml": {Data: []byte("portals: [")}}
+
+	without := &builder{configPath: "environment.yaml"}
+	if _, err := without.build(demo); err != nil || without.chat != nil {
+		t.Errorf("a build without an API key: %v, with the chat %v", err, without.chat)
+	}
+
+	b := &builder{configPath: "environment.yaml", model: chatSettings{apiKey: "a test key", model: "claude-opus-5-5", baseURL: "http://127.0.0.1:1"}}
+	if _, err := b.build(demo); err != nil || b.chat == nil {
+		t.Fatalf("the first build: %v, with the chat %v", err, b.chat)
+	}
+	first := b.chat
+	if _, err := b.build(broken); err == nil || b.chat != first {
+		t.Errorf("a failed build: %v, and the chat changed: %v", err, b.chat != first)
+	}
+	if _, err := b.build(demo); err != nil || b.chat != first {
+		t.Errorf("a later build: %v, and the chat changed: %v", err, b.chat != first)
+	}
+}
+
+func TestBuildPreviewHasTheHooksWithoutTheChat(t *testing.T) {
+	rules, err := readAccessFile("demo/access.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &builder{configPath: "environment.yaml", rules: rules, model: chatSettings{apiKey: "a test key", model: "claude-opus-5-5"}}
+	h, err := b.buildPreview(os.DirFS("demo/docs/previews/pr-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.chat != nil {
+		t.Error("a preview's build made a chat")
+	}
+	// The access hook hides the preview from a request outside the sign-in.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if !strings.Contains(rec.Body.String(), "No portals are open to you") || rec.Header().Get("Cache-Control") != "private" {
+		t.Errorf("the preview's home page outside the sign-in: %q, Cache-Control %q", rec.Body, rec.Header().Get("Cache-Control"))
+	}
+	if _, err := b.buildPreview(fstest.MapFS{}); err == nil {
+		t.Error("a preview folder without a configuration file built")
+	}
+}
+
 // TestStartupOffersTheIdentityProviders is the smoke test of the top
 // function: startup with the demo documentation, the demo access file, the
 // mock Auth0 and the stub GitHub answers a request without a session with
@@ -160,7 +241,6 @@ func TestStartupOffersTheIdentityProviders(t *testing.T) {
 }
 
 func TestStartupServesEachReaderTheirOwnSections(t *testing.T) {
-	t.Skip("HOLE(4): build each snapshot's portal handler with the access hook and the account hook")
 	p := newPortalTest(t)
 	p.start(t)
 
@@ -207,7 +287,6 @@ func TestStartupServesEachReaderTheirOwnSections(t *testing.T) {
 }
 
 func TestStartupRefreshesTheDocumentation(t *testing.T) {
-	t.Skip("HOLE(4): build each snapshot's portal handler with the access hook and the account hook")
 	p := newPortalTest(t)
 	p.env["PORTAL_REFRESH"] = "50ms"
 	p.start(t)
@@ -229,7 +308,6 @@ func TestStartupRefreshesTheDocumentation(t *testing.T) {
 }
 
 func TestStartupOpensPreviewsToTheOrganization(t *testing.T) {
-	t.Skip("HOLE(4): open the preview folders to the readers whom the access rules allow")
 	p := newPortalTest(t)
 	p.start(t)
 
@@ -256,7 +334,6 @@ func TestStartupOpensPreviewsToTheOrganization(t *testing.T) {
 }
 
 func TestStartupRunsTheChatWithAnAPIKey(t *testing.T) {
-	t.Skip("HOLE(4): add the chat with the reader hook of the sign-in, with an API key")
 	model := httptest.NewServer(mocks.Model())
 	defer model.Close()
 	for key, want := range map[string]int{"": http.StatusNotFound, "a test key": http.StatusOK} {
