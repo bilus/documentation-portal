@@ -1,0 +1,21 @@
+# The gate without the browser tests: build, lint (with the dependency check
+# of the core packages) and the unit tests, through devbox as the Makefile
+# expects. The module github.com/bilus/live-templ is private, so the job
+# fetches it with the secret GO_MODULES_TOKEN, a token with read access to it.
+name: ci
+on:
+  push:
+    branches: [master]
+  pull_request:
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: git config --global url."https://x-access-token:${GO_MODULES_TOKEN}@github.com/".insteadOf "https://github.com/"
+        env:
+          GO_MODULES_TOKEN: ${{ secrets.GO_MODULES_TOKEN }}
+      - uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
+      - run: devbox run make build lint test
