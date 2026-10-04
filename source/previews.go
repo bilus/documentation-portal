@@ -194,11 +194,18 @@ func (p *Previews) load(ctx context.Context, f *preview) (http.Handler, error) {
 }
 
 // remember keeps err as the result of the folder name's loads for the
-// refresh interval, and returns it.
+// refresh interval, and returns it. It forgets the failures whose interval
+// has passed, so that the folders that failed once do not add up.
 func (p *Previews) remember(name string, err error) error {
 	if p.interval > 0 {
+		now := time.Now()
 		p.mu.Lock()
-		p.failures[name] = failure{err: err, until: time.Now().Add(p.interval)}
+		for other, fl := range p.failures {
+			if !now.Before(fl.until) {
+				delete(p.failures, other)
+			}
+		}
+		p.failures[name] = failure{err: err, until: now.Add(p.interval)}
 		p.mu.Unlock()
 	}
 	return err

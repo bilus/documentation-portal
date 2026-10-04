@@ -471,3 +471,25 @@ func TestPreviewsKeepASnapshotWhoseListingFails(t *testing.T) {
 		t.Errorf("after failed checks: %v, %d builds, want the snapshot of the first", err, builds.Load())
 	}
 }
+
+func TestPreviewsForgetExpiredFailures(t *testing.T) {
+	a, b := folderOf("a"), folderOf("b")
+	a.readErr, b.readErr = errors.New("bucket unreachable"), errors.New("bucket unreachable")
+	var opened, builds atomic.Int64
+	p := NewPreviews(t.Context(), folders(map[string]*fakeSource{"a": a, "b": b}, &opened), pageOf(&builds), 20*time.Millisecond, 0, 0)
+	if _, err := p.Handler(t.Context(), "a"); err == nil {
+		t.Fatal("the broken folder a loaded")
+	}
+	time.Sleep(30 * time.Millisecond)
+	// A later failure of another folder sweeps a's expired entry.
+	if _, err := p.Handler(t.Context(), "b"); err == nil {
+		t.Fatal("the broken folder b loaded")
+	}
+	p.mu.Lock()
+	_, keptA := p.failures["a"]
+	_, keptB := p.failures["b"]
+	p.mu.Unlock()
+	if keptA || !keptB {
+		t.Errorf("failures remembered: a %v, b %v; want b alone", keptA, keptB)
+	}
+}
