@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -111,6 +113,53 @@ func TestTheGitHubProviderFollowsNoRedirect(t *testing.T) {
 	g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, nil)
 	if id, err := g.Identity(t.Context(), stubToken(t, srv.URL)); err == nil || tokens.Load() != 0 {
 		t.Errorf("a redirect of GET /user: the identity %+v, the error %v, %d tokens elsewhere", id, err, tokens.Load())
+	}
+}
+
+func TestTheGitHubProviderNeedsAnswersOf200(t *testing.T) {
+	stub := mocks.GitHub(mocks.Grace)
+	for name, answer := range map[string]struct {
+		path, body string
+		status     int
+	}{
+		"a user of 404": {"/user", `{"id":2,"login":"grace"}`, http.StatusNotFound},
+		"teams of 403":  {"/user/teams", `[]`, http.StatusForbidden},
+		"orgs of 206":   {"/user/orgs", `[]`, http.StatusPartialContent},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == answer.path {
+				w.WriteHeader(answer.status)
+				w.Write([]byte(answer.body))
+				return
+			}
+			stub.ServeHTTP(w, r)
+		}))
+		g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, nil)
+		if id, err := g.Identity(t.Context(), stubToken(t, srv.URL)); err == nil {
+			t.Errorf("%s: the provider named %+v", name, id)
+		}
+		srv.Close()
+	}
+}
+
+func TestTheGitHubProviderBoundsItsPages(t *testing.T) {
+	stub := mocks.GitHub(mocks.Grace)
+	var pages atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user/orgs" {
+			pages.Add(1)
+			w.Header().Set("Link", "<http://"+r.Host+`/user/orgs?page=2>; rel="next"`)
+			w.Write([]byte(`[]`))
+			return
+		}
+		stub.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	g := newGitHub(githubSettings{webURL: srv.URL, apiURL: srv.URL}, nil)
+	if id, err := g.Identity(ctx, stubToken(t, srv.URL)); err == nil || pages.Load() > maxPages {
+		t.Errorf("a loop of empty pages: the identity %+v, the error %v, after %d pages", id, err, pages.Load())
 	}
 }
 

@@ -44,7 +44,7 @@
     < listing, files
     <Bucket folder>
 > documentation root handle
-[5. Build the portal handler of a snapshot: read the portal configuration from the configuration file, and add the access hook of the access rules, the account hook of the sign-in and, with an API key, the chat with the reader hook of the sign-in, kept from the last snapshot
+[5. Build the portal handler of a snapshot: read the portal configuration from the configuration file, and add the access hook of the access rules, the account hook of the sign-in and, with an API key, the chat with the reader hook of the sign-in, kept from the last snapshot and given its libraries before its routes
  (main.builder.build)]
     < chat
     > chat

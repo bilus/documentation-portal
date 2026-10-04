@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -174,6 +175,27 @@ func TestOpenBucketLeavesThePreviewsOut(t *testing.T) {
 	}
 }
 
+func TestOpenBucketOpensTheNamedPreviewsLocation(t *testing.T) {
+	dir, bucket := demoBucket(t)
+	if err := os.Rename(filepath.Join(dir, "previews"), filepath.Join(dir, "pulls")); err != nil {
+		t.Fatal(err)
+	}
+	published, location, err := openBucket(t.Context(), bucket, "pulls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listing, err := published.List(t.Context()); err != nil || len(listing) != 5 {
+		t.Errorf("the published documentation lists %d objects, %v, want 5", len(listing), err)
+	}
+	pr1, err := location.Folder("pr-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listing, err := pr1.List(t.Context()); err != nil || len(listing) != 3 {
+		t.Errorf("the preview folder pulls/pr-1 lists %v, %v", listing, err)
+	}
+}
+
 func TestBuildKeepsOneChatAcrossSnapshots(t *testing.T) {
 	demo := os.DirFS("demo/docs")
 	broken := fstest.MapFS{"environment.yaml": {Data: []byte("portals: [")}}
@@ -304,6 +326,60 @@ func TestStartupRefreshesTheDocumentation(t *testing.T) {
 			t.Fatalf("the new guide never showed: %d %q", page.status, page.body)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestTheChatFollowsARefresh(t *testing.T) {
+	model := httptest.NewServer(mocks.Model())
+	defer model.Close()
+	p := newPortalTest(t)
+	p.env["ANTHROPIC_API_KEY"], p.env["ANTHROPIC_BASE_URL"], p.env["PORTAL_REFRESH"] = "a test key", model.URL, "50ms"
+	p.start(t)
+	ada := signInAs(t, p.srv.URL, "auth0")
+	if page := get(t, ada, p.srv.URL+"/portals/pets/chat"); !strings.Contains(page.body, "Ask about the Pets API") {
+		t.Fatalf("the first chat page: %d %q", page.status, page.body)
+	}
+	store := "openapi: 3.1.0\ninfo:\n  title: Store API\n  version: 1.0.0\npaths: {}\n"
+	if err := os.WriteFile(filepath.Join(p.dir, "specs", "store.yaml"), []byte(store), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	config, err := os.ReadFile(filepath.Join(p.dir, "environment.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config = []byte(strings.Replace(string(config), "      - title: Guides\n", "      - title: Store\n        type: spec\n        input: specs/store.yaml\n      - title: Guides\n", 1))
+	if err := os.WriteFile(filepath.Join(p.dir, "environment.yaml"), config, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		page := get(t, ada, p.srv.URL+"/portals/pets/chat")
+		if heading := regexp.MustCompile(`<h1>([^<]*)</h1>`).FindStringSubmatch(page.body); heading != nil && strings.Contains(heading[1], "Store API") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the chat page never named the new API: %q", page.body)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestAPreviewHasNoChat(t *testing.T) {
+	model := httptest.NewServer(mocks.Model())
+	defer model.Close()
+	p := newPortalTest(t)
+	p.env["ANTHROPIC_API_KEY"], p.env["ANTHROPIC_BASE_URL"] = "a test key", model.URL
+	p.start(t)
+	grace := signInAs(t, p.srv.URL, "github")
+	if page := get(t, grace, p.srv.URL+"/portals/pets/docs/guides/"); !strings.Contains(page.body, ">Chat</a>") {
+		t.Fatalf("the published guides lack the chat link: %q", page.body)
+	}
+	preview := get(t, grace, p.srv.URL+"/previews/pr-1/portals/pets/docs/guides/")
+	if !strings.Contains(preview.body, "portal-banner") || strings.Contains(preview.body, ">Chat</a>") {
+		t.Errorf("the preview's guides: %d %q, want the banner without the chat link", preview.status, preview.body)
+	}
+	if page := get(t, grace, p.srv.URL+"/portals/pets/chat"); page.status != http.StatusNotFound {
+		t.Errorf("the chat page in the preview answers %d, want 404", page.status)
 	}
 }
 
