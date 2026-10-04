@@ -239,7 +239,9 @@ portal to an open page until the page loads again; without a hook, an open
 page follows each snapshot. `portal.AccessOf(r)` gives the access that the portal handler
 found for a request, and an access that allows nothing to a request served by
 no portal handler; `Library.For(access)` limits a library to a reader, and
-`chat.Chat.Ask` takes the reader's access.
+`chat.Chat.Ask` takes the reader's access. A conversation keeps a separate
+history for each set of visible sections, so that no answer reads an earlier
+lookup from a section hidden from its reader.
 
 ## Tests
 

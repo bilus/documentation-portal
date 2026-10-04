@@ -231,6 +231,13 @@ func (c *Chat) currentAgents() []*portalAgent {
 // page of the portal whose slug is portalSlug, in markdown, from the sections
 // of that portal visible to the reader with access. It answers a portal
 // hidden from the reader as a missing one, with ErrNoPortal.
+//
+// The conversation keeps a separate history for each view of the portal, so
+// that no answer reads an earlier lookup from a section hidden from its
+// reader. The view of a reader who sees every section, as every reader does
+// without an access hook, stays the same across snapshots. The view of any
+// other reader changes with the set of its visible sections and with their
+// configuration.
 func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access, client, conv, question string) (string, error) {
 	a, ok := c.agentFor(portalSlug)
 	if !ok {
@@ -240,8 +247,8 @@ func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access,
 	if !ok {
 		return "", fmt.Errorf("%w %q", ErrNoPortal, portalSlug)
 	}
-	// A conversation lives in one portal, so its session is the portal's.
-	conv = portalSlug + "/" + conv
+	// A conversation lives in one portal, with a session for each view of the portal.
+	conv = portalSlug + "/" + viewOf(lib) + "/" + conv
 	question = strings.TrimSpace(question)
 	switch {
 	case question == "":

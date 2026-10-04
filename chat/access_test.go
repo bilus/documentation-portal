@@ -105,7 +105,8 @@ func sessionThroughPortal(t *testing.T, c *Chat) map[string]string {
 }
 
 // recording passes each request on to its model, and keeps the request's
-// instructions and the results of its tool calls, as JSON.
+// instructions, the text of its messages and the results of its tool calls,
+// as JSON.
 type recording struct {
 	model.LLM
 	seen []string
@@ -120,6 +121,7 @@ func (r *recording) GenerateContent(ctx context.Context, req *model.LLMRequest, 
 	}
 	for _, c := range req.Contents {
 		for _, p := range c.Parts {
+			b.WriteString(p.Text)
 			if p.FunctionResponse != nil {
 				body, _ := json.Marshal(p.FunctionResponse.Response)
 				b.Write(body)
@@ -175,6 +177,31 @@ func TestAskAnswersAHiddenPortalAsMissing(t *testing.T) {
 	}
 	if answer, err := c.Ask(t.Context(), "garden", fakeaccess.Parse(customer), "client", "conv", "Plants?"); err != nil || answer != "One." {
 		t.Errorf("a visible portal: %q, %v", answer, err)
+	}
+}
+
+func TestANarrowerAccessReadsNoEarlierLookups(t *testing.T) {
+	m := &recording{LLM: fakemodel.New("opus", []fakemodel.Exchange{
+		{Match: "What do the notes say?", Call: &fakemodel.Call{Name: "read_document", Args: map[string]any{"path": "internal/x.md"}}},
+		{Match: "Secret plans", Reply: "The orders hide a secret."},
+		{Match: "And the orders?", Reply: "Call GET /orders."},
+	})}
+	c, _ := newAccessChat(t, m)
+	if _, err := c.Ask(t.Context(), "pet-shop", portal.Everything, "client", "conv", "What do the notes say?"); err != nil {
+		t.Fatal(err)
+	}
+	// The reader's access narrows in the same conversation, as after a
+	// revocation.
+	m.seen = nil
+	if answer, err := c.Ask(t.Context(), "pet-shop", fakeaccess.Parse(customer), "client", "conv", "And the orders?"); err != nil || answer != "Call GET /orders." {
+		t.Fatalf("the narrower access: %q, %v", answer, err)
+	}
+	for i, seen := range m.seen {
+		for _, hidden := range hiddenFromCustomer {
+			if strings.Contains(seen, hidden) {
+				t.Errorf("request %d of the narrower access holds %q, from a section hidden from it: %s", i+1, hidden, seen)
+			}
+		}
 	}
 }
 
@@ -283,7 +310,9 @@ var (
 
 func TestOpenPageFollowsEachSnapshotWithoutAHook(t *testing.T) {
 	m := fakemodel.New("opus", []fakemodel.Exchange{
-		{Call: &fakemodel.Call{Name: "list_documents", Args: map[string]any{}}},
+		{Match: "Which APIs?", Reply: "Cats and dogs."},
+		// The conversation goes on across the snapshot, with its first answer.
+		{Match: "Cats and dogs.", Call: &fakemodel.Call{Name: "list_documents", Args: map[string]any{}}},
 		{Match: "guides/new.md", Reply: "The new guide."},
 	})
 	c, err := New(Config{Model: m, Libraries: []*portal.Library{petsLibrary(t, petsAPI)}})
@@ -291,6 +320,9 @@ func TestOpenPageFollowsEachSnapshotWithoutAHook(t *testing.T) {
 		t.Fatal(err)
 	}
 	access := readPageAccess(sessionThroughPortal(t, c)["access"])
+	if _, err := c.Ask(t.Context(), "pets", access, "client", "conv", "Which APIs?"); err != nil {
+		t.Fatal(err)
+	}
 	if err := c.Reload([]*portal.Library{petsLibrary(t, petsAPI, petsGuides)}); err != nil {
 		t.Fatal(err)
 	}
@@ -339,5 +371,37 @@ func TestOpenPageClosesAPortalThatAChangeReconfigures(t *testing.T) {
 	}
 	if answer, err := c2.Ask(t.Context(), "pets", same, "client", "conv", "And now?"); err != nil || answer != "Two." {
 		t.Errorf("the open page of a portal that a snapshot left as it was: %q, %v", answer, err)
+	}
+}
+
+func TestAReconfiguredPortalStartsTheConversationOver(t *testing.T) {
+	notes := portal.Section{Title: "Notes", Type: portal.DocsSection, Input: "guides"}
+	staff := portal.Section{Title: "Internal", Type: portal.DocsSection, Input: "internal", Labels: []string{"staff"}}
+	m := &recording{LLM: fakemodel.New("opus", []fakemodel.Exchange{
+		{Match: "What do the notes say?", Call: &fakemodel.Call{Name: "read_document", Args: map[string]any{"path": "guides/new.md"}}},
+		{Match: "New guide", Reply: "They hold the new guide."},
+		{Match: "And now?", Reply: "Two."},
+	})}
+	c, err := New(Config{Model: m, Libraries: []*portal.Library{petsLibrary(t, petsAPI, notes, staff)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Ask(t.Context(), "pets", unlabelled{}, "client", "conv", "What do the notes say?"); err != nil {
+		t.Fatal(err)
+	}
+	// The next snapshot keeps the titles of the reader's sections, but gives
+	// the guides to the staff section, hidden from the reader.
+	notes.Input, staff.Input = "internal", "guides"
+	if err := c.Reload([]*portal.Library{petsLibrary(t, petsAPI, notes, staff)}); err != nil {
+		t.Fatal(err)
+	}
+	m.seen = nil
+	if answer, err := c.Ask(t.Context(), "pets", unlabelled{}, "client", "conv", "And now?"); err != nil || answer != "Two." {
+		t.Fatalf("after the snapshot: %q, %v", answer, err)
+	}
+	for i, seen := range m.seen {
+		if strings.Contains(strings.ToLower(seen), "new guide") {
+			t.Errorf("request %d after the snapshot holds the guide, hidden from the reader now: %s", i+1, seen)
+		}
 	}
 }

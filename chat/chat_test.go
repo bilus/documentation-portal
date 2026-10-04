@@ -101,11 +101,11 @@ func TestAskRefusesOverLimits(t *testing.T) {
 		t.Errorf("after the window: %v", err)
 	}
 	now = now.Add(2 * time.Hour)
-	if _, ok := c.convs["pets/c1"]; !ok {
+	if _, ok := c.convs["pets/all/c1"]; !ok {
 		t.Fatal("c1 is gone too early")
 	}
 	c.admit(t.Context(), "z", "c3")
-	if _, ok := c.convs["pets/c1"]; ok {
+	if _, ok := c.convs["pets/all/c1"]; ok {
 		t.Error("an idle conversation stayed")
 	}
 }
@@ -171,7 +171,7 @@ func TestAskRunsNoLookupOverTheLimit(t *testing.T) {
 	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c", "pets?"); !errors.Is(err, ErrTooManyTools) {
 		t.Fatalf("err = %v, want ErrTooManyTools", err)
 	}
-	got, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "pets/c"})
+	got, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "pets/all/c"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestIdleConversationsLoseTheirSessions(t *testing.T) {
 	c := newChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "1"}, {Reply: "2"}}), Limits{Idle: time.Hour})
 	c.now = func() time.Time { return now }
 	session1 := func() error {
-		_, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "pets/c1"})
+		_, err := c.sessions.Get(t.Context(), &session.GetRequest{AppName: appName, UserID: userID, SessionID: "pets/all/c1"})
 		return err
 	}
 	if _, err := c.Ask(t.Context(), "pets", portal.Everything, "a", "c1", "q"); err != nil {

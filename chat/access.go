@@ -53,6 +53,27 @@ func digest(p portal.Portal) string {
 	return hex.EncodeToString(sum[:16])
 }
 
+// viewOf names the reader's view of the portal in lib, the portal's library
+// limited to the reader's access: "all" when lib holds every section of the
+// portal, as for every reader without an access hook, and else the digest of
+// the portal's configuration with only the sections in lib, which changes
+// with the set of those sections and with their configuration.
+func viewOf(lib *portal.Library) string {
+	visible, p := lib.Sections(), lib.Portal()
+	if len(visible) == len(p.Sections) {
+		return "all"
+	}
+	var sections []portal.Section
+	for _, s := range p.Sections {
+		// Two sections of a portal never share a title, since their slugs come from their titles.
+		if slices.ContainsFunc(visible, func(l portal.SectionLink) bool { return l.Title == s.Title }) {
+			sections = append(sections, s)
+		}
+	}
+	p.Sections = sections
+	return digest(p)
+}
+
 // pageAccessOf returns the page access of a reader with access over the
 // portals of agents: everything for portal.Everything, else the titles of the
 // sections of each portal visible to the reader, with the portal's digest.
