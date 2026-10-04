@@ -261,14 +261,16 @@ who is not signed in:
 The chat asks the hook when a chat page loads, through the portal handler,
 and keeps the ID in the page's session for the page's socket. live-templ signs
 the session, so a reader cannot change the ID, but does not encrypt it, so the
-reader's browser can read it: return an ID that the reader may see. With the
+reader's browser can read it: return an ID that the reader may see. A loaded
+page asks as its reader for up to 14 days, the life of live-templ's session,
+even after a sign-out, and so does any copy of the page. With the
 hook, a chat page answers with `Cache-Control: private`, so that no shared
 cache gives one reader's page to another. A reader without an ID, and every
 reader without the hook, counts by client, and `chat.Limits` sets the limit
 and its window for readers and clients alike. A program that calls
-`chat.Chat.Ask` itself names the asker: `chat.ReaderAsker(id)` shares the
-limit of that reader's chat pages, and `chat.ClientAsker(client)` the limit of
-a client.
+`chat.Chat.Ask` itself asks as `chat.AskerOf(id, client)`, which counts the
+question against the limit of the reader's chat pages, or against the
+client's for an empty ID.
 
 ## Tests
 

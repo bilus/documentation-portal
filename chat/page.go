@@ -145,7 +145,7 @@ func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 	if len(menu) < 2 {
 		menu = nil
 	}
-	return &page{chat: c, portal: a.lib.Slug(), access: access, asker: askerOf(lv.Session("readerID"), lv.Session("client")), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
+	return &page{chat: c, portal: a.lib.Slug(), access: access, asker: AskerOf(readerIDIn(lv.Session("readerID")), lv.Session("client")), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
 }
 
 // FormID changes with every message, so the page renders a new, empty form.

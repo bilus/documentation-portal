@@ -90,6 +90,7 @@ var (
 	ErrCutOff       = errors.New("chat: the answer was cut off")
 	ErrUnavailable  = errors.New("chat: the model is unavailable")
 	ErrNoPortal     = errors.New("chat: no portal has the slug")
+	ErrNoAsker      = errors.New("chat: the question has no asker")
 )
 
 // ADK keys a session by application, user and session; every conversation
@@ -244,7 +245,7 @@ func (c *Chat) currentAgents() []*portalAgent {
 // of the portal whose slug is portalSlug, in markdown, from the sections of
 // that portal visible to the reader with access, and counts it against the
 // asker's question limit. It answers a portal hidden from the reader as a
-// missing one, with ErrNoPortal.
+// missing one, with ErrNoPortal, and refuses the zero Asker with ErrNoAsker.
 //
 // The conversation keeps a separate history for each view of the portal, so
 // that no answer reads an earlier lookup from a section hidden from its
@@ -253,6 +254,9 @@ func (c *Chat) currentAgents() []*portalAgent {
 // other reader changes with the set of its visible sections and with their
 // configuration.
 func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access, asker Asker, conv, question string) (string, error) {
+	if asker == (Asker{}) {
+		return "", ErrNoAsker
+	}
 	a, ok := c.agentFor(portalSlug)
 	if !ok {
 		return "", fmt.Errorf("%w %q", ErrNoPortal, portalSlug)

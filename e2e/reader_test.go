@@ -19,6 +19,10 @@ import (
 	"github.com/bilus/documentation-portal/portal"
 )
 
+// readerKey keys the reader ID that the test's sign-in puts into a request's
+// context.
+type readerKey struct{}
+
 func TestOneQuestionLimitForAReaderInTheBrowser(t *testing.T) {
 	cfg := portal.Config{Root: os.DirFS("../testdata"), Portals: petsPortal(sections("specs/petstore-3.1.yaml", "docs", ""))}
 	lib, err := firstLibrary(portal.NewLibraries(cfg))
@@ -27,7 +31,10 @@ func TestOneQuestionLimitForAReaderInTheBrowser(t *testing.T) {
 	}
 	m := fakemodel.New("opus", []fakemodel.Exchange{{Match: "How many pets are there?", Reply: "Three pets."}})
 	c, err := chat.New(chat.Config{Model: m, Libraries: []*portal.Library{lib}, Limits: chat.Limits{Questions: 1},
-		Reader: func(r *http.Request) string { return r.Header.Get("Reader") }})
+		Reader: func(r *http.Request) string {
+			id, _ := r.Context().Value(readerKey{}).(string)
+			return id
+		}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,13 +43,13 @@ func TestOneQuestionLimitForAReaderInTheBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Every request comes from the signed-in reader alice, each from a
-	// client of its own, as from a phone on the move.
+	// Every request comes from the signed-in reader alice, whom a sign-in
+	// middleware puts into the request's context, each from a client of its
+	// own, as from a phone on the move.
 	var requests atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("Reader", "alice")
 		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:443", requests.Add(1)%250+1)
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), readerKey{}, "alice")))
 	}))
 	defer srv.Close()
 

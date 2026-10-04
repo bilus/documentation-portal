@@ -1,6 +1,9 @@
 package chat
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,6 +24,24 @@ const readerHeader = "Reader"
 // headerReader is a reader hook that names the reader in the request's
 // Reader header, and no reader without the header.
 func headerReader(r *http.Request) string { return r.Header.Get(readerHeader) }
+
+// readerKey keys the reader ID that signIn puts into a request's context.
+type readerKey struct{}
+
+// signIn stands in for a program's sign-in middleware: it puts the request's
+// Reader header into the request's context.
+func signIn(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), readerKey{}, r.Header.Get(readerHeader))))
+	})
+}
+
+// contextReader is a reader hook that names the reader whom signIn put into
+// the request's context, as a program's hook reads its middleware's claims.
+func contextReader(r *http.Request) string {
+	id, _ := r.Context().Value(readerKey{}).(string)
+	return id
+}
 
 // newReaderChat returns the chat of the Pets library with the reader hook
 // reader, or none for nil, a question limit of questions an hour, and a model
@@ -45,9 +66,11 @@ type openPage struct {
 	lv live.Ctx
 }
 
-// loadPage loads the chat page of c's portal through a portal handler from
-// the remote address addr, with the Reader header reader unless it is empty,
-// and mounts it again from its page session alone, as the join does.
+// loadPage loads the chat page of c's portal through signIn and a portal
+// handler from the remote address addr, with the Reader header reader unless
+// it is empty, and mounts it again from its page session alone, as the join
+// does, after the session's round trip through JSON, as live-templ's signer
+// encodes it.
 func loadPage(t *testing.T, c *Chat, reader, addr string) openPage {
 	t.Helper()
 	var session map[string]string
@@ -62,9 +85,17 @@ func loadPage(t *testing.T, c *Chat, reader, addr string) openPage {
 	if reader != "" {
 		r.Header.Set(readerHeader, reader)
 	}
-	servedByPortal(t, c, keep).ServeHTTP(httptest.NewRecorder(), r)
+	signIn(servedByPortal(t, c, keep)).ServeHTTP(httptest.NewRecorder(), r)
+	data, err := json.Marshal(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var signed map[string]string
+	if err := json.Unmarshal(data, &signed); err != nil {
+		t.Fatal(err)
+	}
 	u := &url.URL{Path: "/portals/pets/chat"}
-	lv := interpreter.NewCtx(t.Context(), u.Path, u, session, true)
+	lv := interpreter.NewCtx(t.Context(), u.Path, u, signed, true)
 	p, err := c.mount(lv, c.currentAgents()[0])
 	if err != nil {
 		t.Fatal(err)
@@ -89,18 +120,39 @@ func (o openPage) limited(t *testing.T) bool {
 }
 
 func TestAReaderAndAClientNeverShareAnAsker(t *testing.T) {
-	for _, text := range []string{"192.0.2.7", "", "alice"} {
-		reader, client := ReaderAsker(text), ClientAsker(text)
+	for _, text := range []string{"192.0.2.7", "alice"} {
+		reader, client := AskerOf(text, "198.51.100.9"), AskerOf("", text)
 		if reader == client {
-			t.Errorf("%q: ReaderAsker and ClientAsker give one asker", text)
+			t.Errorf("%q: the reader ID and the client give one asker", text)
 		}
 		// No text of the other kind names the same asker either.
-		if ClientAsker(reader.key) == reader || ReaderAsker(client.key) == client {
+		if AskerOf("", reader.key) == reader || AskerOf(client.key, "198.51.100.9") == client {
 			t.Errorf("%q: the key of one kind of asker, as the other kind's text, names the same asker", text)
 		}
+		for _, prefix := range []string{"reader ", "client "} {
+			if AskerOf(prefix+text, "198.51.100.9") == client || AskerOf("", prefix+text) == reader {
+				t.Errorf("%q: a text with the prefix %q names the other kind's asker", text, prefix)
+			}
+		}
 	}
-	if ReaderAsker("alice") != ReaderAsker("alice") || ClientAsker("192.0.2.7") != ClientAsker("192.0.2.7") {
-		t.Error("one reader ID or one client gives two askers")
+	if AskerOf("alice", "192.0.2.1") != AskerOf("alice", "198.51.100.9") || AskerOf("", "192.0.2.7") != AskerOf("", "192.0.2.7") {
+		t.Error("one reader ID from two clients, or one client, gives two askers")
+	}
+}
+
+func TestReadersWithoutAnIDAskAsTheirClients(t *testing.T) {
+	if AskerOf("", "192.0.2.1") == AskerOf("", "198.51.100.2") {
+		t.Error("two readers without a reader ID, from two clients, share an asker")
+	}
+}
+
+func TestAskRefusesTheZeroAsker(t *testing.T) {
+	c := newReaderChat(t, nil, 1, 0)
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, Asker{}, "c", "Is it there?"); !errors.Is(err, ErrNoAsker) {
+		t.Errorf("a question without an asker: %v, want ErrNoAsker", err)
+	}
+	if AskerOf("", "") == (Asker{}) {
+		t.Error("the asker of a reader without a reader ID and without a client names nobody")
 	}
 }
 
@@ -109,9 +161,10 @@ func TestThePageSessionHoldsTheReaderID(t *testing.T) {
 		hook         func(*http.Request) string
 		reader, want string
 	}{
-		"a signed-in reader":            {headerReader, "alice", "alice"},
-		"a reader who is not signed in": {headerReader, "", ""},
-		"no reader hook":                {nil, "alice", ""},
+		"a signed-in reader":              {headerReader, "alice", "alice"},
+		"a reader who is not signed in":   {headerReader, "", ""},
+		"no reader hook":                  {nil, "alice", ""},
+		"a hook of the request's context": {contextReader, "alice", "alice"},
 	} {
 		c := newReaderChat(t, tc.hook, 1, 0)
 		var session map[string]string
@@ -123,8 +176,8 @@ func TestThePageSessionHoldsTheReaderID(t *testing.T) {
 		})}
 		r := httptest.NewRequest(http.MethodGet, "/session", nil)
 		r.Header.Set(readerHeader, tc.reader)
-		servedByPortal(t, c, keep).ServeHTTP(httptest.NewRecorder(), r)
-		if session["readerID"] != tc.want || session["client"] != "192.0.2.1" {
+		signIn(servedByPortal(t, c, keep)).ServeHTTP(httptest.NewRecorder(), r)
+		if readerIDIn(session["readerID"]) != tc.want || session["client"] != "192.0.2.1" {
 			t.Errorf("%s: the page session %v, want the reader ID %q", name, session, tc.want)
 		}
 	}
@@ -132,7 +185,7 @@ func TestThePageSessionHoldsTheReaderID(t *testing.T) {
 
 func TestOneLimitForAReaderFromAnyClient(t *testing.T) {
 	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
-	c := newReaderChat(t, headerReader, 2, 4)
+	c := newReaderChat(t, contextReader, 2, 5)
 	c.now = func() time.Time { return now }
 	desk := loadPage(t, c, "alice", "192.0.2.1:5555")
 	phone := loadPage(t, c, "alice", "[2001:db8:1:2::9]:443")
@@ -145,6 +198,10 @@ func TestOneLimitForAReaderFromAnyClient(t *testing.T) {
 	// Bob reads behind alice's first address, as behind one proxy.
 	if loadPage(t, c, "bob", "192.0.2.1:5555").limited(t) {
 		t.Error("bob's first question counts against alice's limit")
+	}
+	// A reader ID is the hook's text, letter case included.
+	if loadPage(t, c, "Alice", "192.0.2.1:5555").limited(t) {
+		t.Error("the first question of Alice counts against alice's limit")
 	}
 	now = now.Add(time.Hour)
 	if phone.limited(t) {
@@ -173,6 +230,21 @@ func TestPagesWithoutAReaderIDCountByClient(t *testing.T) {
 	}
 }
 
+func TestReaderIDsKeepEveryByte(t *testing.T) {
+	c := newReaderChat(t, headerReader, 1, 2)
+	if loadPage(t, c, "a\xffb", "192.0.2.1:5555").limited(t) {
+		t.Fatal("the first question of the reader a\\xffb is over the limit")
+	}
+	if loadPage(t, c, "a\xfeb", "192.0.2.1:5555").limited(t) {
+		t.Error("the readers a\\xffb and a\\xfeb share a question limit")
+	}
+	// A program's own question for the first reader counts against the limit
+	// of the reader's tabs.
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, AskerOf("a\xffb", "198.51.100.9"), "x", "Is it there?"); !errors.Is(err, ErrRateLimited) {
+		t.Errorf("a program's question for the reader a\\xffb: %v, want ErrRateLimited", err)
+	}
+}
+
 func TestAReaderIDNeverSharesAClientsLimit(t *testing.T) {
 	c := newReaderChat(t, headerReader, 1, 2)
 	if loadPage(t, c, "192.0.2.7", "192.0.2.7:5555").limited(t) {
@@ -185,34 +257,50 @@ func TestAReaderIDNeverSharesAClientsLimit(t *testing.T) {
 
 func TestAskCountsAReaderApartFromAClient(t *testing.T) {
 	c := newReaderChat(t, headerReader, 1, 2)
-	if _, err := c.Ask(t.Context(), "pets", portal.Everything, ReaderAsker("192.0.2.7"), "a", "Is it there?"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, AskerOf("192.0.2.7", "198.51.100.9"), "a", "Is it there?"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Ask(t.Context(), "pets", portal.Everything, ClientAsker("192.0.2.7"), "b", "Is it there?"); err != nil {
+	if _, err := c.Ask(t.Context(), "pets", portal.Everything, AskerOf("", "192.0.2.7"), "b", "Is it there?"); err != nil {
 		t.Errorf("the client 192.0.2.7 shares the limit of the reader ID 192.0.2.7: %v", err)
 	}
 	// A program's own question for a reader counts against the limit of the
 	// reader's chat pages.
 	if !loadPage(t, c, "192.0.2.7", "198.51.100.2:5555").limited(t) {
-		t.Error("the chat page of the reader 192.0.2.7 has a limit apart from ReaderAsker(\"192.0.2.7\")")
+		t.Error("the chat page of the reader 192.0.2.7 has a limit apart from AskerOf(\"192.0.2.7\", \"198.51.100.9\")")
 	}
 }
 
 func TestTheChatPageIsPrivateWithAReaderHook(t *testing.T) {
 	for name, tc := range map[string]struct {
-		hook func(*http.Request) string
-		want string
+		hook         func(*http.Request) string
+		reader, want string
 	}{
-		"a reader hook":  {headerReader, "private"},
-		"no reader hook": {nil, ""},
+		"a signed-in reader":            {headerReader, "alice", "private"},
+		"a reader who is not signed in": {headerReader, "", "private"},
+		"no reader hook":                {nil, "alice", ""},
 	} {
 		c := newReaderChat(t, tc.hook, 1, 0)
 		r := httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil)
-		r.Header.Set(readerHeader, "alice")
+		r.Header.Set(readerHeader, tc.reader)
 		rec := httptest.NewRecorder()
 		servedByPortal(t, c).ServeHTTP(rec, r)
-		if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != tc.want {
-			t.Errorf("%s: the chat page answers %d with Cache-Control %q, want %q", name, rec.Code, rec.Header().Get("Cache-Control"), tc.want)
+		// The headers that went out with the status, not the recorder's map.
+		sent := rec.Result().Header.Get("Cache-Control")
+		if rec.Code != http.StatusOK || sent != tc.want {
+			t.Errorf("%s: the chat page answers %d with Cache-Control %q, want %q", name, rec.Code, sent, tc.want)
 		}
+	}
+}
+
+func TestAPrivatePageStaysPrivateWhenItsHandlerDeletesTheHeader(t *testing.T) {
+	c := newReaderChat(t, headerReader, 1, 0)
+	h := c.privatePage(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Del("Cache-Control")
+		http.Error(w, "gone", http.StatusNotFound)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))
+	if got := rec.Result().Header.Get("Cache-Control"); got != "private" {
+		t.Errorf("a chat page whose handler deletes Cache-Control goes out with %q, want private", got)
 	}
 }

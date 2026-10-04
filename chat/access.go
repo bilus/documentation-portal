@@ -115,7 +115,7 @@ func (c *Chat) sessionOf(r *http.Request) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	session["readerID"] = c.readerIDOf(r)
+	session["readerID"] = sessionReaderID(c.readerIDOf(r))
 	access, err := json.Marshal(pageAccessOf(portal.AccessOf(r), c.currentAgents()))
 	if err != nil {
 		return nil, err
