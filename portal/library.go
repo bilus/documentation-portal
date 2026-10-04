@@ -32,6 +32,20 @@ func NewLibraries(cfg Config) ([]*Library, error) {
 	return libs, nil
 }
 
+// For returns the library limited to the sections of its portal visible to
+// the reader with access, or false when access hides the portal.
+func (l *Library) For(access Access) (*Library, bool) {
+	s, ok := l.s.visibleTo(access)
+	if !ok {
+		return nil, false
+	}
+	return &Library{s: s}, true
+}
+
+// Portal returns the library's portal as the portal configuration gives it,
+// with every section, visible or not.
+func (l *Library) Portal() Portal { return l.s.config }
+
 // Name returns the name of the library's portal.
 func (l *Library) Name() string { return l.s.name }
 

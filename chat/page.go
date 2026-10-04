@@ -32,7 +32,10 @@ import (
 )
 
 // Routes returns the chat page of each library's portal at its ChatURL, with
-// the socket and the scripts that they need.
+// the socket and the scripts that they need. A chat page keeps the access of
+// its reader from its load, as portal.AccessOf finds it, so the routes
+// belong in the Chat of the portal configuration, whose access hook they
+// follow.
 func (c *Chat) Routes() []portal.Route {
 	app := live.NewApp()
 	var routes []portal.Route
@@ -41,7 +44,7 @@ func (c *Chat) Routes() []portal.Route {
 	}
 	for _, a := range c.currentAgents() {
 		mount := func(lv live.Ctx) (*page, error) { return c.mount(lv, a) }
-		add(app.Handler(a.lib.ChatURL(), chatComponent, mount, live.WithSession(clientOf)))
+		add(app.Handler(a.lib.ChatURL(), chatComponent, mount, live.WithSession(c.sessionOf)))
 	}
 	add(app.Assets())
 	add(app.Socket())
@@ -76,7 +79,8 @@ func chatComponent(lv live.Ctx, p *page) live.Component {
 // page is the state of one chat tab: one conversation.
 type page struct {
 	chat     *Chat
-	portal   string // the slug of the page's portal
+	portal   string        // the slug of the page's portal
+	access   portal.Access // the page access, from the page's session
 	client   string
 	conv     string
 	next     int // the ID of the next message
@@ -105,27 +109,38 @@ type questionForm struct {
 	Question string `form:"question"`
 }
 
-// mount starts a conversation in a new tab of the chat page of a's portal.
+// mount starts a conversation in a new tab of the chat page of a's portal,
+// for the reader whose page access the page's session holds: the page's
+// heading, navigation bar and portal menu show only the APIs, sections and
+// portals visible to the reader. It refuses a portal hidden from the reader.
 func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
+	access := readPageAccess(lv.Session("access"))
+	lib, ok := a.lib.For(access)
+	if !ok {
+		return nil, fmt.Errorf("chat: the page's reader may not see the portal %q", a.lib.Slug())
+	}
 	id := make([]byte, 16)
 	// crypto/rand.Read is documented never to fail.
 	_, _ = rand.Read(id)
 	heading := "Ask about the API"
-	if names := apis(a.lib.Titles()); names != "" {
+	if names := apis(lib.Titles()); names != "" {
 		heading = "Ask about " + names
 	}
 	var nav []navLink
-	for _, s := range a.lib.Sections() {
+	for _, s := range lib.Sections() {
 		nav = append(nav, navLink{Label: s.Title, URL: s.URL})
 	}
 	nav = append(nav, navLink{Label: "Chat", URL: a.lib.ChatURL(), Current: true})
 	var menu []navLink
-	if agents := c.currentAgents(); len(agents) > 1 {
-		for _, other := range agents {
-			menu = append(menu, navLink{Label: other.lib.Name(), URL: other.lib.URL()})
+	for _, other := range c.currentAgents() {
+		if visible, ok := other.lib.For(access); ok {
+			menu = append(menu, navLink{Label: visible.Name(), URL: visible.URL()})
 		}
 	}
-	return &page{chat: c, portal: a.lib.Slug(), client: lv.Session("client"), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
+	if len(menu) < 2 {
+		menu = nil
+	}
+	return &page{chat: c, portal: a.lib.Slug(), access: access, client: lv.Session("client"), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu}, nil
 }
 
 // FormID changes with every message, so the page renders a new, empty form.
@@ -135,7 +150,7 @@ func (p *page) FormID() string { return "ask-" + strconv.Itoa(p.next) }
 func (p *page) Ask(lv live.Ctx) {
 	question := p.Form.Question
 	p.add(message{Mine: true, HTML: "<p>" + strings.ReplaceAll(html.EscapeString(strings.TrimSpace(question)), "\n", "<br>") + "</p>"})
-	answer, err := p.chat.Ask(lv, p.portal, p.client, p.conv, question)
+	answer, err := p.chat.Ask(lv, p.portal, p.access, p.client, p.conv, question)
 	if err != nil {
 		p.add(message{Error: true, HTML: "<p>" + html.EscapeString(p.chat.explain(err)) + "</p>"})
 		return
@@ -166,6 +181,8 @@ func (c *Chat) explain(err error) string {
 		return "I can't help with that. I answer questions about using this API."
 	case errors.Is(err, ErrCutOff):
 		return "The answer came out too long. Please ask a narrower question."
+	case errors.Is(err, ErrNoPortal):
+		return "This page is out of date. Reload the page to go on."
 	}
 	log.Printf("chat: %v", err)
 	return "The assistant is unavailable right now. Please try again later."

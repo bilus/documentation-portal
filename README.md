@@ -138,6 +138,111 @@ shares the proxy's address. The page uses live-templ, a private module that Go
 fetches with git, so devbox sets `GOPRIVATE` for it. After changing
 `chat/page.templ`, run `devbox run make generate`.
 
+## Access per reader
+
+A program that embeds the portal handler can open portals and sections to
+some readers alone. `portal.Config.Access` takes an access hook, a function
+of the request that returns the reader's `portal.Access`. The portal handler
+calls the hook once for each request, and asks the access about each portal
+and section of the configuration, as the configuration gives them, labels
+included: `Portal(p)` and `Section(p, s)`. A section is visible when the
+access allows it and its portal, and a portal when the access allows it and
+at least one of its sections.
+
+A portal or section that is not visible answers as a missing one. The home
+page, the portal menu and the navigation bar leave it out, each of its routes
+answers with the 404 page of a missing portal or section, a markdown link to
+one of its pages shows as plain text, the document sidebar leaves out its toc
+entries, and the chat answers without it. With one visible portal, `/` opens
+it, and with none, the home page says so. Without a hook, every reader sees
+everything; docportal sets none.
+
+The portal knows no identity provider. The program authenticates each
+request in its own middleware, keeps the reader's claims in the request's
+context, and maps them to portals and sections in the hook. Labels in the
+configuration file give the rules names that survive a rename, since a
+section's slug follows its title:
+
+    portals:
+      - name: Delivery
+        labels: [partner]
+        sections:
+          - title: API
+            type: spec
+            input: specs/delivery.yaml
+          - title: Internal notes
+            type: docs
+            input: internal
+            labels: [staff]
+
+A middleware puts the reader's groups into the request's context, and the
+hook turns them into an access, here one that opens a portal or a section
+without labels to every reader, and one with labels to the members of one of
+them:
+
+    type groupsKey struct{}
+
+    func withGroups(next http.Handler) http.Handler {
+    	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    		groups := groupsOf(r) // the program's own sign-in, such as a claim of a verified token
+    		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), groupsKey{}, groups)))
+    	})
+    }
+
+    type groups []string
+
+    func (g groups) Portal(p portal.Portal) bool                    { return g.open(p.Labels) }
+    func (g groups) Section(_ portal.Portal, s portal.Section) bool { return g.open(s.Labels) }
+
+    func (g groups) open(labels []string) bool {
+    	return len(labels) == 0 || slices.ContainsFunc(labels, func(l string) bool { return slices.Contains(g, l) })
+    }
+
+    func main() {
+    	cfg, err := portal.ReadConfig(os.DirFS("docs"), "environment.yaml")
+    	if err != nil {
+    		log.Fatal(err)
+    	}
+    	cfg.Access = func(r *http.Request) (portal.Access, error) {
+    		g, _ := r.Context().Value(groupsKey{}).([]string)
+    		return groups(g), nil
+    	}
+    	h, err := portal.New(cfg)
+    	if err != nil {
+    		log.Fatal(err)
+    	}
+    	log.Fatal(http.ListenAndServe(":8080", withGroups(h)))
+    }
+
+With these rules, a partner reads the API, a partner on the staff reads the
+internal notes too, and a reader without groups gets the home page with no
+portal.
+
+An error from the hook hides everything from the reader and goes to the log,
+so the hook returns an access that hides everything for a reader without
+rights, and an error only for a failure, such as a permission service out of
+reach. With a hook, every response carries `Cache-Control: private`, so that
+no shared cache gives one reader's page to another. `portal.Everything` is
+the access of a reader who may see everything.
+
+A docs section serves its whole content directory, nested directories
+included, so keep the directory of a section for some readers out of the
+content directory of every section for others.
+
+The chat follows the hook when its routes, from `chat.Chat.Routes`, are the
+configuration's `Chat`: a chat page answers from the sections of its portal
+visible to the reader, and its heading and the model's instructions name only
+their APIs. The page keeps the reader's access from its load, signed into its
+session, so a change of the reader's access reaches an open chat page when it
+loads again. A later snapshot that changes a portal's configuration closes that
+portal to an open page until the page loads again; without a hook, an open
+page follows each snapshot. `portal.AccessOf(r)` gives the access that the portal handler
+found for a request, and an access that allows nothing to a request served by
+no portal handler; `Library.For(access)` limits a library to a reader, and
+`chat.Chat.Ask` takes the reader's access. A conversation keeps a separate
+history for each set of visible sections, so that no answer reads an earlier
+lookup from a section hidden from its reader.
+
 ## Tests
 
     devbox run make test       # unit and acceptance tests
@@ -146,5 +251,6 @@ fetches with git, so devbox sets `GOPRIVATE` for it. After changing
 The browser test needs Chrome or Chromium. Set `CHROME_BIN` if chromedp does
 not find it.
 
-The design lives in `docs/`: the data flow diagrams (`flow.dfd`,
-`flow.3.dfd`), the vocabulary, and the plan and ledger of this change.
+The design lives in `docs/`: the data flow diagrams (`flow.dfd` and its
+child diagrams `flow.3.dfd`, `flow.3.4.dfd` and `flow.9.dfd`), the
+vocabulary, and the plans and ledgers of the changes.

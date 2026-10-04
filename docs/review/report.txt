@@ -1,4 +1,4 @@
-design flow.dfd: 3 diagrams, 16 boxes
+design flow.dfd: 4 diagrams, 20 boxes
 
 items at home flow.9.dfd, level 1
   Reloader: snapshot in service  live range 4  read distance 1  writers 9.1  readers 9.2, 9.4
@@ -8,17 +8,19 @@ private items
   Reloader: last listing  writers 9.2  readers 9.2
 
 pressure
-  flow.dfd    max 0 in 7 gaps, first between 1 and 2
-  flow.3.dfd  max 0 in 2 gaps, first between 3.1 and 3.2
-  flow.9.dfd  max 1 in 4 gaps, first between 9.1 and 9.2
+  flow.dfd      max 0 in 7 gaps, first between 1 and 2
+  flow.3.dfd    max 0 in 3 gaps, first between 3.1 and 3.2
+  flow.3.4.dfd  max 0 in 2 gaps, first between 3.4.1 and 3.4.2
+  flow.9.dfd    max 1 in 4 gaps, first between 9.1 and 9.2
 
 findings
   none
 
 design packages
-  flow.dfd, depth 0    main, portal, source
-  flow.3.dfd, depth 1  portal
-  flow.9.dfd, depth 1  source
+  flow.dfd, depth 0      main, portal, source
+  flow.3.dfd, depth 1    portal
+  flow.3.4.dfd, depth 2  portal
+  flow.9.dfd, depth 1    source
 
 totals
   shared items by level                               1: 1

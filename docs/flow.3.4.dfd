@@ -1,0 +1,46 @@
+# Process 3.4, the body of portal.router.ServeHTTP: the portal handler's
+# answer to each request that box 9.4 sends it. The response writer of the
+# request passes unchanged from box 9.4 to box 3.4.3. Each box reads the
+# router's sites, access hook and routes as its receiver.
+# By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 3.4. docs/flow.3.4.dfd -o flow.3.4.svg
+
+{9.4 Answer each request with the portal handler of the snapshot in service}
+> request
+[3.4.1. Ask the access hook for the access of the request's reader, once: Everything without a hook, and an access that allows nothing after an error or a nil access, whose cause goes to the log
+ (portal.router.readerAccess)]
+    > request
+    < access, error
+    <Embedding program>
+    > hook problem
+    <Log>
+> access
+[3.4.2. Build the reader's view: the access and the reader's sites, a copy of the site of each visible portal with only its visible sections
+ so that every page of the request reads only what is visible to the reader
+ (portal.router.viewFor)]
+    > portal, section
+    < allowed
+    <Embedding program>
+> response writer, request, view
+[3.4.3. Send the request with the reader's view through the routes to its page, and with an access hook write the response with Cache-Control: private
+ (portal.router.route)]
+    > file path
+    < file
+    <Documentation root>
+    > toc problem
+    <Log>
+    > response
+    <HTTP server>
+
+# type: request = *net/http.Request
+# type: access = portal.Access
+# type: error = error
+# type: hook problem = error
+# type: portal = portal.Portal
+# type: section = portal.Section
+# type: allowed = bool
+# type: response writer = net/http.ResponseWriter
+# type: view = *portal.view
+# type: file path = string
+# type: file = []byte
+# type: toc problem = error
+# type: response = []byte

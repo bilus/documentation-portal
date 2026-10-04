@@ -161,9 +161,10 @@ func newAgents(m model.LLM, libs []*portal.Library, sessions session.Service) ([
 }
 
 // newAgent builds the agent that answers from lib with m, and its runner,
-// which keeps its conversations in sessions.
+// which keeps its conversations in sessions. Its tools and its instructions
+// read the library of each answer, which Ask limits to the reader's access.
 func newAgent(m model.LLM, lib *portal.Library, sessions session.Service) (*portalAgent, error) {
-	tt, err := tools(lib)
+	tt, err := tools()
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +174,11 @@ func newAgent(m model.LLM, lib *portal.Library, sessions session.Service) (*port
 		Model:       m,
 		// A provider, unlike Instruction, is not a template, so braces in the
 		// prompt stay as they are.
-		InstructionProvider: func(agent.ReadonlyContext) (string, error) {
+		InstructionProvider: func(ctx agent.ReadonlyContext) (string, error) {
+			lib, err := libraryIn(ctx)
+			if err != nil {
+				return "", err
+			}
 			return instruction(lib.Titles()), nil
 		},
 		Tools:               tt,
@@ -223,15 +228,27 @@ func (c *Chat) currentAgents() []*portalAgent {
 }
 
 // Ask answers question, asked by client in conversation conv on the chat
-// page of the portal whose slug is portalSlug, in markdown, from that
-// portal's library.
-func (c *Chat) Ask(ctx context.Context, portalSlug, client, conv, question string) (string, error) {
+// page of the portal whose slug is portalSlug, in markdown, from the sections
+// of that portal visible to the reader with access. It answers a portal
+// hidden from the reader as a missing one, with ErrNoPortal.
+//
+// The conversation keeps a separate history for each view of the portal, so
+// that no answer reads an earlier lookup from a section hidden from its
+// reader. The view of a reader who sees every section, as every reader does
+// without an access hook, stays the same across snapshots. The view of any
+// other reader changes with the set of its visible sections and with their
+// configuration.
+func (c *Chat) Ask(ctx context.Context, portalSlug string, access portal.Access, client, conv, question string) (string, error) {
 	a, ok := c.agentFor(portalSlug)
 	if !ok {
 		return "", fmt.Errorf("%w %q", ErrNoPortal, portalSlug)
 	}
-	// A conversation lives in one portal, so its session is the portal's.
-	conv = portalSlug + "/" + conv
+	lib, ok := a.lib.For(access)
+	if !ok {
+		return "", fmt.Errorf("%w %q", ErrNoPortal, portalSlug)
+	}
+	// A conversation lives in one portal, with a session for each view of the portal.
+	conv = portalSlug + "/" + viewOf(lib) + "/" + conv
 	question = strings.TrimSpace(question)
 	switch {
 	case question == "":
@@ -248,6 +265,7 @@ func (c *Chat) Ask(ctx context.Context, portalSlug, client, conv, question strin
 	var answer strings.Builder
 	msg := genai.NewContentFromText(question, genai.RoleUser)
 	run := context.WithValue(ctx, budgetKey{}, &budget{max: int64(c.limits.ToolCalls)})
+	run = context.WithValue(run, libraryKey{}, lib)
 	for ev, err := range a.runner.Run(run, userID, conv, msg, agent.RunConfig{}) {
 		if err != nil {
 			switch {
@@ -347,6 +365,18 @@ type budget struct {
 }
 
 type budgetKey struct{}
+
+// libraryKey keys the library of one answer in its run's context.
+type libraryKey struct{}
+
+// libraryIn returns the library of the answer that runs in ctx, which Ask
+// limits to the reader's access, or an error outside an answer of Ask.
+func libraryIn(ctx context.Context) (*portal.Library, error) {
+	if lib, ok := ctx.Value(libraryKey{}).(*portal.Library); ok {
+		return lib, nil
+	}
+	return nil, errors.New("chat: no library for this answer")
+}
 
 // spend runs before each tool call. Once the answer has used its lookups, the
 // call reads nothing and returns an error to the model; the calls of one turn
