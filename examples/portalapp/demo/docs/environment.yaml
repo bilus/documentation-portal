@@ -1,0 +1,22 @@
+# The demo documentation of the example application. A portal or section
+# with labels opens to the readers whom the access file gives one of them;
+# one without labels opens to every signed-in reader.
+portals:
+  - name: Pets
+    sections:
+      - title: API
+        type: spec
+        input: specs/pets.yaml
+      - title: Guides
+        type: docs
+        input: guides
+      - title: Staff notes
+        type: docs
+        input: staff
+        labels: [staff]
+  - name: Partners
+    labels: [partner]
+    sections:
+      - title: Partner API
+        type: spec
+        input: specs/partners.yaml

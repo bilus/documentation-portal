@@ -1,0 +1,31 @@
+openapi: 3.1.0
+info:
+  title: Partner API
+  version: 1.0.0
+  description: The orders of the partners of the example application's demo documentation.
+servers:
+  - url: https://partners.example.com
+paths:
+  /orders:
+    post:
+      operationId: placeOrder
+      summary: Place an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Order"
+      responses:
+        "201":
+          description: The order, placed.
+components:
+  schemas:
+    Order:
+      type: object
+      required: [pet, quantity]
+      properties:
+        pet:
+          type: integer
+        quantity:
+          type: integer
