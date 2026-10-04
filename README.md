@@ -139,6 +139,71 @@ readers (see below). The page uses live-templ, a private module that Go
 fetches with git, so devbox sets `GOPRIVATE` for it. After changing
 `chat/page.templ`, run `devbox run make generate`.
 
+## Embedding the portal
+
+The packages `portal`, `chat` and `source` make up the embedding API, which
+is not stable yet. A program builds the portal handler with `portal.New` from a
+`portal.Config`, whose portals `portal.ReadConfig` can read from a
+configuration file, wraps the handler in its own middleware and mounts it in
+its own server, beside routes of its own. docportal is such a program.
+
+    cfg, err := portal.ReadConfig(os.DirFS("docs"), "environment.yaml")
+    if err != nil {
+    	log.Fatal(err)
+    }
+    cfg.Access, cfg.Account = access, account // request hooks, below
+    h, err := portal.New(cfg)
+    if err != nil {
+    	log.Fatal(err)
+    }
+    mux := http.NewServeMux()
+    mux.Handle("/auth/", authRoutes) // the program's own routes
+    mux.Handle("/", signIn(h))       // its sign-in middleware around the portal
+    log.Fatal(http.ListenAndServe(":8080", mux))
+
+The portal handler serves `/`, `/portals/`, `/assets/elements/` and, with a
+chat, the chat's socket at `/live/websocket` and its scripts. A pattern of
+the program's own, such as `/auth/`, is more specific than `/`, so the parent
+mux sends its requests to the program. The portal knows no identity
+provider: the program's middleware signs each reader in and keeps the
+reader's identity in the request's context. The core packages, `portal`,
+`source`, `chat` and `anthropicmodel`, import no OAuth or OpenID Connect
+library and no identity provider's package, which `make lint` checks;
+docportal's GCS and S3 drivers use such packages for the bucket's own
+credentials alone. The chat's socket opens with a request that passes
+through the same middleware.
+
+Request hooks, optional functions of the request, read that identity:
+
+- `portal.Config.Access` returns the reader's access to the portals and
+  sections (see Access per reader).
+- `portal.Config.Account` returns the reader's account links, such as the
+  reader's name and a sign-out link, which end the navigation bar of every
+  page and of the chat page. A link without a URL shows its text alone,
+  and the home page shows the links in a bar of their own, so that a reader
+  who sees no portal can still sign out. Relative URLs and http, https and
+  mailto URLs work on every page.
+- `chat.Config.Reader` returns the reader's ID for the chat's question limit
+  (see The chat's question limit per reader).
+
+An account hook that names a signed-in reader and links the program's own
+routes:
+
+    cfg.Account = func(r *http.Request) []portal.AccountLink {
+    	name, ok := r.Context().Value(nameKey{}).(string)
+    	if !ok {
+    		return []portal.AccountLink{{Label: "Sign in", URL: "/auth/sign-in"}}
+    	}
+    	return []portal.AccountLink{{Label: name}, {Label: "Sign out", URL: "/auth/sign-out"}}
+    }
+
+The portal handler calls each of its hooks once for each request. With an
+access hook or an account hook, every response carries
+`Cache-Control: private`, so that no shared cache gives one reader's page to
+another. A chat page keeps the access, the account links and the reader ID of
+its GET until it loads again. The example of `portal.New` in the package
+documentation runs such a program.
+
 ## Access per reader
 
 A program that embeds the portal handler can open portals and sections to
@@ -274,6 +339,7 @@ client's for an empty ID.
 
 ## Tests
 
+    devbox run make lint       # go vet, gofmt and the core packages' imports
     devbox run make test       # unit and acceptance tests
     devbox run make test-e2e   # renders the sample specs in headless Chrome
 

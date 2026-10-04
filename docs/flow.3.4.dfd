@@ -1,14 +1,17 @@
 # Process 3.4, the body of portal.router.ServeHTTP: the portal handler's
 # answer to each request that box 9.4 sends it. The response writer of the
-# request passes unchanged from box 9.4 to box 3.4.3. Each box reads the
-# router's sites, access hook and routes as its receiver. Box 3.4.3 also
+# request passes unchanged from box 9.4 to box 3.4.3, and the access passes
+# through box 3.4.4. Each box reads the router's sites, hooks and routes as
+# its receiver. Every page's navigation bar ends with the view's account
+# links, and a chat page's GET keeps them in its page session, from
+# portal.AccountLinksOf. Box 3.4.3 also
 # draws the chat's state and I/O behind its routes. A chat page's GET asks
 # the embedding program for the reader ID and the page access, and with a
 # reader hook the page answers privately (chat.Chat.privatePage). The page
 # session leaves in the page's response and comes back at the join, over the
 # chat's socket, which lives in the route of its upgrade request; each
-# question that arrives there reads and writes the question limit's counts
-# and the conversations, and asks the chat model. The counts and the
+# question that arrives there reads and writes the question counts and the
+# conversations, and asks the chat model. The counts and the
 # conversations belong to the chat that box 6 of flow.dfd keeps across
 # snapshots. The exchanges with the embedding program happen only in a
 # program that sets the hooks; docportal sets none.
@@ -23,15 +26,21 @@
     <Embedding program>
     > hook problem
     <Log>
-> access
-[3.4.2. Build the reader's view: the access and the reader's sites, a copy of the site of each visible portal with only its visible sections
- so that every page of the request reads only what is visible to the reader
+> request
+[3.4.4. Ask the account hook for the account links of the request's reader, once: none without a hook
+ (portal.router.accountLinks)]
+    > request
+    < account links
+    <Embedding program>
+> access, account links
+[3.4.2. Build the reader's view: the access, the account links and the reader's sites, a copy of the site of each visible portal with only its visible sections
+ so that every page of the request reads only what is visible to the reader and ends every navigation bar with the reader's account links
  (portal.router.viewFor)]
     > portal, section
     < allowed
     <Embedding program>
 > response writer, request, view
-[3.4.3. Send the request with the reader's view through the routes to its page, and with an access hook write the response with Cache-Control: private
+[3.4.3. Send the request with the reader's view through the routes to its page, and with an access hook or an account hook write the response with Cache-Control: private
  (portal.router.route)]
     > file path
     < file
@@ -43,7 +52,7 @@
     <Embedding program>
     < questions by asker
     > questions by asker
-    |Question limit|
+    |Question counts|
     < conversations
     > conversations
     |Conversations|
@@ -56,6 +65,7 @@
 
 # type: request = *net/http.Request
 # type: access = portal.Access
+# type: account links = []portal.AccountLink
 # type: error = error
 # type: hook problem = error
 # type: portal = portal.Portal

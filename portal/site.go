@@ -140,20 +140,20 @@ func (s *site) viewerPage(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	sec, ok := s.specFor(slug)
 	if !ok {
-		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec section has the slug " + slug + ".", Nav: s.nav()})
+		render(w, r, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec section has the slug " + slug + ".", Nav: s.nav()})
 		return
 	}
 	sp, err := s.loadSpec(sec.Input)
 	var invalid invalidSpecError
 	switch {
 	case errors.Is(err, errNoSpec):
-		render(w, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec at " + sec.Input + ".", Nav: s.nav()})
+		render(w, r, http.StatusNotFound, "error.html", page{Title: "Spec not found", Message: "No spec at " + sec.Input + ".", Nav: s.nav()})
 	case errors.As(err, &invalid):
-		render(w, http.StatusUnprocessableEntity, "error.html", page{Title: "Cannot show " + sec.Input, Message: invalid.reason, Nav: s.nav()})
+		render(w, r, http.StatusUnprocessableEntity, "error.html", page{Title: "Cannot show " + sec.Input, Message: invalid.reason, Nav: s.nav()})
 	case err != nil:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	default:
-		render(w, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: sec.rawSpecURL(), HideTryIt: s.hideTryIt, Nav: s.nav()})
+		render(w, r, http.StatusOK, "viewer.html", page{Title: sp.Title, SpecURL: sec.rawSpecURL(), HideTryIt: s.hideTryIt, Nav: s.nav()})
 	}
 }
 
@@ -179,9 +179,10 @@ type docLink struct {
 
 // navBar is the navigation bar of a page.
 type navBar struct {
-	Links  []navLink
-	Portal string    // the name of the page's portal, the label of the menu
-	Menu   []navLink // the portal menu's links, or none
+	Links   []navLink
+	Portal  string        // the name of the page's portal, the label of the menu
+	Menu    []navLink     // the portal menu's links, or none
+	Account []AccountLink // the reader's account links, at the bar's right end, or none
 }
 
 // navLink is one link of the navigation bar.
@@ -209,8 +210,10 @@ var templateFiles embed.FS
 
 var templates = template.Must(template.ParseFS(templateFiles, "templates/*.html"))
 
-// render writes the named page template with the given status.
-func render(w http.ResponseWriter, status int, name string, p page) {
+// render writes the named page template with the given status, with the
+// account links of r's reader at the right end of the page's navigation bar.
+func render(w http.ResponseWriter, r *http.Request, status int, name string, p page) {
+	p.Nav.Account = viewOf(r).account
 	var buf bytes.Buffer
 	if err := templates.ExecuteTemplate(&buf, name, p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"strconv"
+
 	"github.com/bilus/live-templ/live"
 )
 
@@ -32,6 +34,12 @@ templ chatPage(lv live.Ctx, p *page) {
 		.thinking { display: none; color: #6b7280; margin: 0 0 1rem; }
 		.phx-submit-loading .thinking { display: block; }
 	</style>
+	if len(p.Account) > 0 {
+		<style>
+			.portal-account { margin-left: auto; display: flex; gap: 1.25rem; }
+			.portal-menu + .portal-account { margin-left: 0; }
+		</style>
+	}
 	<nav class="portal-nav">
 		for _, l := range p.Nav {
 			<a key={ l.URL } href={ templ.SafeURL(l.URL) } class={ templ.KV("current", l.Current) }>{ l.Label }</a>
@@ -44,7 +52,19 @@ templ chatPage(lv live.Ctx, p *page) {
 						<a key={ l.URL } href={ templ.SafeURL(l.URL) }>{ l.Label }</a>
 					}
 				</div>
-			</details>
+			</details>}
+		if len(p.Account) > 0 {
+			<span class="portal-account">
+				for i, l := range p.Account {
+					<span key={ strconv.Itoa(i) }>
+						if l.URL != "" {
+							<a href={ templ.URL(l.URL) }>{ l.Label }</a>
+						} else {
+							{ l.Label }
+						}
+					</span>
+				}
+			</span>
 		}
 	</nav>
 	<main class="chat">
