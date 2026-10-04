@@ -329,7 +329,11 @@ func (s *site) tocContents(sec *section, current string) ([]sidebarGroup, map[st
 		return nil, nil, false
 	}
 	groups, linked, err := s.tocSidebar(sec, current)
-	// HOLE(1): on a reader's site, note the whole site's problem for errNoPage in place of the reader's
+	if errors.Is(err, errNoPage) && s.whole != nil {
+		_, _, whole := s.whole.tocSidebar(sec, current)
+		sec.noteTocProblem(whole)
+		return nil, nil, false
+	}
 	sec.noteTocProblem(err)
 	return groups, linked, err == nil
 }
