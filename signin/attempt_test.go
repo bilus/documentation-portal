@@ -115,6 +115,14 @@ func TestSignInReturnsToTheFirstPage(t *testing.T) {
 		t.Errorf("the session cookie is HttpOnly %v, SameSite %v, Path %q, Secure %v; want HttpOnly, Lax, / and, over http, not Secure",
 			c.HttpOnly, c.SameSite, c.Path, c.Secure)
 	}
+	// No cache may keep the callback's answer with the new session, and the
+	// answer deletes the attempt cookie.
+	if resp := tr.setting(sessionCookie); resp == nil || resp.Header.Get("Cache-Control") != "no-store" {
+		t.Errorf("the response with the session cookie is missing or lacks Cache-Control: no-store")
+	}
+	if attempts := tr.cookiesNamed(attemptCookie); len(attempts) != 2 || attempts[1].MaxAge >= 0 || attempts[1].Path != attempts[0].Path {
+		t.Errorf("the sign-in's attempt cookies %v, want one set and then one deletion at its path", attempts)
+	}
 	// The browser opens a second page with its session.
 	if _, body := fetch(t, b, f.srv.URL+"/portals/pets/specs/api"); body != `the page of "ada"` || f.pages.reached() != 2 {
 		t.Errorf("the second page answered %q", body)
@@ -212,6 +220,7 @@ func TestTheReturnTargetFallsBackToTheRoot(t *testing.T) {
 	for target, want := range map[string]string{
 		"/portals/pets/?q=1":    "/portals/pets/?q=1",
 		"//evil.example/x":      "/",
+		"///evil.example/x":     "/",
 		"/%2F%2Fevil.example/x": "/%2F%2Fevil.example/x",
 		"/portals/pets/a%0Ab":   "/portals/pets/a%0Ab",
 	} {
@@ -658,6 +667,8 @@ func TestReturnTarget(t *testing.T) {
 		"":                       "/",
 		"portals/pets/":          "/",
 		"//evil.example/x":       "/",
+		"///evil.example/x":      "/",
+		"//":                     "/",
 		"/\\evil.example/x":      "/",
 		"/portals\\pets":         "/",
 		"https://evil.example/x": "/",
@@ -803,4 +814,65 @@ func issuerWithoutEndpoints(t *testing.T) string {
 	t.Cleanup(srv.Close)
 	issuer = srv.URL
 	return issuer
+}
+
+func TestTheNameClaimNamesTheReader(t *testing.T) {
+	for _, tc := range []struct {
+		u    reader
+		want string
+	}{
+		{reader{subject: "ada", name: "Ada Lovelace", username: "ada"}, "Ada Lovelace"},
+		{reader{subject: "ada", username: "ada"}, "ada"},
+	} {
+		o := newOIDC(t)
+		o.QueueUser(tc.u)
+		f := serveSignIn(t, oidcConfig(o))
+		b, _ := browser(t)
+		fetch(t, b, f.srv.URL+"/portals/pets/")
+		if got := f.pages.last().Name; got != tc.want {
+			t.Errorf("the reader with the name %q and the preferred username %q is named %q, want %q", tc.u.name, tc.u.username, got, tc.want)
+		}
+	}
+}
+
+func TestAnIDTokenWithoutASubjectFailsTheSignIn(t *testing.T) {
+	o := newOIDC(t)
+	o.QueueUser(reader{name: "No One"})
+	f := serveSignIn(t, oidcConfig(o))
+	b, _ := browser(t)
+	if resp, _ := fetch(t, b, f.srv.URL+"/portals/pets/"); resp.StatusCode != http.StatusForbidden || f.pages.reached() != 0 {
+		t.Errorf("an ID token without a subject ended the sign-in with %d", resp.StatusCode)
+	}
+}
+
+func TestTheAudienceGoesWithTheAuthorizationRequest(t *testing.T) {
+	for audience, want := range map[string]string{"": "", "https://docs.example/api": "https://docs.example/api"} {
+		p := newStubProvider(t)
+		cfg := stubConfig(p)
+		cfg.Audience = audience
+		f := serveSignIn(t, cfg)
+		b, _ := browser(t)
+		fetch(t, b, f.srv.URL+"/portals/pets/")
+		if q := p.lastAuthorize(); q.Get("audience") != want || q.Has("audience") != (want != "") {
+			t.Errorf("with the audience %q, the authorization request %v", audience, q)
+		}
+	}
+}
+
+func TestRequestsToTheProviderTimeOut(t *testing.T) {
+	p := newStubProvider(t)
+	f := serveSignIn(t, stubConfig(p))
+	if f.m.client == http.DefaultClient || f.m.client.Timeout != 30*time.Second {
+		t.Fatalf("the client of the provider's requests has the timeout %v, want 30s of its own", f.m.client.Timeout)
+	}
+	f.m.client.Timeout = 200 * time.Millisecond
+	p.mu.Lock()
+	p.hang = 5 * time.Second
+	p.mu.Unlock()
+	b, _ := browser(t)
+	start := time.Now()
+	resp, _ := fetch(t, b, f.srv.URL+"/portals/pets/")
+	if took := time.Since(start); resp.StatusCode != http.StatusForbidden || took > 2*time.Second {
+		t.Errorf("a token endpoint that hangs ended the sign-in with %d after %v", resp.StatusCode, took)
+	}
 }

@@ -299,6 +299,11 @@ func TestSignInConfigOf(t *testing.T) {
 	if c := signInConfigOf(s); string(c.Key) != sessionKey {
 		t.Error("the sign-in configuration does not carry the session key")
 	}
+	// A short key goes on unchanged, and signin.New refuses it.
+	s.Key = "short"
+	if c := signInConfigOf(s); string(c.Key) != "short" {
+		t.Error("the sign-in configuration replaced a short session key")
+	}
 }
 
 func TestAddAccountNeedsAnIssuer(t *testing.T) {
