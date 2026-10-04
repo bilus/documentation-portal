@@ -217,8 +217,8 @@ fetches with git, so devbox sets `GOPRIVATE` for it. After changing
 
 ## Embedding the portal
 
-The packages `portal`, `chat` and `source` make up the embedding API, which
-is not stable yet. A program builds the portal handler with `portal.New` from a
+The packages `portal`, `chat`, `source` and `signin` make up the embedding
+API, which is not stable yet. A program builds the portal handler with `portal.New` from a
 `portal.Config`, whose portals `portal.ReadConfig` can read from a
 configuration file, wraps the handler in its own middleware and mounts it in
 its own server, beside routes of its own. docportal is such a program.
@@ -242,12 +242,13 @@ and, with a chat, the chat's socket at `/live/websocket` and its scripts. A patt
 the program's own, such as `/auth/`, is more specific than `/`, so the parent
 mux sends its requests to the program. The portal knows no identity
 provider: the program's middleware signs each reader in and keeps the
-reader's identity in the request's context. The core packages, `portal`,
-`source`, `chat` and `anthropicmodel`, import no OAuth or OpenID Connect
-library and no identity provider's package, which `make lint` checks;
-docportal's GCS and S3 drivers use such packages for the bucket's own
-credentials alone. The chat's socket opens with a request that passes
-through the same middleware.
+reader's identity in the request's context, as the package `signin` does
+(see Sign-in through an identity provider). The core packages, `portal`,
+`source`, `chat` and `anthropicmodel`, import neither `signin` nor any OAuth
+or OpenID Connect library or identity provider's package, and `make lint`
+checks their imports; docportal's GCS and S3 drivers use such packages for
+the bucket's own credentials alone, and its sign-in uses `signin`. The
+chat's socket opens with a request that passes through the same middleware.
 
 Request hooks, optional functions of the request, read that identity:
 
@@ -417,7 +418,133 @@ reader without the hook, counts by client, and `chat.Limits` sets the limit
 and its window for readers and clients alike. A program that calls
 `chat.Chat.Ask` itself asks as `chat.AskerOf(id, client)`, which counts the
 question against the limit of the reader's chat pages, or against the
-client's for an empty ID.
+client's for an empty ID. With an issuer, docportal sets the hook to
+`signin.ReaderID`, the subject of each signed-in reader (see Sign-in through
+an identity provider).
+
+## Sign-in through an identity provider
+
+docportal signs its readers in through an OpenID Connect provider, such as
+Auth0, Okta, Google, Keycloak or Microsoft Entra ID, when `-oidc-issuer`
+(`DOCPORTAL_OIDC_ISSUER`) names the provider's issuer. A reader without a
+session then goes to the provider first, and comes back to the page of the
+first request. Every page ends its navigation bar with the reader's name and
+a sign-out link, and with a chat model the chat counts each signed-in
+reader's questions against one limit, from any address. Every signed-in
+reader sees every portal: a program that embeds the portal maps the
+reader's claims to portals and sections (below).
+
+For Auth0, create a Regular Web Application, add
+`https://docs.example.com/auth/callback` to its Allowed Callback URLs and
+`https://docs.example.com/` to its Allowed Logout URLs, and give docportal
+the application's domain, client ID and client secret:
+
+    DOCPORTAL_OIDC_CLIENT_SECRET=... DOCPORTAL_SESSION_KEY="$(openssl rand -base64 32)" \
+    docportal -config environment.yaml \
+      -oidc-issuer https://TENANT.auth0.com/ \
+      -oidc-client-id CLIENT_ID \
+      -oidc-callback-url https://docs.example.com/auth/callback \
+      -oidc-logout-url 'https://TENANT.auth0.com/v2/logout?client_id=CLIENT_ID&returnTo=https%3A%2F%2Fdocs.example.com%2F'
+
+The issuer is the tenant's domain with `https://` and a trailing slash, as
+the tenant's discovery document names it. Each setting comes from its flag,
+else from its variable:
+
+- `-oidc-issuer` (`DOCPORTAL_OIDC_ISSUER`): the provider's issuer URL, at
+  which docportal discovers the provider's endpoints at startup. Without it,
+  docportal serves every reader without a sign-in, and refuses any other
+  sign-in setting.
+- `-oidc-client-id` (`DOCPORTAL_OIDC_CLIENT_ID`) and
+  `DOCPORTAL_OIDC_CLIENT_SECRET`: the portal's client at the provider. The
+  secret comes from the environment alone, so that no process list and no
+  usage text shows it; docportal sends it to the provider's token endpoint
+  alone and writes it to no log.
+- `-oidc-callback-url` (`DOCPORTAL_OIDC_CALLBACK_URL`): the portal's URL for
+  the provider's answer, as registered at the provider. docportal answers its
+  path, and over https marks its cookies Secure.
+- `-oidc-logout-url` (`DOCPORTAL_OIDC_LOGOUT_URL`): the reader's destination
+  after a sign-out. Auth0's `/v2/logout` ends the provider's session too, so
+  that the next sign-in asks for the reader's password again. Without a
+  logout URL, docportal shows a signed-out page, whose link to sign in again
+  may pass straight through during the provider's session.
+- `-oidc-scopes` (`DOCPORTAL_OIDC_SCOPES`): the scopes, separated by commas,
+  `openid,profile,email` by default.
+- `-oidc-audience` (`DOCPORTAL_OIDC_AUDIENCE`): the audience parameter of
+  the sign-in, as Auth0 takes it for an API.
+- `-session-lifetime` (`DOCPORTAL_SESSION_LIFETIME`): the life of a session,
+  8 hours by default. After it, the reader signs in again, and only then
+  does a change of the reader's claims at the provider reach the portal.
+- `DOCPORTAL_SESSION_KEY`: 32 bytes or more of secret for the session
+  cookie, the same for every replica. Without it, docportal makes a random
+  key at each start, so that every session ends with the process.
+
+The session lives in a cookie, encrypted and authenticated under the
+session key, so the portal keeps no session store: the cookie is HttpOnly,
+SameSite=Lax, and over https Secure. `/auth/sign-out` deletes the cookie
+and revokes the session in docportal's memory until its expiry, so that a
+copy of the cookie stops working there. Another replica, or docportal after
+a restart with the same key, accepts such a copy until the session's
+expiry, so keep the lifetime short for sensitive documentation. A failed or
+cancelled sign-in shows an error page with a link to try again, and opens
+nothing. Every response to a signed-in reader carries
+`Cache-Control: private`.
+
+A program that embeds the portal wraps the portal handler in the sign-in
+middleware of the package `signin`, outside the core packages, which serves
+any OpenID Connect provider by its issuer. It puts each signed-in reader's
+`signin.Identity`, the subject, the name, the email and the provider's
+claims, into the request's context, where the request hooks read it with
+`signin.IdentityOf`. `signin.AccountLinks` and `signin.ReaderID` are ready
+account and reader hooks:
+
+    cfg.Account = signin.AccountLinks // the reader's name and a sign-out link
+    cfg.Access = func(r *http.Request) (portal.Access, error) {
+    	id, _ := signin.IdentityOf(r)
+    	return groups(id.Claims.Strings("https://docs.example.com/groups")), nil
+    }
+    h, err := portal.New(cfg)
+    if err != nil {
+    	log.Fatal(err)
+    }
+    signedIn, err := signin.New(ctx, signin.Config{
+    	Issuer:       "https://TENANT.auth0.com/",
+    	ClientID:     os.Getenv("CLIENT_ID"),
+    	ClientSecret: os.Getenv("CLIENT_SECRET"),
+    	CallbackURL:  "https://docs.example.com/auth/callback",
+    	LogoutURL:    "https://TENANT.auth0.com/v2/logout?client_id=...&returnTo=https%3A%2F%2Fdocs.example.com%2F",
+    	Key:          []byte(os.Getenv("SESSION_KEY")),
+    }, h)
+    if err != nil {
+    	log.Fatal(err)
+    }
+    log.Fatal(http.ListenAndServe(":8080", signedIn))
+
+with `groups` from Access per reader, and the chat's `Reader` set to
+`signin.ReaderID`. The middleware answers the callback URL's path and the
+sign-out path, `/auth/sign-out` unless `signin.Config.SignOutPath` names
+another, and asks every other request for a session: mount it at the root of
+the guarded paths, without `http.StripPrefix`, and keep the program's public
+routes beside it.
+
+Auth0 puts custom claims into the ID token through a post-login Action,
+under a namespace of the portal's own. Read groups and roles from the
+user's `app_metadata`, under the administrators' control, never from
+`user_metadata`, open to the users' own edits:
+
+    exports.onExecutePostLogin = async (event, api) => {
+      api.idToken.setCustomClaim("https://docs.example.com/groups", event.user.app_metadata.groups || []);
+    };
+
+The email of an identity comes as the provider gives it, verified or not:
+check the claim `email_verified` before a rule trusts an address.
+
+A provider without OpenID Connect, such as GitHub, plugs in through a
+`signin.Provider` in place of the issuer: its `Endpoint`, such as
+`github.Endpoint` of `golang.org/x/oauth2/github`, and its `Identity`, which
+reads the reader from the provider's API with the access token, such as
+GitHub's `GET /user`, and the organizations from `GET /user/orgs` with the
+scope `read:org`. The sign-in checks the state and uses PKCE with it too.
+The example application of issue 37 will show GitHub.
 
 ## Tests
 
@@ -429,5 +556,6 @@ The browser test needs Chrome or Chromium. Set `CHROME_BIN` if chromedp does
 not find it.
 
 The design lives in `docs/`: the data flow diagrams (`flow.dfd` and its
-child diagrams `flow.3.dfd`, `flow.3.4.dfd`, `flow.9.dfd` and `flow.11.dfd`), the
-vocabulary, and the plans and ledgers of the changes.
+child diagrams `flow.3.dfd`, `flow.3.4.dfd`, `flow.9.dfd`, `flow.10.dfd`,
+`flow.10.2.dfd` and `flow.11.dfd`), the vocabulary, and the plans and
+ledgers of the changes.

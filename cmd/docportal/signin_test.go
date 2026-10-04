@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/oauth2-proxy/mockoidc"
 
+	"github.com/bilus/documentation-portal/portal"
 	"github.com/bilus/documentation-portal/signin"
 )
 
@@ -76,7 +81,6 @@ var signInEnv = map[string]string{
 }
 
 func TestParseConfigReadsTheSignInSettings(t *testing.T) {
-	t.Skip("HOLE(3): read the sign-in settings from their flags and the environment")
 	env := func(k string) string { return signInEnv[k] }
 	cfg, err := parseConfig(nil, env)
 	if err != nil {
@@ -141,7 +145,6 @@ func TestParseConfigReadsTheSignInSettings(t *testing.T) {
 }
 
 func TestSignInSettingsNeedAnIssuer(t *testing.T) {
-	t.Skip("HOLE(3): refuse sign-in settings without an issuer, which would serve every reader without a sign-in")
 	for _, args := range [][]string{
 		{"-oidc-client-id", "portal"},
 		{"-oidc-callback-url", "https://docs.example.com/auth/callback"},
@@ -168,7 +171,6 @@ func TestSignInSettingsNeedAnIssuer(t *testing.T) {
 }
 
 func TestTheSignInSecretsComeFromTheEnvironmentAlone(t *testing.T) {
-	t.Skip("HOLE(3): take the client secret and the session key from the environment alone, and print neither")
 	for _, flag := range []string{"-oidc-client-secret", "-session-key"} {
 		if _, err := parseConfig([]string{flag, "a secret of 32 bytes or more, from a flag"}, noEnv); err == nil {
 			t.Errorf("%s was accepted", flag)
@@ -197,7 +199,6 @@ func TestTheSignInSecretsComeFromTheEnvironmentAlone(t *testing.T) {
 }
 
 func TestStartupSignsReadersIn(t *testing.T) {
-	t.Skip("HOLE(3): sign each reader in through the issuer that -oidc-issuer names, with the reader's name and a sign-out link on every page")
 	o := mockProvider(t)
 	srv := httptest.NewUnstartedServer(nil)
 	defer srv.Close()
@@ -263,5 +264,79 @@ func TestStartupSignsReadersIn(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "signed out") {
 		t.Errorf("the sign-out answered %d with %q", resp.StatusCode, page)
+	}
+}
+
+func TestSignInConfigOf(t *testing.T) {
+	if cfg := signInConfigOf(signInConfig{ClientID: "portal"}); cfg.Issuer != "" || cfg.ClientID != "" || cfg.Key != nil {
+		t.Errorf("without an issuer, the sign-in configuration names the issuer %q and the client %q", cfg.Issuer, cfg.ClientID)
+	}
+	var logs strings.Builder
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	s := signInConfig{
+		Issuer:       "https://tenant.auth0.com/",
+		ClientID:     "portal",
+		ClientSecret: "the client secret",
+		CallbackURL:  "https://docs.example.com/auth/callback",
+		LogoutURL:    "https://tenant.auth0.com/v2/logout",
+		Scopes:       "openid, email read:docs",
+		Audience:     "https://docs.example.com/api",
+		Lifetime:     time.Hour,
+	}
+	a, b := signInConfigOf(s), signInConfigOf(s)
+	if len(a.Key) != 32 || bytes.Equal(a.Key, b.Key) {
+		t.Errorf("without a session key: keys of %d and %d bytes, equal %v; want two random keys of 32 bytes", len(a.Key), len(b.Key), bytes.Equal(a.Key, b.Key))
+	}
+	if strings.Count(logs.String(), "DOCPORTAL_SESSION_KEY") != 2 {
+		t.Errorf("the log %q, want a notice for each random key", logs.String())
+	}
+	if a.Issuer != s.Issuer || a.ClientID != s.ClientID || a.ClientSecret != s.ClientSecret || a.CallbackURL != s.CallbackURL ||
+		a.LogoutURL != s.LogoutURL || a.Audience != s.Audience || a.Lifetime != s.Lifetime || !slices.Equal(a.Scopes, []string{"openid", "email", "read:docs"}) {
+		t.Errorf("the sign-in configuration does not carry the settings: scopes %q, lifetime %v", a.Scopes, a.Lifetime)
+	}
+	s.Key = sessionKey
+	if c := signInConfigOf(s); string(c.Key) != sessionKey {
+		t.Error("the sign-in configuration does not carry the session key")
+	}
+}
+
+func TestAddAccountNeedsAnIssuer(t *testing.T) {
+	pcfg, err := portal.ReadConfig(os.DirFS("../../testdata"), "environment.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := addAccount(pcfg, ""); got.Account != nil {
+		t.Error("without an issuer, the portal configuration has an account hook")
+	}
+	h, err := portal.New(addAccount(pcfg, "https://tenant.auth0.com/"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Outside a sign-in middleware the hook names nobody, and the pages turn private.
+	rec := get(h, "/portals/petstore/docs/guides/")
+	if cc := rec.Header().Get("Cache-Control"); cc != "private" || strings.Contains(rec.Body.String(), "portal-account") {
+		t.Errorf("with an issuer, a page outside the middleware has Cache-Control %q and account links %v", cc, strings.Contains(rec.Body.String(), "portal-account"))
+	}
+}
+
+func TestAddChatTakesTheReaderHookWithAnIssuer(t *testing.T) {
+	pcfg, err := portal.ReadConfig(os.DirFS("../../testdata"), "environment.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The chat's reader hook makes its pages private.
+	for issuer, want := range map[string]string{"": "", "https://tenant.auth0.com/": "private"} {
+		withChat, _, err := addChat(pcfg, "claude-opus-5-5", nil, issuer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := portal.New(withChat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := get(h, "/portals/petstore/chat").Header().Get("Cache-Control"); got != want {
+			t.Errorf("issuer %q: the chat page has Cache-Control %q, want %q", issuer, got, want)
+		}
 	}
 }
