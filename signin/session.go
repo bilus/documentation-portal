@@ -112,7 +112,8 @@ func (m *middleware) sessionOf(r *http.Request) (session, bool) {
 // serve serves r with the identity of the session s in its context,
 // privately, so that the request hooks read it, and holds a connection that
 // the wrapped handler takes over, such as the chat's socket, until the
-// session's expiry.
+// session's expiry, or closes it at once for a session that a sign-out
+// revoked before the takeover.
 func (m *middleware) serve(w http.ResponseWriter, r *http.Request, s session) {
 	ctx := context.WithValue(r.Context(), readerKey{}, signedIn{identity: s.Identity, signOut: m.signOutPath})
 	portal.Private(m.next).ServeHTTP(&sessionWriter{ResponseWriter: w, m: m, s: s}, r.WithContext(ctx))
@@ -139,18 +140,24 @@ func (w *sessionWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // http.ResponseController.
 func (w *sessionWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// hold returns conn, a connection of the session s that a handler took
-// over, which the middleware closes at the session's expiry and at its
-// revocation.
+// hold returns conn, a connection that a handler took over from a request of
+// the session s, for the middleware to close at the session's expiry and at
+// its revocation. When a sign-out revoked s between the session's check and
+// the takeover, before the middleware held conn, hold closes conn at once.
 func (m *middleware) hold(s session, conn net.Conn) net.Conn {
-	h := &heldConn{Conn: conn, m: m, id: s.ID}
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	if _, revoked := m.revoked[s.ID]; revoked {
+		m.mu.Unlock()
+		conn.Close()
+		return conn
+	}
+	h := &heldConn{Conn: conn, m: m, id: s.ID}
 	if m.held[s.ID] == nil {
 		m.held[s.ID] = map[*heldConn]bool{}
 	}
 	m.held[s.ID][h] = true
 	h.timer = time.AfterFunc(s.Expires.Sub(m.now()), func() { h.Close() })
+	m.mu.Unlock()
 	return h
 }
 

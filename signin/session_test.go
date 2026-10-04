@@ -469,3 +469,41 @@ func TestTheMiddlewareForgetsTheClosedSockets(t *testing.T) {
 		t.Errorf("after a sign-out and an expiry, the middleware still holds the connections %v", f.m.held)
 	}
 }
+
+func TestASignOutBeforeTheTakeoverClosesTheSocket(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	checked, release := make(chan struct{}), make(chan struct{})
+	f.pages.then = func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/socket" {
+			close(checked)
+			select {
+			case <-release:
+			case <-time.After(5 * time.Second):
+			}
+			socket(w, r)
+		}
+	}
+	ada := sessionFor(t, f.m, Identity{Subject: "ada"}, f.clock.now().Add(time.Hour))
+	host := f.srv.Listener.Addr().String()
+	conn, err := net.Dial("tcp", host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	fmt.Fprintf(conn, "GET /socket HTTP/1.1\r\nHost: %s\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nCookie: %s=%s\r\n\r\nq1\n", host, ada.Name, ada.Value)
+	select {
+	case <-checked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the socket's request never reached the handler")
+	}
+	// The socket's request passed the session's check, and ada signs out in
+	// another tab before the handler takes the connection over.
+	if resp := f.requestWith(t, "/auth/sign-out", ada); resp.StatusCode != http.StatusOK {
+		t.Fatalf("the sign-out answered %d", resp.StatusCode)
+	}
+	close(release)
+	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if got, _ := io.ReadAll(conn); strings.Contains(string(got), "q1 as ada") {
+		t.Errorf("after the sign-out, the socket answered %q, want a closed connection", got)
+	}
+}

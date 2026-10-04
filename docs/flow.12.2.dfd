@@ -12,7 +12,9 @@
 # sessions' expiry, and box 12.2.3 refuses the IDs that the store holds; box
 # 12.2.4 holds a connection that the wrapped handler takes over, such as the
 # chat's socket, until the session's expiry, and a later request's sign-out,
-# box 12.2.1 drawn a second time, closes the session's held connections.
+# box 12.2.1 drawn a second time, closes the session's held connections. Box
+# 12.2.4 reads the revoked sessions too, and closes a connection at once when
+# a sign-out revoked its session between box 12.2.3 and the takeover.
 # By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 12.2. docs/flow.12.2.dfd -o flow.12.2.svg
 
 {HTTP server}
@@ -47,10 +49,12 @@
     < revoked sessions
     |Revoked sessions|
 > response writer, request, session
-[12.2.4. Serve the request with the reader's identity in its context, privately, and hold a connection that the wrapped handler takes over, such as the chat's socket, until the session's expiry
+[12.2.4. Serve the request with the reader's identity in its context, privately, and hold a connection that the wrapped handler takes over, such as the chat's socket, until the session's expiry, or close it at once for a session that a sign-out revoked before the takeover
  (signin.middleware.serve)]
     > response writer, request
     <Wrapped handler>
+    < revoked sessions
+    |Revoked sessions|
     > held connections
     |Held connections|
 > response writer, request
