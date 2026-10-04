@@ -30,13 +30,16 @@ import (
 )
 
 type config struct {
-	Addr       string
-	ConfigName string        // the configuration file: a local path, or with Root a path inside the bucket folder
-	Root       string        // the bucket folder's URL, or empty for the directory of ConfigName
-	Refresh    time.Duration // between checks of the bucket folder; 0 turns them off
-	MaxSize    int64         // of a bucket folder's objects, in bytes
-	HideTryIt  bool
-	ChatModel  string // empty without a chat
+	Addr        string
+	ConfigName  string        // the configuration file: a local path, or with Root a path inside the bucket folder
+	Root        string        // the bucket folder's URL, or empty for the directory of ConfigName
+	Refresh     time.Duration // between checks of the bucket folder; 0 turns them off
+	MaxSize     int64         // of a bucket folder's objects, in bytes
+	Previews    string        // the previews location inside the bucket folder, or empty without previews
+	PreviewIdle time.Duration // after which an unused preview's snapshot leaves memory; 0 never
+	MaxPreviews int           // preview snapshots in memory; 0 means no limit
+	HideTryIt   bool
+	ChatModel   string // empty without a chat
 }
 
 func main() {
@@ -50,9 +53,10 @@ func main() {
 }
 
 // startup reads the configuration, opens the documentation source, loads its
-// snapshot, builds the portal handler from it, and wraps it in the reloader,
-// which rebuilds it for each settled change of the source until ctx ends.
-// It returns the address to listen on and the reloader.
+// snapshot, builds the portal handler from it, wraps it in the reloader,
+// which rebuilds it for each settled change of the source until ctx ends,
+// opens the previews location, and wraps the reloader in the previews
+// handler. It returns the address to listen on and the previews handler.
 func startup(ctx context.Context, args []string, getenv func(string) string) (string, http.Handler, error) {
 	cfg, err := parseConfig(args, getenv)
 	if err != nil {
@@ -71,7 +75,12 @@ func startup(ctx context.Context, args []string, getenv func(string) string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	return cfg.Addr, source.NewReloader(ctx, src, snap.Listing, h, cfg.Refresh, b.build), nil
+	reloader := source.NewReloader(ctx, src, snap.Listing, h, cfg.Refresh, b.build)
+	previews, err := openPreviews(ctx, cfg, b.buildPreview)
+	if err != nil {
+		return "", nil, err
+	}
+	return cfg.Addr, portal.WithPreviews(reloader, previews), nil
 }
 
 // builder builds the portal handler of each snapshot of the documentation
@@ -99,10 +108,21 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 	return portal.New(pcfg)
 }
 
+// buildPreview builds the portal handler of a preview folder's snapshot at
+// root like build, without the chat: it reads the portal configuration from
+// the configuration file, adds the Try It setting, and builds the handler.
+func (b *builder) buildPreview(root fs.FS) (http.Handler, error) {
+	pcfg, err := portal.ReadConfig(root, b.configPath)
+	if err != nil {
+		return nil, err
+	}
+	return portal.New(setTryIt(pcfg, b.cfg.HideTryIt))
+}
+
 // parseConfig reads the configuration from the flags and the environment.
 // Flags win over the environment, which wins over the defaults.
 func parseConfig(args []string, getenv func(string) string) (config, error) {
-	cfg := config{Addr: ":8080", ConfigName: "environment.yaml", Refresh: time.Minute, MaxSize: 256 << 20}
+	cfg := config{Addr: ":8080", ConfigName: "environment.yaml", Refresh: time.Minute, MaxSize: 256 << 20, PreviewIdle: time.Hour, MaxPreviews: 10}
 	if v := getenv("DOCPORTAL_ADDR"); v != "" {
 		cfg.Addr = v
 	}
@@ -137,6 +157,23 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		}
 		cfg.HideTryIt = hide
 	}
+	if v := getenv("DOCPORTAL_PREVIEWS"); v != "" {
+		cfg.Previews = v
+	}
+	if v := getenv("DOCPORTAL_PREVIEW_IDLE"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return config{}, fmt.Errorf("DOCPORTAL_PREVIEW_IDLE: %q is not a duration", v)
+		}
+		cfg.PreviewIdle = d
+	}
+	if v := getenv("DOCPORTAL_MAX_PREVIEWS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return config{}, fmt.Errorf("DOCPORTAL_MAX_PREVIEWS: %q is not a number", v)
+		}
+		cfg.MaxPreviews = n
+	}
 
 	// The flag package's message and usage go into the error, which main prints.
 	var out strings.Builder
@@ -147,6 +184,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&cfg.Root, "root", cfg.Root, "bucket folder that holds the documentation, as a Go CDK URL such as gs://bucket?prefix=docs/; without it, the directory of -config")
 	flags.DurationVar(&cfg.Refresh, "refresh", cfg.Refresh, "how often to check the bucket folder for changes; 0 never")
 	flags.Int64Var(&maxSizeMiB, "max-size", maxSizeMiB, "largest total size of the bucket folder's objects, in MiB; 0 means no limit")
+	flags.StringVar(&cfg.Previews, "previews", cfg.Previews, "previews location: a folder of the bucket folder, such as previews/, with a preview folder for each preview at /previews/{folder}; none turns previews off")
+	flags.DurationVar(&cfg.PreviewIdle, "preview-idle", cfg.PreviewIdle, "how long an unused preview's snapshot stays in memory; 0 means no limit")
+	flags.IntVar(&cfg.MaxPreviews, "max-previews", cfg.MaxPreviews, "most preview snapshots in memory; 0 means no limit")
 	flags.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	flags.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
 	if err := flags.Parse(args); err != nil {
@@ -158,23 +198,38 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	if maxSizeMiB < 0 || maxSizeMiB > math.MaxInt64>>20 {
 		return config{}, fmt.Errorf("-max-size: %d MiB is not a size between 0 and %d", maxSizeMiB, math.MaxInt64>>20)
 	}
+	switch {
+	case cfg.Previews != "" && cfg.Root == "":
+		return config{}, errors.New("-previews needs -root: previews are folders of the bucket folder")
+	case cfg.PreviewIdle < 0:
+		return config{}, fmt.Errorf("-preview-idle: %v is negative", cfg.PreviewIdle)
+	case cfg.MaxPreviews < 0:
+		return config{}, fmt.Errorf("-max-previews: %d is negative", cfg.MaxPreviews)
+	}
 	cfg.MaxSize = maxSizeMiB << 20
 	return cfg, nil
 }
 
 // openSource opens the documentation source of cfg: the directory of the
 // configuration file, so that the portal cannot read outside it, or the
-// bucket folder that cfg.Root names, with cfg's size limit. It returns the
-// source with the configuration file's path inside it. A file:// bucket
-// folder, unlike the directory, reads through a symlink to a file outside
-// it, as the file driver does.
+// bucket folder that cfg.Root names, with cfg's size limit, without its
+// previews location. It returns the source with the configuration file's
+// path inside it. A file:// bucket folder, unlike the directory, reads
+// through a symlink to a file outside it, as the file driver does.
 func openSource(ctx context.Context, cfg config) (source.Source, string, error) {
 	if cfg.Root != "" {
 		bucket, err := source.OpenBucket(ctx, cfg.Root, cfg.MaxSize)
 		if err != nil {
 			return nil, "", fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
 		}
-		return bucket, cfg.ConfigName, nil
+		if cfg.Previews == "" {
+			return bucket, cfg.ConfigName, nil
+		}
+		published, err := bucket.Without(cfg.Previews)
+		if err != nil {
+			return nil, "", fmt.Errorf("-previews: %w", err)
+		}
+		return published, cfg.ConfigName, nil
 	}
 	// The root stays open for as long as docportal runs.
 	dir, err := source.OpenDirectory(filepath.Dir(cfg.ConfigName))
@@ -182,6 +237,33 @@ func openSource(ctx context.Context, cfg config) (source.Source, string, error) 
 		return nil, "", fmt.Errorf("open documentation root: %w", err)
 	}
 	return dir, filepath.Base(cfg.ConfigName), nil
+}
+
+// openPreviews opens the previews location named by cfg.Previews, if any,
+// into the previews configuration, so that the previews handler opens the
+// portal handler of each preview folder, loaded at the folder's first
+// request with build. Without a previews location, previews are off.
+func openPreviews(ctx context.Context, cfg config, build func(fs.FS) (http.Handler, error)) (portal.PreviewsConfig, error) {
+	if cfg.Previews == "" {
+		return portal.PreviewsConfig{}, nil
+	}
+	bucket, err := source.OpenBucket(ctx, cfg.Root, cfg.MaxSize)
+	if err != nil {
+		return portal.PreviewsConfig{}, fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
+	}
+	location, err := bucket.Folder(cfg.Previews)
+	if err != nil {
+		return portal.PreviewsConfig{}, fmt.Errorf("-previews: %w", err)
+	}
+	folder := func(name string) (source.Source, error) {
+		f, err := location.Folder(name)
+		if err != nil {
+			return nil, err
+		}
+		return f, nil
+	}
+	previews := source.NewPreviews(ctx, folder, build, cfg.Refresh, cfg.PreviewIdle, cfg.MaxPreviews)
+	return portal.PreviewsConfig{Open: previews.Handler}, nil
 }
 
 // setTryIt adds the Try It setting to the portal configuration.

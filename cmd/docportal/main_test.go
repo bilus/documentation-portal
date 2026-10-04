@@ -79,7 +79,7 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config{Addr: ":8080", ConfigName: "environment.yaml", Refresh: time.Minute, MaxSize: 256 << 20}); cfg != want {
+	if want := (config{Addr: ":8080", ConfigName: "environment.yaml", Refresh: time.Minute, MaxSize: 256 << 20, PreviewIdle: time.Hour, MaxPreviews: 10}); cfg != want {
 		t.Errorf("defaults = %+v, want %+v", cfg, want)
 	}
 
@@ -88,7 +88,7 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config{Addr: ":9090", ConfigName: "docs/portal.yaml", Refresh: time.Minute, MaxSize: 256 << 20}); cfg != want {
+	if want := (config{Addr: ":9090", ConfigName: "docs/portal.yaml", Refresh: time.Minute, MaxSize: 256 << 20, PreviewIdle: time.Hour, MaxPreviews: 10}); cfg != want {
 		t.Errorf("got %+v, want %+v", cfg, want)
 	}
 	cfg, err = parseConfig(nil, func(k string) string { return env[k] })
@@ -561,5 +561,160 @@ func TestBuilderKeepsOneChatAcrossSnapshots(t *testing.T) {
 	}
 	if _, err := b.build(root); err != nil || b.chat != first {
 		t.Errorf("the second build: err %v, same chat %v", err, b.chat == first)
+	}
+}
+
+// getIn returns the response of h to a GET of path from a reader with the
+// cookie, such as portal-preview=pr-1.
+func getIn(h http.Handler, path, cookie string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	r.Header.Set("Cookie", cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	return rec
+}
+
+// writePreview writes the preview folder name under site/previews/ in dir,
+// a bucketFolder: the bucket folder's configuration file and spec, and a
+// document a.md that says text.
+func writePreview(t *testing.T, dir, name, text string) {
+	t.Helper()
+	preview := filepath.Join(dir, "site", "previews", name)
+	for _, file := range []string{"environment.yaml", "specs/pets.yaml"} {
+		data, err := os.ReadFile(filepath.Join(dir, "site", file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(preview, file)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(preview, file), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(preview, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(preview, "docs", "a.md"), []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestParseConfigReadsThePreviewSettings(t *testing.T) {
+	env := map[string]string{"DOCPORTAL_ROOT": "gs://docs?prefix=portal/", "DOCPORTAL_PREVIEWS": "previews/", "DOCPORTAL_PREVIEW_IDLE": "30m", "DOCPORTAL_MAX_PREVIEWS": "3"}
+	lookup := func(k string) string { return env[k] }
+	cfg, err := parseConfig(nil, lookup)
+	if err != nil || cfg.Previews != "previews/" || cfg.PreviewIdle != 30*time.Minute || cfg.MaxPreviews != 3 {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
+	cfg, err = parseConfig([]string{"-previews", "ci/previews", "-preview-idle", "0", "-max-previews", "0"}, lookup)
+	if err != nil || cfg.Previews != "ci/previews" || cfg.PreviewIdle != 0 || cfg.MaxPreviews != 0 {
+		t.Errorf("the flags over the environment: %+v, %v", cfg, err)
+	}
+	for name, args := range map[string][]string{
+		"-previews without -root": {"-previews", "previews"},
+		"a negative idle time":    {"-root", "gs://docs", "-previews", "previews", "-preview-idle", "-1m"},
+		"a negative limit":        {"-root", "gs://docs", "-previews", "previews", "-max-previews", "-1"},
+		"a limit of no number":    {"-max-previews", "many"},
+	} {
+		if _, err := parseConfig(args, noEnv); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	for name, bad := range map[string]map[string]string{
+		"an idle time that is not a duration": {"DOCPORTAL_PREVIEW_IDLE": "soon"},
+		"a limit that is not a number":        {"DOCPORTAL_MAX_PREVIEWS": "many"},
+	} {
+		if _, err := parseConfig(nil, func(k string) string { return bad[k] }); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+func TestStartupLeavesThePreviewsOutOfThePublishedDocumentation(t *testing.T) {
+	dir, url := bucketFolder(t)
+	writePreview(t, dir, "pr-1", "# The preview version\n")
+	// A file of a preview puts the bucket folder over a limit of 1 MiB.
+	if err := os.WriteFile(filepath.Join(dir, "site", "previews", "pr-1", "big.bin"), make([]byte, 2<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"-root", url, "-config", "environment.yaml", "-refresh", "0", "-max-size", "1"}
+	if _, _, err := startup(t.Context(), append(args, "-previews", "previews"), noEnv); err != nil {
+		t.Errorf("the previews count against the published documentation's size limit: %v", err)
+	}
+	if _, _, err := startup(t.Context(), args, noEnv); err == nil {
+		t.Error("without -previews, the previews location does not count against the size limit")
+	}
+}
+
+func TestStartupServesAPreviewWithoutTheChat(t *testing.T) {
+	dir, url := bucketFolder(t)
+	writePreview(t, dir, "pr-1", "# The preview version\n")
+	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "0", "-previews", "previews", "-chat-model", "claude-opus-5-5"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := get(h, "/previews/pr-1/portals/pets/docs/guides/a.md")
+	if cookies := rec.Result().Cookies(); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/portals/pets/docs/guides/a.md" || len(cookies) != 1 || cookies[0].String() != "portal-preview=pr-1; Path=/; HttpOnly; SameSite=Lax" {
+		t.Fatalf("the switch to pr-1: %d to %q with the cookies %v", rec.Code, rec.Header().Get("Location"), cookies)
+	}
+	page := getIn(h, "/portals/pets/docs/guides/a.md", "portal-preview=pr-1")
+	if body := page.Body.String(); !strings.Contains(body, "The preview version") || !strings.Contains(body, `class="portal-banner"`) || strings.Contains(body, `href="/portals/pets/chat"`) || page.Header().Get("Cache-Control") != "private" {
+		t.Errorf("the preview's page: %q", body)
+	}
+	if rec := getIn(h, "/portals/pets/chat", "portal-preview=pr-1"); rec.Code != http.StatusNotFound {
+		t.Errorf("the preview's chat page: %d", rec.Code)
+	}
+	// The published documentation keeps its chat.
+	if body := get(h, "/portals/pets/docs/guides/a.md").Body.String(); !strings.Contains(body, "The first version") || !strings.Contains(body, `href="/portals/pets/chat"`) || strings.Contains(body, "portal-banner") {
+		t.Errorf("the published page: %q", body)
+	}
+}
+
+func TestStartupEndsADeletedPreview(t *testing.T) {
+	dir, url := bucketFolder(t)
+	writePreview(t, dir, "pr-1", "# The preview version\n")
+	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "5ms", "-previews", "previews"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := getIn(h, "/portals/pets/docs/guides/a.md", "portal-preview=pr-1").Body.String(); !strings.Contains(body, "The preview version") {
+		t.Fatalf("the preview's page: %q", body)
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "site", "previews", "pr-1")); err != nil {
+		t.Fatal(err)
+	}
+	for start := time.Now(); ; time.Sleep(5 * time.Millisecond) {
+		body := getIn(h, "/portals/pets/docs/guides/a.md", "portal-preview=pr-1").Body.String()
+		if strings.Contains(body, "The preview <strong>pr-1</strong> is no longer available.") {
+			if !strings.Contains(body, "The first version") {
+				t.Errorf("the page with the notice: %q", body)
+			}
+			break
+		}
+		if time.Since(start) > 5*time.Second {
+			t.Fatal("the deleted preview still serves after five seconds")
+		}
+	}
+}
+
+func TestStartupKeepsAPreviewThroughABrokenChange(t *testing.T) {
+	dir, url := bucketFolder(t)
+	writePreview(t, dir, "pr-1", "# The preview version\n")
+	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "5ms", "-preview-idle", "1h", "-previews", "previews"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := getIn(h, "/portals/pets/docs/guides/a.md", "portal-preview=pr-1").Body.String(); !strings.Contains(body, "The preview version") {
+		t.Fatalf("the preview's page: %q", body)
+	}
+	// A configuration file that docportal refuses keeps the last snapshot,
+	// check after check.
+	if err := os.WriteFile(filepath.Join(dir, "site", "previews", "pr-1", "environment.yaml"), []byte("portals: [\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if body := getIn(h, "/portals/pets/docs/guides/a.md", "portal-preview=pr-1").Body.String(); !strings.Contains(body, "The preview version") || strings.Contains(body, "no longer available") {
+		t.Errorf("the preview's page after a broken change: %q", body)
 	}
 }
