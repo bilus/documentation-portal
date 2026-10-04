@@ -217,7 +217,9 @@ var templates = template.Must(template.ParseFS(templateFiles, "templates/*.html"
 // the notice cookie.
 func render(w http.ResponseWriter, r *http.Request, status int, name string, p page) {
 	p.Nav.Account = viewOf(r).account
-	// HOLE(1): the banner from r's context, and with a notice the notice cookie cleared
+	if p.Banner = bannerOf(r); p.Banner != nil && p.Banner.Ended != "" {
+		http.SetCookie(w, expired(endedCookie))
+	}
 	var buf bytes.Buffer
 	if err := templates.ExecuteTemplate(&buf, name, p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
