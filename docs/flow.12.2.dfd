@@ -1,0 +1,96 @@
+# Process 12.2, the body of signin.middleware.ServeHTTP: the sign-in
+# middleware's answer to each request that the HTTP server sends it. Each
+# request takes one path through the boxes, by its URL path and its session
+# cookie: the sign-out path to box 12.2.1, the callback to box 12.2.2, a
+# request with a session to boxes 12.2.3 and 12.2.4, and any other request to
+# boxes 12.2.3 and 12.2.5. The reader's browser carries the sign-in attempt
+# from box 12.2.5 to box 12.2.2, and the session from box 12.2.2 to boxes
+# 12.2.1 and 12.2.3, each in a sealed cookie; the HTTP server carries each
+# response to the browser. The revoked sessions and the held connections are
+# the middleware's own state, kept across requests: box 12.2.1 reads the
+# session through sessionOf, adds its ID and forgets the IDs past their
+# sessions' expiry, and box 12.2.3 refuses the IDs that the store holds; box
+# 12.2.4 holds a connection that the wrapped handler takes over, such as the
+# chat's socket, until the session's expiry, and a later request's sign-out,
+# box 12.2.1 drawn a second time, closes the session's held connections. Box
+# 12.2.4 reads the revoked sessions too, and closes a connection at once when
+# a sign-out revoked its session between box 12.2.3 and the takeover.
+# By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 12.2. docs/flow.12.2.dfd -o flow.12.2.svg
+
+{HTTP server}
+> response writer, request
+[12.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that the browser marks as cross-site
+ (signin.middleware.signOut)]
+    < session cookie
+    > expired session cookie, logout URL, signed-out page, sign-out question
+    <Browser>
+    < revoked sessions
+    > revoked sessions
+    |Revoked sessions|
+> response writer, request
+[12.2.2. Finish the sign-in at the callback: check the attempt's state, exchange the code with the attempt's PKCE verifier, identify the reader from the verified ID token or through the Provider, and set the cookie of a new session and send the reader to the return target, or show the sign-in error page with a link to retry
+ (signin.middleware.finish)]
+    < attempt cookie, code, state
+    > expired attempt cookie, session cookie, return target, sign-in error page
+    <Browser>
+    > code, PKCE verifier, client ID, client secret
+    < tokens, signing keys
+    <Identity provider>
+    > tokens
+    < identity
+    <Provider>
+    > sign-in problem
+    <Log>
+> request
+[12.2.3. Read the reader's session from the session cookie: none for a cookie that is missing, tampered with, expired or revoked
+ (signin.middleware.sessionOf)]
+    < session cookie
+    <Browser>
+    < revoked sessions
+    |Revoked sessions|
+> response writer, request, session
+[12.2.4. Serve the request with the reader's identity in its context, privately, and hold a connection that the wrapped handler takes over, such as the chat's socket, until the session's expiry, or close it at once for a session that a sign-out revoked before the takeover
+ (signin.middleware.serve)]
+    > response writer, request
+    <Wrapped handler>
+    < revoked sessions
+    |Revoked sessions|
+    > held connections
+    |Held connections|
+> response writer, request
+[12.2.5. Start a sign-in: keep a new state, nonce and PKCE verifier with the return target in the attempt cookie, and send the reader to the identity provider, or refuse a request that cannot follow the redirect
+ (signin.middleware.start)]
+    > attempt cookie, authorization URL, refusal
+    <Browser>
+> response writer, request
+[12.2.1. End the reader's session: revoke its session ID until the session's expiry, close its held connections, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, or ask the reader first at a sign-out that the browser marks as cross-site
+ (signin.middleware.signOut)]
+    < held connections
+    > held connections
+    |Held connections|
+
+# type: response writer = net/http.ResponseWriter
+# type: request = *net/http.Request
+# type: session = signin.session
+# type: session cookie = *net/http.Cookie
+# type: expired session cookie = *net/http.Cookie
+# type: attempt cookie = *net/http.Cookie
+# type: expired attempt cookie = *net/http.Cookie
+# type: logout URL = string
+# type: signed-out page = []byte
+# type: sign-out question = []byte
+# type: sign-in error page = []byte
+# type: client ID = string
+# type: client secret = string
+# type: sign-in problem = error
+# type: refusal = []byte
+# type: revoked sessions = map[string]time.Time
+# type: held connections = map[string]map[*signin.heldConn]bool
+# type: code = string
+# type: state = string
+# type: PKCE verifier = string
+# type: return target = string
+# type: tokens = *golang.org/x/oauth2.Token
+# type: signing keys = []byte
+# type: identity = signin.Identity
+# type: authorization URL = string

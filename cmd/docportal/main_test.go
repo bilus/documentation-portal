@@ -491,16 +491,16 @@ func TestAddChatKeepsTheChatOnAFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, c, err := addChat(pcfg, "claude-opus-5-5", nil)
+	_, c, err := addChat(pcfg, "claude-opus-5-5", nil, "")
 	if err != nil || c == nil {
 		t.Fatalf("the first snapshot: %v, chat %v", err, c)
 	}
 	// A snapshot whose libraries cannot be built keeps the chat for the next one.
 	broken := portal.Config{Root: root, Portals: []portal.Portal{{Name: "Pets", Sections: []portal.Section{{Title: "Guides", Type: portal.DocsSection, Input: "missing"}}}}}
-	if _, again, err := addChat(broken, "claude-opus-5-5", c); err == nil || again != c {
+	if _, again, err := addChat(broken, "claude-opus-5-5", c, ""); err == nil || again != c {
 		t.Errorf("after a failed snapshot: err %v, chat %v, want an error and the same chat", err, again)
 	}
-	if _, again, err := addChat(pcfg, "claude-opus-5-5", c); err != nil || again != c {
+	if _, again, err := addChat(pcfg, "claude-opus-5-5", c, ""); err != nil || again != c {
 		t.Errorf("the next good snapshot: err %v, chat %v, want the same chat", err, again)
 	}
 }
