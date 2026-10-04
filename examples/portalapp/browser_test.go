@@ -41,7 +41,6 @@ func newBrowser(t *testing.T) context.Context {
 }
 
 func TestTwoReadersSeeTheirOwnSectionsInTheBrowser(t *testing.T) {
-	t.Skip("HOLE(4): build each snapshot's portal handler with the access hook and the account hook")
 	p := newPortalTest(t)
 	p.start(t)
 
@@ -95,7 +94,6 @@ func TestTwoReadersSeeTheirOwnSectionsInTheBrowser(t *testing.T) {
 }
 
 func TestOneQuestionLimitForAReaderInTheBrowser(t *testing.T) {
-	t.Skip("HOLE(4): add the chat with the reader hook of the sign-in, with an API key")
 	model := httptest.NewServer(mocks.Model())
 	defer model.Close()
 	p := newPortalTest(t)
