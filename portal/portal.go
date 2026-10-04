@@ -1,5 +1,16 @@
 // Package portal serves API documentation as an http.Handler that other
 // programs can mount. The API is not stable yet.
+//
+// A program builds the portal handler with New from a Config, whose portals
+// ReadConfig can read from a configuration file, wraps the handler in its
+// own middleware, such as its sign-in, and mounts it in its own server,
+// beside routes of its own. The portal knows no identity provider. Request
+// hooks, optional functions of Config that read what the program's
+// middleware put into the request's context, extend it: Access gives each
+// reader's Access to the portals and sections, and Account the AccountLinks
+// that end each reader's navigation bar. Package chat serves a chat page in
+// each portal through Config.Chat, and package source reads the
+// documentation root from a bucket folder.
 package portal
 
 import (

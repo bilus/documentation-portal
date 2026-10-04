@@ -18,6 +18,14 @@ export CHROME_BIN
 
 .PHONY: setup generate build lint test test-e2e run
 
+# The core packages leave sign-in to the program that embeds them: none may
+# import an OAuth or OpenID Connect library or an identity provider's
+# package. docportal's GCS and S3 drivers import such packages for the
+# bucket's own credentials, so the check leaves the drivers out.
+CORE_PACKAGES := ./portal ./source ./chat ./anthropicmodel
+CLOUD_DRIVERS := gocloud.dev/blob/gcsblob gocloud.dev/blob/s3blob
+SIGN_IN       := ^(golang\.org/x/oauth2|github\.com/coreos/go-oidc|github\.com/zitadel/oidc|github\.com/markbates/goth|github\.com/auth0|github\.com/okta)(/|$$)
+
 setup: $(ELEMENTS_FILES)
 
 # &: makes one run of the recipe produce all three assets. The Makefile
@@ -44,6 +52,8 @@ lint:
 	go vet ./...
 	go vet -tags e2e ./e2e/...
 	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
+	@found=$$(go list -deps $(CORE_PACKAGES) $$(go list -f '{{join .Imports " "}}' ./cmd/docportal | tr ' ' '\n' | grep -vxF $(addprefix -e ,$(CLOUD_DRIVERS))) | grep -E '$(SIGN_IN)'); \
+	test -z "$$found" || { echo "sign-in packages in the core packages:"; echo "$$found"; exit 1; }
 
 test: setup
 	go test ./...

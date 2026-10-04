@@ -85,5 +85,7 @@ func ExampleNew() {
 	}
 	get("Ada", "/portals/pets/specs/api")
 	get("", "/")
-	// HOLE(2): the output, once the account links end the navigation bar
+	// Output:
+	// 200 private <span class="portal-account"><span>Ada</span><span><a href="/auth/sign-out">Sign out</a></span></span>
+	// 200 private <span class="portal-account"><span><a href="/auth/sign-in">Sign in</a></span></span>
 }
