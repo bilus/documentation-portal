@@ -17,6 +17,11 @@ import (
 	"strings"
 	"time"
 
+	// The drivers of the bucket folder URLs that -root accepts.
+	_ "gocloud.dev/blob/fileblob"
+	_ "gocloud.dev/blob/gcsblob"
+	_ "gocloud.dev/blob/s3blob"
+
 	"github.com/bilus/documentation-portal/anthropicmodel"
 	"github.com/bilus/documentation-portal/chat"
 	"github.com/bilus/documentation-portal/portal"
@@ -152,8 +157,11 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 // source with the configuration file's path inside it.
 func openSource(ctx context.Context, cfg config) (source.Source, string, error) {
 	if cfg.Root != "" {
-		// HOLE(1): open the bucket folder at cfg.Root with source.OpenBucket and cfg.MaxSize, and return cfg.ConfigName as the path inside it
-		return nil, "", errors.New("bucket folders are not served yet")
+		bucket, err := source.OpenBucket(ctx, cfg.Root, cfg.MaxSize)
+		if err != nil {
+			return nil, "", fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
+		}
+		return bucket, cfg.ConfigName, nil
 	}
 	// The root stays open for as long as docportal runs.
 	dir, err := source.OpenDirectory(filepath.Dir(cfg.ConfigName))

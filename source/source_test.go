@@ -44,7 +44,6 @@ var folder = map[string]string{
 }
 
 func TestBucketListing(t *testing.T) {
-	t.Skip("HOLE(1): list a bucket folder's objects in key order, without folder placeholders")
 	src := NewBucket(memBucket(t, folder), 0)
 	listing, err := src.List(t.Context())
 	if err != nil {
@@ -66,7 +65,6 @@ func TestBucketListing(t *testing.T) {
 }
 
 func TestBucketRefusesAnInvalidKey(t *testing.T) {
-	t.Skip("HOLE(1): refuse a key that is not a valid io/fs path")
 	for _, key := range []string{"docs//a.md", "../a.md", "/a.md", "docs/./a.md"} {
 		src := NewBucket(memBucket(t, map[string]string{"a.md": "# A\n", key: "x"}), 0)
 		if _, err := src.List(t.Context()); err == nil || !strings.Contains(err.Error(), key) {
@@ -76,7 +74,6 @@ func TestBucketRefusesAnInvalidKey(t *testing.T) {
 }
 
 func TestBucketSnapshot(t *testing.T) {
-	t.Skip("HOLE(1): read a listing's objects into an in-memory file system")
 	src := NewBucket(memBucket(t, folder), 0)
 	snap, err := Load(t.Context(), src)
 	if err != nil {
@@ -101,7 +98,6 @@ func TestBucketSnapshot(t *testing.T) {
 }
 
 func TestBucketRefusesAFolderOverTheSizeLimit(t *testing.T) {
-	t.Skip("HOLE(1): refuse a listing over the size limit")
 	b := memBucket(t, folder)
 	listing, err := NewBucket(b, 0).List(t.Context())
 	if err != nil {
@@ -116,7 +112,6 @@ func TestBucketRefusesAFolderOverTheSizeLimit(t *testing.T) {
 }
 
 func TestDirectoryIsReadLive(t *testing.T) {
-	t.Skip("HOLE(1): a directory's listing is empty, and its snapshot reads the directory live")
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte("# A\n"), 0o644); err != nil {
 		t.Fatal(err)
