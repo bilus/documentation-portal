@@ -9,6 +9,7 @@ require (
 	github.com/chromedp/chromedp v0.16.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/yuin/goldmark v1.8.6
+	gocloud.dev v0.46.0
 	golang.org/x/net v0.59.0
 	google.golang.org/adk/v2 v2.4.0
 	google.golang.org/genai v1.71.0
@@ -54,6 +55,8 @@ require (
 	go.opentelemetry.io/otel v1.46.0 // indirect
 	go.opentelemetry.io/otel/log v0.22.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
@@ -62,6 +65,7 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.50.0 // indirect
+	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/api v0.295.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/grpc v1.83.2 // indirect

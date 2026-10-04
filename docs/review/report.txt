@@ -1,22 +1,22 @@
-design flow.dfd: 2 diagrams, 9 boxes
+design flow.dfd: 2 diagrams, 11 boxes
 
 private items
-  none
+  Chat: chat  writers 6  readers 6
 
 pressure
-  flow.dfd    max 0 in 5 gaps, first between 1 and 2
+  flow.dfd    max 0 in 7 gaps, first between 1 and 2
   flow.3.dfd  max 0 in 2 gaps, first between 3.1 and 3.2
 
 findings
   none
 
 design packages
-  flow.dfd, depth 0    main, portal
+  flow.dfd, depth 0    main, portal, source
   flow.3.dfd, depth 1  portal
 
 totals
   shared items by level                               none
-  private items                                       0
+  private items                                       1
   unlabeled arrow                                     0
   dead item                                           0
   orphan item                                         0

@@ -18,7 +18,7 @@
  that sends each request to a portal's page by the portal's slug: a spec section's viewer page or raw spec, or a docs section's document list, document page or raw file, with the document sidebar from the section's toc file when it names one; and the home page, the Elements assets, and with a chat its routes
  (portal.newRouter)]
 > portal handler
-{HTTP server}
+{9 Wrap the portal handler in the reloader}
 
 # type: portal configuration = portal.Config
 # type: sites = []*portal.site

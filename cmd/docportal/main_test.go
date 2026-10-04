@@ -10,6 +10,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/bilus/documentation-portal/portal"
 )
 
 func noEnv(string) string { return "" }
@@ -42,7 +45,7 @@ func writeConfig(t *testing.T, dir, sections string) string {
 }
 
 func TestStartupServesSpec(t *testing.T) {
-	addr, h, err := startup([]string{"-config", sample}, noEnv)
+	addr, h, err := startup(t.Context(), []string{"-config", sample}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +79,7 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config{Addr: ":8080", ConfigName: "environment.yaml"}); cfg != want {
+	if want := (config{Addr: ":8080", ConfigName: "environment.yaml", Refresh: time.Minute, MaxSize: 256 << 20}); cfg != want {
 		t.Errorf("defaults = %+v, want %+v", cfg, want)
 	}
 
@@ -85,7 +88,7 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config{Addr: ":9090", ConfigName: "docs/portal.yaml"}); cfg != want {
+	if want := (config{Addr: ":9090", ConfigName: "docs/portal.yaml", Refresh: time.Minute, MaxSize: 256 << 20}); cfg != want {
 		t.Errorf("got %+v, want %+v", cfg, want)
 	}
 	cfg, err = parseConfig(nil, func(k string) string { return env[k] })
@@ -116,14 +119,14 @@ func TestParseConfigHelpListsFlags(t *testing.T) {
 }
 
 func TestStartupRejectsMissingRootDir(t *testing.T) {
-	_, _, err := startup([]string{"-config", "testdata/no-such-dir/environment.yaml"}, noEnv)
+	_, _, err := startup(t.Context(), []string{"-config", "testdata/no-such-dir/environment.yaml"}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "testdata/no-such-dir") {
 		t.Errorf("err = %v, want it to name the directory", err)
 	}
 }
 
 func TestStartupRejectsMissingConfigFile(t *testing.T) {
-	_, _, err := startup([]string{"-config", filepath.Join(t.TempDir(), "environment.yaml")}, noEnv)
+	_, _, err := startup(t.Context(), []string{"-config", filepath.Join(t.TempDir(), "environment.yaml")}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "environment.yaml") {
 		t.Errorf("err = %v, want it to name the configuration file", err)
 	}
@@ -131,14 +134,14 @@ func TestStartupRejectsMissingConfigFile(t *testing.T) {
 
 func TestStartupRejectsSpecPathOutsideDir(t *testing.T) {
 	config := writeConfig(t, t.TempDir(), "  - {title: API, type: spec, input: ../specs/petstore-3.0.yaml}\n")
-	_, _, err := startup([]string{"-config", config}, noEnv)
+	_, _, err := startup(t.Context(), []string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "../specs/petstore-3.0.yaml") {
 		t.Errorf("err = %v, want it to name the spec path", err)
 	}
 }
 
 func TestStartupServesDocs(t *testing.T) {
-	_, h, err := startup([]string{"-config", sample}, noEnv)
+	_, h, err := startup(t.Context(), []string{"-config", sample}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +158,7 @@ func TestStartupServesDocs(t *testing.T) {
 
 func TestStartupRejectsUnknownConfigKey(t *testing.T) {
 	config := writeConfig(t, t.TempDir(), "  - {title: API, type: spec, input: api.yaml, path: api.yaml}\n")
-	_, _, err := startup([]string{"-config", config}, noEnv)
+	_, _, err := startup(t.Context(), []string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "path") {
 		t.Errorf("err = %v, want one about the key path", err)
 	}
@@ -163,7 +166,7 @@ func TestStartupRejectsUnknownConfigKey(t *testing.T) {
 
 func TestStartupRejectsTocPathOutsideRoot(t *testing.T) {
 	config := writeConfig(t, writeEscape(t), "  - {title: API, type: spec, input: api.yaml}\n  - {title: Guides, type: docs, input: docs, toc: ../toc.json}\n")
-	_, _, err := startup([]string{"-config", config}, noEnv)
+	_, _, err := startup(t.Context(), []string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "toc path") {
 		t.Errorf("err = %v, want one about the toc path", err)
 	}
@@ -171,7 +174,7 @@ func TestStartupRejectsTocPathOutsideRoot(t *testing.T) {
 
 func TestStartupRejectsMissingDocsPath(t *testing.T) {
 	config := writeConfig(t, t.TempDir(), "  - {title: API, type: spec, input: api.yaml}\n  - {title: Guides, type: docs, input: no-such-docs}\n")
-	_, _, err := startup([]string{"-config", config}, noEnv)
+	_, _, err := startup(t.Context(), []string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "no-such-docs") {
 		t.Errorf("err = %v, want it to name the directory", err)
 	}
@@ -206,13 +209,17 @@ func writeEscape(t *testing.T) string {
 	return filepath.Join(dir, "root")
 }
 
-func TestOpenRootKeepsReadsInside(t *testing.T) {
-	root, name, err := openRoot(filepath.Join(writeEscape(t), "environment.yaml"))
+func TestOpenSourceKeepsReadsInside(t *testing.T) {
+	src, name, err := openSource(t.Context(), config{ConfigName: filepath.Join(writeEscape(t), "environment.yaml")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if name != "environment.yaml" {
 		t.Errorf("name = %q, want environment.yaml", name)
+	}
+	root, err := src.Read(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if _, err := fs.ReadFile(root, "docs/a.md"); err != nil {
 		t.Errorf("docs/a.md: %v", err)
@@ -224,7 +231,7 @@ func TestOpenRootKeepsReadsInside(t *testing.T) {
 
 func TestStartupKeepsDocsInside(t *testing.T) {
 	config := writeConfig(t, writeEscape(t), "  - {title: API, type: spec, input: api.yaml}\n  - {title: Guides, type: docs, input: docs}\n")
-	_, h, err := startup([]string{"-config", config}, noEnv)
+	_, h, err := startup(t.Context(), []string{"-config", config}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +264,7 @@ func TestParseConfigReadsHideTryIt(t *testing.T) {
 }
 
 func TestStartupShowsTryIt(t *testing.T) {
-	_, h, err := startup([]string{"-config", sample}, noEnv)
+	_, h, err := startup(t.Context(), []string{"-config", sample}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +274,7 @@ func TestStartupShowsTryIt(t *testing.T) {
 }
 
 func TestStartupHidesTryIt(t *testing.T) {
-	_, h, err := startup([]string{"-config", sample, "-hide-try-it"}, noEnv)
+	_, h, err := startup(t.Context(), []string{"-config", sample, "-hide-try-it"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +297,7 @@ func TestStartupRejectsDocsPathOutsideRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := writeConfig(t, filepath.Join(dir, "root"), "  - {title: API, type: spec, input: api.yaml}\n  - {title: Guides, type: docs, input: docs}\n")
-	_, _, err := startup([]string{"-config", config}, noEnv)
+	_, _, err := startup(t.Context(), []string{"-config", config}, noEnv)
 	if err == nil || !strings.Contains(err.Error(), "docs") {
 		t.Errorf("err = %v, want a refusal naming the content directory path", err)
 	}
@@ -307,7 +314,7 @@ func TestParseConfigReadsChatModel(t *testing.T) {
 }
 
 func TestStartupServesChat(t *testing.T) {
-	_, h, err := startup([]string{"-config", sample, "-chat-model", "claude-opus-5-5"}, noEnv)
+	_, h, err := startup(t.Context(), []string{"-config", sample, "-chat-model", "claude-opus-5-5"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +328,7 @@ func TestStartupServesChat(t *testing.T) {
 }
 
 func TestStartupWithoutChat(t *testing.T) {
-	_, h, err := startup([]string{"-config", sample}, noEnv)
+	_, h, err := startup(t.Context(), []string{"-config", sample}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +341,7 @@ func TestStartupWithoutChat(t *testing.T) {
 }
 
 func TestStartupChatPageLinksTheSections(t *testing.T) {
-	_, h, err := startup([]string{"-config", sample, "-chat-model", "claude-opus-5-5"}, noEnv)
+	_, h, err := startup(t.Context(), []string{"-config", sample, "-chat-model", "claude-opus-5-5"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +370,7 @@ func TestStartupServesAChatPageInEveryPortal(t *testing.T) {
 	if err := os.WriteFile(config, []byte(two), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, h, err := startup([]string{"-config", config, "-chat-model", "claude-opus-5-5"}, noEnv)
+	_, h, err := startup(t.Context(), []string{"-config", config, "-chat-model", "claude-opus-5-5"}, noEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,5 +378,132 @@ func TestStartupServesAChatPageInEveryPortal(t *testing.T) {
 		if page := get(h, path); page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Ask about the") {
 			t.Errorf("%s: %d", path, page.Code)
 		}
+	}
+}
+
+// bucketFolder writes the sample spec and a document under site/ in a
+// directory, and returns the Go CDK URL of that bucket folder.
+func bucketFolder(t *testing.T) (dir, url string) {
+	t.Helper()
+	dir = t.TempDir()
+	site := filepath.Join(dir, "site")
+	for name, body := range map[string]string{
+		"environment.yaml": "portals:\n  - name: Pets\n    sections:\n      - title: API\n        type: spec\n        input: specs/pets.yaml\n      - title: Guides\n        type: docs\n        input: docs\n",
+		"docs/a.md":        "# The first version\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(site, name)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(site, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	spec, err := os.ReadFile("../../testdata/specs/petstore-3.1.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(site, "specs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(site, "specs", "pets.yaml"), spec, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir, "file://" + filepath.ToSlash(dir) + "?prefix=site/&metadata=skip"
+}
+
+func TestStartupServesABucketFolder(t *testing.T) {
+	t.Skip("HOLE(1): serve a bucket folder named by -root, read into memory")
+	dir, url := bucketFolder(t)
+	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "0"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(h, "/portals/pets/api/specs/api"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Swagger Petstore") {
+		t.Errorf("the raw spec: %d %q", rec.Code, rec.Body.String()[:min(80, rec.Body.Len())])
+	}
+	if rec := get(h, "/portals/pets/docs/guides/a.md"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "The first version") {
+		t.Errorf("the document page: %d", rec.Code)
+	}
+	// The snapshot is in memory: a change in the folder does not show without a refresh.
+	if err := os.WriteFile(filepath.Join(dir, "site", "docs", "a.md"), []byte("# The second version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(h, "/portals/pets/docs/guides/a.md"); !strings.Contains(rec.Body.String(), "The first version") {
+		t.Errorf("the document page follows the folder without a refresh")
+	}
+}
+
+func TestStartupRefusesABucketFolderItCannotServe(t *testing.T) {
+	t.Skip("HOLE(1): stop on a bucket folder without the configuration file, or over the size limit")
+	dir, url := bucketFolder(t)
+	// A big file puts the folder over a limit of 1 MiB, the smallest limit; 0 means none.
+	if err := os.WriteFile(filepath.Join(dir, "site", "big.bin"), make([]byte, 2<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, args := range map[string][]string{
+		"a missing configuration file": {"-root", url, "-config", "portal.yaml"},
+		"a folder over the size limit": {"-root", url, "-config", "environment.yaml", "-max-size", "1"},
+		"a URL of no driver":           {"-root", "nothing://" + dir, "-config", "environment.yaml"},
+		"a missing directory":          {"-root", "file://" + filepath.ToSlash(dir) + "/missing?prefix=site/", "-config", "environment.yaml"},
+	} {
+		if _, _, err := startup(t.Context(), args, noEnv); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+func TestStartupRefreshesTheBucket(t *testing.T) {
+	t.Skip("HOLE(3): a settled change of the bucket folder replaces the snapshot in service")
+	dir, url := bucketFolder(t)
+	_, h, err := startup(t.Context(), []string{"-root", url, "-config", "environment.yaml", "-refresh", "5ms"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "site", "docs", "a.md"), []byte("# The second version\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for start := time.Now(); ; time.Sleep(5 * time.Millisecond) {
+		if rec := get(h, "/portals/pets/docs/guides/a.md"); strings.Contains(rec.Body.String(), "The second version") {
+			break
+		}
+		if time.Since(start) > 5*time.Second {
+			t.Fatal("the document page did not follow the folder within five seconds")
+		}
+	}
+	// A new section in the configuration file reaches the navigation bar.
+	config := "portals:\n  - name: Pets\n    sections:\n      - title: API\n        type: spec\n        input: specs/pets.yaml\n      - title: Handbook\n        type: docs\n        input: docs\n"
+	if err := os.WriteFile(filepath.Join(dir, "site", "environment.yaml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for start := time.Now(); ; time.Sleep(5 * time.Millisecond) {
+		if rec := get(h, "/portals/pets/docs/handbook/a.md"); rec.Code == http.StatusOK {
+			break
+		}
+		if time.Since(start) > 5*time.Second {
+			t.Fatal("the new section did not appear within five seconds")
+		}
+	}
+	if rec := get(h, "/portals/pets/docs/guides/a.md"); rec.Code != http.StatusNotFound {
+		t.Errorf("the old section still answers %d", rec.Code)
+	}
+}
+
+func TestAddChatKeepsTheChatOnAFailure(t *testing.T) {
+	root := os.DirFS("../../testdata")
+	pcfg, err := portal.ReadConfig(root, "environment.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, c, err := addChat(pcfg, "claude-opus-5-5", nil)
+	if err != nil || c == nil {
+		t.Fatalf("the first snapshot: %v, chat %v", err, c)
+	}
+	// A snapshot whose libraries cannot be built keeps the chat for the next one.
+	broken := portal.Config{Root: root, Portals: []portal.Portal{{Name: "Pets", Sections: []portal.Section{{Title: "Guides", Type: portal.DocsSection, Input: "missing"}}}}}
+	if _, again, err := addChat(broken, "claude-opus-5-5", c); err == nil || again != c {
+		t.Errorf("after a failed snapshot: err %v, chat %v, want an error and the same chat", err, again)
+	}
+	if _, again, err := addChat(pcfg, "claude-opus-5-5", c); err != nil || again != c {
+		t.Errorf("the next good snapshot: err %v, chat %v, want the same chat", err, again)
 	}
 }
