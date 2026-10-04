@@ -61,7 +61,7 @@ The plan gate changes `main.startup` inline: it takes a context, box 2 becomes `
 - Goal: `source.NewReloader` is split into the reloader's steps, drawn in `flow.9.dfd` with holes, and its smoke test passes on their mock data.
 - Requirement: 4.
 - Dependencies: stage 1.
-- Holes: none filled; declares `3 source.reloader.swap`, `3 source.reloader.check`, `3 source.reloader.rebuild` and `3 source.reloader.ServeHTTP`.
+- Holes: `2 source.NewReloader`, whose body becomes the diagram in code; declares `3 source.reloader.swap`, `3 source.reloader.check`, `3 source.reloader.rebuild` and `3 source.reloader.ServeHTTP`.
 - Acceptance: `TestReloaderSmoke`, written in this stage.
 - Size: 100 lines.
 

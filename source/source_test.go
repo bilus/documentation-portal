@@ -335,3 +335,30 @@ func TestReloaderLogsAFailureOnce(t *testing.T) {
 		t.Errorf("the swap was not logged:\n%s", logged.String())
 	}
 }
+
+// TestReloaderSmoke runs the reloader's steps on one change of the source:
+// the first snapshot goes in service, a check finds the change, the rebuild
+// makes its handler, the swap puts it in service, and a request reads it.
+func TestReloaderSmoke(t *testing.T) {
+	src := &fakeSource{}
+	src.set("v1", map[string]string{"index.md": "one"})
+	var builds atomic.Int64
+	build := pageOf(&builds)
+	snap, err := Load(t.Context(), src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := build(snap.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewReloader(t.Context(), src, snap.Listing, first, time.Millisecond, build)
+	if got := body(h); got != "one" {
+		t.Fatalf("the first snapshot answers %q", got)
+	}
+	src.set("v2", map[string]string{"index.md": "two"})
+	waitFor(t, "the second snapshot", func() bool { return body(h) == "two" })
+	if n := builds.Load(); n != 2 {
+		t.Errorf("%d builds, want 2", n)
+	}
+}

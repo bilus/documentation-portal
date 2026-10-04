@@ -13,6 +13,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing/fstest"
 	"time"
 
@@ -194,6 +195,92 @@ func (b *Bucket) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 // next check tries again. An interval of zero or less turns the checks off,
 // and ctx stops them.
 func NewReloader(ctx context.Context, src Source, listing Listing, first http.Handler, interval time.Duration, build func(fs.FS) (http.Handler, error)) http.Handler {
-	// HOLE(2): build the reloader from its steps: swap the first handler in, and check, rebuild and swap on a timer
-	return first
+	r := &reloader{src: src, build: build}
+	r.swap(listing, first)
+	if interval > 0 {
+		go r.run(ctx, interval)
+	}
+	return r
+}
+
+// reloader answers each request with the portal handler of the snapshot in
+// service, and swaps in the handler of each settled change of its source.
+type reloader struct {
+	src   Source
+	build func(fs.FS) (http.Handler, error)
+
+	inService atomic.Pointer[snapshotInService]
+	last      Listing // the last check's listing, when it differed from the snapshot in service
+	problem   string  // the last problem logged, so that a check logs it once
+}
+
+// snapshotInService is the listing of the snapshot in service and its portal
+// handler.
+type snapshotInService struct {
+	listing Listing
+	handler http.Handler
+}
+
+// run checks the source every interval until ctx ends, and for each settled
+// change reads the snapshot, builds its handler and swaps it in.
+func (r *reloader) run(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		settled, ok := r.check(ctx)
+		if !ok {
+			continue
+		}
+		h, err := r.rebuild(ctx, settled)
+		if err != nil {
+			continue
+		}
+		r.swap(settled, h)
+	}
+}
+
+// swap puts the snapshot with listing and its portal handler h in service,
+// in one step, so that every request from now on reads that snapshot, and
+// logs the swap.
+func (r *reloader) swap(listing Listing, h http.Handler) {
+	// HOLE(3): put the snapshot in service and log the swap
+	r.inService.Store(&snapshotInService{listing: listing, handler: h})
+}
+
+// check lists the source and compares the listing with the snapshot in
+// service and with the last check's: it returns the listing and true for a
+// settled change, a listing that differs from the snapshot in service and
+// that the last check reported too. A failed listing goes to the log, once
+// until the problem changes, and counts as no change.
+func (r *reloader) check(ctx context.Context) (Listing, bool) {
+	// HOLE(3): return the listing once two checks in a row report it, and log a failed listing once
+	listing, err := r.src.List(ctx)
+	if err != nil || listing.Equal(r.inService.Load().listing) {
+		return nil, false
+	}
+	return listing, true
+}
+
+// rebuild reads the snapshot of the settled listing and builds its portal
+// handler with the builder, or logs the failure, so that the snapshot in
+// service stays until the next check.
+func (r *reloader) rebuild(ctx context.Context, listing Listing) (http.Handler, error) {
+	// HOLE(3): read the snapshot and build its handler, logging a failure once until the problem changes
+	root, err := r.src.Read(ctx, listing)
+	if err != nil {
+		return nil, err
+	}
+	return r.build(root)
+}
+
+// ServeHTTP answers the request with the portal handler of the snapshot in
+// service, which the request keeps to its end.
+func (r *reloader) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// HOLE(3): answer with the handler in service
+	r.inService.Load().handler.ServeHTTP(w, req)
 }
