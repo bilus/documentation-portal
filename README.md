@@ -567,4 +567,6 @@ not find it.
 The design lives in `docs/`: the data flow diagrams (`flow.dfd` and its
 child diagrams `flow.3.dfd`, `flow.3.4.dfd`, `flow.9.dfd`, `flow.11.dfd`,
 `flow.12.dfd` and `flow.12.2.dfd`), the vocabulary, and the plans and
-ledgers of the changes.
+ledgers of the changes. `make diagram` draws the packages and their imports
+into `docs/diagrams/packages.svg`, against the layers that
+`docs/diagrams/layers.toml` asserts, with go-depgraph.

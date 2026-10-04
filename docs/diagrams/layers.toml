@@ -1,0 +1,23 @@
+# The layering this diagram asserts, bottom first. go-depgraph places every
+# package that is not pinned here and reports where the code disagrees.
+#
+# The bottom layer is what an embedding program composes: portal serves the
+# documentation, source reads it from a directory or a bucket folder, and
+# anthropicmodel adapts the model. None of the three imports another. The
+# readers' services above it, chat and signin, each wrap or read the portal and
+# know nothing of each other. docportal, the command, is the one program that
+# composes them all.
+
+title = "docportal packages"
+
+[[layer]]
+name = "Documentation"
+packages = ["portal", "source", "anthropicmodel"]
+
+[[layer]]
+name = "Readers' services"
+packages = ["chat", "signin"]
+
+[[layer]]
+name = "Command"
+packages = ["cmd/docportal"]
