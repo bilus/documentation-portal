@@ -62,7 +62,6 @@ var pagesWithABar = []string{
 }
 
 func TestAccountLinksEndEveryNavigationBar(t *testing.T) {
-	t.Skip("HOLE(1): end each navigation bar with the reader's account links")
 	root, portals := shopAndStore()
 	h := newAccountPortal(t, root, portals, nil, signedIn)
 	for _, path := range pagesWithABar {
@@ -78,7 +77,6 @@ func TestAccountLinksEndEveryNavigationBar(t *testing.T) {
 }
 
 func TestTheHomePageShowsTheAccountLinks(t *testing.T) {
-	t.Skip("HOLE(1): end each navigation bar with the reader's account links")
 	root, portals := shopAndStore()
 	home := getWith(newAccountPortal(t, root, portals, nil, signedIn), "/", "Reader", "Ada").Body.String()
 	if nav := navOf(home); nav != `<nav class="portal-nav">`+adasLinks || !strings.Contains(home, `<a href="/portals/store/specs/api">Store</a>`) {
@@ -96,7 +94,6 @@ func TestTheHomePageShowsTheAccountLinks(t *testing.T) {
 }
 
 func TestAccountLinksAreText(t *testing.T) {
-	t.Skip("HOLE(1): end each navigation bar with the reader's account links")
 	root, portals := shopAndStore()
 	h := newAccountPortal(t, root, portals, nil, func(*http.Request) []portal.AccountLink {
 		return []portal.AccountLink{{Label: `<img src=x onerror=alert(1)>Ada`}, {Label: "Sign out", URL: "javascript:alert(1)"}, {Label: `"Bo" & co`, URL: `/auth/sign-out?next=/a&b="c"`}}
@@ -115,7 +112,6 @@ func TestAccountLinksAreText(t *testing.T) {
 }
 
 func TestResponsesArePrivateWithAnAccountHook(t *testing.T) {
-	t.Skip("HOLE(1): mark every response private with an account hook")
 	root, portals := accessRoot()
 	h := newAccountPortal(t, root, portals, nil, signedIn)
 	for _, path := range append(everyRoute, "/assets/elements/styles.min.css", "/assets/elements/missing.css") {
@@ -126,7 +122,6 @@ func TestResponsesArePrivateWithAnAccountHook(t *testing.T) {
 }
 
 func TestTheAccountHookAnswersOncePerRequest(t *testing.T) {
-	t.Skip("HOLE(1): end each navigation bar with the reader's account links")
 	root, portals := shopAndStore()
 	calls := 0
 	h := newAccountPortal(t, root, portals, nil, func(r *http.Request) []portal.AccountLink {
@@ -143,7 +138,6 @@ func TestTheAccountHookAnswersOncePerRequest(t *testing.T) {
 }
 
 func TestAccountLinksOf(t *testing.T) {
-	t.Skip("HOLE(1): give a route of the Chat the account links of its request")
 	var got [][]portal.AccountLink
 	keep := portal.Route{Pattern: "GET /portals/store/links", Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		links := portal.AccountLinksOf(r)

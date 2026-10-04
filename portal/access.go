@@ -123,8 +123,8 @@ func (s *site) visibleTo(access Access) (*site, bool) {
 
 // Private returns h with Cache-Control: private on each response, as private
 // does, for a handler that serves each reader a page of its own outside the
-// portal handler's routes, or within them without an access hook, such as a
-// chat page that holds its reader's ID.
+// portal handler's routes, or within them without an access hook or an
+// account hook, such as a chat page that holds its reader's ID.
 func Private(h http.Handler) http.Handler { return private(h) }
 
 // private returns h with Cache-Control: private on each response, even when h

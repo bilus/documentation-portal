@@ -7,7 +7,8 @@
 <style>body { font-family: system-ui, sans-serif; margin: 0; } main { max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }</style>
 </head>
 <body>
-<main>
+{{if .Nav.Account}}{{template "nav" .}}
+{{end}}<main>
 <h1>{{.Title}}</h1>
 {{with .Portals}}<ul>
 {{range .}}<li><a href="{{.URL}}">{{.Label}}</a></li>
