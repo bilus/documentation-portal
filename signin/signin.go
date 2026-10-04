@@ -17,10 +17,12 @@
 package signin
 
 import (
+	"cmp"
 	"context"
 	"crypto/cipher"
 	"net/http"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 
@@ -103,7 +105,20 @@ type Claims map[string]any
 // of a list, or a single string as a list of one, and nil for a claim that
 // holds neither.
 func (c Claims) Strings(name string) []string {
-	// HOLE(1): return a list claim's string elements, or a string claim as a list of one, and nil for any other
+	switch v := c[name].(type) {
+	case string:
+		return []string{v}
+	case []string:
+		return slices.Clone(v)
+	case []any:
+		var s []string
+		for _, e := range v {
+			if e, ok := e.(string); ok {
+				s = append(s, e)
+			}
+		}
+		return s
+	}
 	return nil
 }
 
@@ -190,9 +205,37 @@ func (m *middleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // sign-in middleware serves to a signed-in reader. The identity is a copy,
 // so a change to it changes no other caller's.
 func IdentityOf(r *http.Request) (Identity, bool) {
-	// HOLE(1): return a copy of the identity in r's context, claims included, or false without one
 	s, ok := r.Context().Value(readerKey{}).(signedIn)
-	return s.identity, ok
+	if !ok {
+		return Identity{}, false
+	}
+	id := s.identity
+	if id.Claims != nil {
+		id.Claims = cloneJSON(map[string]any(id.Claims)).(map[string]any)
+	}
+	return id, true
+}
+
+// cloneJSON returns a deep copy of v, a JSON value as encoding/json decodes
+// it, or a list of strings.
+func cloneJSON(v any) any {
+	switch v := v.(type) {
+	case map[string]any:
+		c := make(map[string]any, len(v))
+		for k, e := range v {
+			c[k] = cloneJSON(e)
+		}
+		return c
+	case []any:
+		c := make([]any, len(v))
+		for i, e := range v {
+			c[i] = cloneJSON(e)
+		}
+		return c
+	case []string:
+		return slices.Clone(v)
+	}
+	return v
 }
 
 // AccountLinks returns the account links of r's reader, for
@@ -200,14 +243,20 @@ func IdentityOf(r *http.Request) (Identity, bool) {
 // subject, and a link to the sign-out path, or none for a request that no
 // sign-in middleware serves to a signed-in reader.
 func AccountLinks(r *http.Request) []portal.AccountLink {
-	// HOLE(1): return the reader's name, email or subject and a sign-out link, or none outside the middleware
-	return nil
+	s, ok := r.Context().Value(readerKey{}).(signedIn)
+	if !ok {
+		return nil
+	}
+	return []portal.AccountLink{
+		{Label: cmp.Or(s.identity.Name, s.identity.Email, s.identity.Subject)},
+		{Label: "Sign out", URL: s.signOut},
+	}
 }
 
 // ReaderID returns the reader ID of r's reader, for chat.Config.Reader: the
 // subject of the reader's identity, or "" for a request that no sign-in
 // middleware serves to a signed-in reader.
 func ReaderID(r *http.Request) string {
-	// HOLE(1): return the subject of the identity in r's context, or ""
-	return ""
+	s, _ := r.Context().Value(readerKey{}).(signedIn)
+	return s.identity.Subject
 }

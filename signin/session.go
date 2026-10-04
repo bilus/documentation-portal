@@ -2,12 +2,19 @@ package signin
 
 import (
 	"context"
+	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"io"
+	"errors"
+	"html/template"
 	"net/http"
 	"time"
+
+	"github.com/bilus/documentation-portal/portal"
 )
 
 // The middleware's cookies.
@@ -39,21 +46,47 @@ type signedIn struct {
 // forgets the revoked sessions past theirs, deletes the session cookie, and
 // sends the reader to the logout URL or the signed-out page.
 func (m *middleware) signOut(w http.ResponseWriter, r *http.Request) {
-	// HOLE(1): revoke the ID of sessionOf's session until the session's expiry, forget the revoked sessions past theirs, delete the session cookie, and send the reader to the logout URL or the signed-out page, not stored
-	http.SetCookie(w, &http.Cookie{Name: m.sessionName, Path: "/", MaxAge: -1})
-	io.WriteString(w, "You have signed out.")
+	if s, ok := m.sessionOf(r); ok {
+		m.revoke(s)
+	}
+	http.SetCookie(w, m.cookie(m.sessionName, "", "/", -1))
+	w.Header().Set("Cache-Control", "no-store")
+	if m.logoutURL != "" {
+		http.Redirect(w, r, m.logoutURL, http.StatusFound)
+		return
+	}
+	page{Title: "You have signed out", Message: "Your session has ended.", Link: "/", LinkText: "Sign in again"}.write(w, http.StatusOK)
+}
+
+// revoke revokes the session s until its expiry, and forgets the revoked
+// sessions past theirs.
+func (m *middleware) revoke(s session) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := m.now()
+	for id, expires := range m.revoked {
+		if !expires.After(now) {
+			delete(m.revoked, id)
+		}
+	}
+	m.revoked[s.ID] = s.Expires
 }
 
 // sessionOf reads the reader's session from the session cookie of r: none
 // for a cookie that is missing, tampered with, expired or revoked.
 func (m *middleware) sessionOf(r *http.Request) (session, bool) {
-	// HOLE(1): refuse a session cookie that is tampered with, expired or revoked
 	c, err := r.Cookie(m.sessionName)
 	if err != nil {
 		return session{}, false
 	}
 	var s session
-	if err := m.open(m.sessionName, c.Value, &s); err != nil {
+	if err := m.open(m.sessionName, c.Value, &s); err != nil || s.ID == "" || s.Identity.Subject == "" || !s.Expires.After(m.now()) {
+		return session{}, false
+	}
+	m.mu.Lock()
+	_, revoked := m.revoked[s.ID]
+	m.mu.Unlock()
+	if revoked {
 		return session{}, false
 	}
 	return s, true
@@ -62,16 +95,30 @@ func (m *middleware) sessionOf(r *http.Request) (session, bool) {
 // serve serves r with the identity of the session s in its context,
 // privately, so that the request hooks read it.
 func (m *middleware) serve(w http.ResponseWriter, r *http.Request, s session) {
-	// HOLE(1): mark the response private, whatever the wrapped handler does with Cache-Control
-	m.next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), readerKey{}, signedIn{identity: s.Identity, signOut: m.signOutPath})))
+	ctx := context.WithValue(r.Context(), readerKey{}, signedIn{identity: s.Identity, signOut: m.signOutPath})
+	portal.Private(m.next).ServeHTTP(w, r.WithContext(ctx))
+}
+
+// cookie returns the cookie name with value for path, which lasts maxAge
+// seconds, or which a negative maxAge deletes: HttpOnly, SameSite=Lax, and
+// Secure with an https callback URL.
+func (m *middleware) cookie(name, value, path string, maxAge int) *http.Cookie {
+	return &http.Cookie{Name: name, Value: value, Path: path, MaxAge: maxAge, HttpOnly: true, Secure: m.secure, SameSite: http.SameSiteLaxMode}
 }
 
 // cookieCipher returns the AES-256-GCM cipher that seals the cookies of the
 // portal at the callback URL callback, under a key derived from key and
 // callback with HKDF-SHA-256, so that one portal's cookies open in no other.
 func cookieCipher(key []byte, callback string) (cipher.AEAD, error) {
-	// HOLE(1): derive a 32-byte key from key and callback with HKDF-SHA-256, and return its AES-256-GCM cipher
-	return nil, nil
+	derived, err := hkdf.Key(sha256.New, key, nil, "signin cookies of "+callback, 32)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(derived)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
 }
 
 // seal returns v sealed as the value of the cookie name: encrypted and
@@ -79,18 +126,51 @@ func cookieCipher(key []byte, callback string) (cipher.AEAD, error) {
 // the browser can neither read nor change it, nor pass it off as another
 // cookie's value.
 func (m *middleware) seal(name string, v any) (string, error) {
-	// HOLE(1): encrypt and authenticate v's JSON with m's cipher and a random nonce, with name as the additional data
-	b, err := json.Marshal(v)
-	return base64.RawURLEncoding.EncodeToString(b), err
+	plain, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, m.aead.NonceSize())
+	rand.Read(nonce)
+	return base64.RawURLEncoding.EncodeToString(m.aead.Seal(nonce, nonce, plain, []byte(name))), nil
 }
 
 // open reads into v the value of the cookie name that seal made, or refuses
 // a value that seal did not make for that name with this cipher.
 func (m *middleware) open(name, value string, v any) error {
-	// HOLE(1): refuse a value tampered with, sealed for another cookie's name or under another key
-	b, err := base64.RawURLEncoding.DecodeString(value)
+	sealed, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(b, v)
+	n := m.aead.NonceSize()
+	if len(sealed) < n {
+		return errors.New("signin: the cookie is too short")
+	}
+	plain, err := m.aead.Open(nil, sealed[:n], sealed[n:], []byte(name))
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(plain, v)
+}
+
+// page is one of the middleware's own pages: the signed-out page or the
+// sign-in error page, with a link onward.
+type page struct {
+	Title, Message, Link, LinkText string
+}
+
+// pageTemplate lays out a page.
+var pageTemplate = template.Must(template.New("page").Parse(`<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{.Title}}</title></head>
+<body><main><h1>{{.Title}}</h1><p>{{.Message}}</p><p><a href="{{.Link}}">{{.LinkText}}</a></p></main></body>
+</html>
+`))
+
+// write writes p with the status code, for no cache to store.
+func (p page) write(w http.ResponseWriter, code int) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(code)
+	pageTemplate.Execute(w, p)
 }

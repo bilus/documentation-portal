@@ -1,6 +1,7 @@
 package signin
 
 import (
+	"bytes"
 	"encoding/base64"
 	"io"
 	"net/http"
@@ -15,7 +16,6 @@ import (
 )
 
 func TestTamperedOrExpiredSessionCookiesAreRefused(t *testing.T) {
-	t.Skip("HOLE(1): refuse a session cookie that is tampered with, expired, or sealed under another key, by another portal or for another cookie")
 	f := serveSignIn(t, stubConfig(newStubProvider(t)))
 	ada := Identity{Subject: "ada", Name: "Ada Lovelace"}
 	if resp := f.requestWith(t, "/portals/pets/", sessionFor(t, f.m, ada, f.clock.now().Add(time.Hour))); resp.StatusCode != http.StatusOK {
@@ -55,7 +55,6 @@ func TestTamperedOrExpiredSessionCookiesAreRefused(t *testing.T) {
 }
 
 func TestIdentityOf(t *testing.T) {
-	t.Skip("HOLE(1): give the wrapped handler a copy of the reader's identity, claims included")
 	f := serveSignIn(t, stubConfig(newStubProvider(t)))
 	ada := Identity{Subject: "ada", Name: "Ada Lovelace", Email: "ada@example.com", Claims: Claims{
 		"groups": []any{"staff", "partners"},
@@ -88,7 +87,6 @@ func TestIdentityOf(t *testing.T) {
 }
 
 func TestTheReadyHooks(t *testing.T) {
-	t.Skip("HOLE(1): give the account links and the reader ID of the signed-in reader of a request")
 	cfg := stubConfig(newStubProvider(t))
 	cfg.SignOutPath = "/account/sign-out"
 	f := serveSignIn(t, cfg)
@@ -118,7 +116,6 @@ func TestTheReadyHooks(t *testing.T) {
 }
 
 func TestSignOutEndsTheSession(t *testing.T) {
-	t.Skip("HOLE(1): revoke the session at sign-out and delete its cookie, so that a copy of the cookie stops working")
 	f := serveSignIn(t, stubConfig(newStubProvider(t)))
 	ada := sessionFor(t, f.m, Identity{Subject: "ada"}, f.clock.now().Add(time.Hour))
 	grace := sessionFor(t, f.m, Identity{Subject: "grace"}, f.clock.now().Add(time.Hour))
@@ -166,7 +163,6 @@ func deletesTheSession(resp *http.Response) bool {
 }
 
 func TestSignOutGoesToTheLogoutURL(t *testing.T) {
-	t.Skip("HOLE(1): send the reader to the logout URL after the sign-out")
 	const logout = "https://idp.example/v2/logout?client_id=portal&returnTo=https%3A%2F%2Fdocs.example%2F"
 	cfg := stubConfig(newStubProvider(t))
 	cfg.LogoutURL = logout
@@ -191,7 +187,6 @@ func TestSignOutGoesToTheLogoutURL(t *testing.T) {
 }
 
 func TestResponsesToASignedInReaderArePrivate(t *testing.T) {
-	t.Skip("HOLE(1): mark each response to a signed-in reader private, whatever the wrapped handler sets")
 	f := serveSignIn(t, stubConfig(newStubProvider(t)))
 	f.pages.then = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=60")
@@ -203,7 +198,6 @@ func TestResponsesToASignedInReaderArePrivate(t *testing.T) {
 }
 
 func TestClaimsStrings(t *testing.T) {
-	t.Skip("HOLE(1): read a claim as a list of strings")
 	c := Claims{
 		"groups": []any{"staff", 7.0, "partners"},
 		"role":   "admin",
@@ -224,5 +218,111 @@ func TestClaimsStrings(t *testing.T) {
 		if got := c.Strings(name); !slices.Equal(got, want) {
 			t.Errorf("Strings(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+func TestCookieCipher(t *testing.T) {
+	sealed := func(key []byte, callback string) []byte {
+		t.Helper()
+		c, err := cookieCipher(key, callback)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.Seal(nil, make([]byte, c.NonceSize()), []byte("a session"), nil)
+	}
+	one := sealed(testKey, "https://docs.example/auth/callback")
+	if !bytes.Equal(one, sealed(testKey, "https://docs.example/auth/callback")) {
+		t.Error("one key and one callback URL gave two ciphers")
+	}
+	if bytes.Equal(one, sealed([]byte(strings.Repeat("another key ", 4)), "https://docs.example/auth/callback")) {
+		t.Error("two keys gave one cipher")
+	}
+	if bytes.Equal(one, sealed(testKey, "https://other.example/auth/callback")) {
+		t.Error("two callback URLs gave one cipher")
+	}
+}
+
+func TestOpenRefusesWhatSealDidNotMake(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	sealed, err := f.m.seal(sessionCookie, session{ID: "s", Identity: Identity{Subject: "ada"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s session
+	if err := f.m.open(sessionCookie, sealed, &s); err != nil || s.Identity.Subject != "ada" {
+		t.Fatalf("open(seal(s)) = %s, %v", jsonOf(s), err)
+	}
+	for name, value := range map[string]string{
+		"an empty value":               "",
+		"a value shorter than a nonce": "AAAA",
+		"a value that is not base64":   "not base64!",
+		"a value cut short":            sealed[:len(sealed)-4],
+	} {
+		if err := f.m.open(sessionCookie, value, &s); err == nil {
+			t.Errorf("%s opened", name)
+		}
+	}
+	if err := f.m.open(attemptCookie, sealed, &s); err == nil {
+		t.Error("a session cookie's value opened as an attempt cookie's")
+	}
+}
+
+func TestASessionNeedsAnIDAndASubject(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	for name, s := range map[string]session{
+		"no ID":      {Identity: Identity{Subject: "ada"}, Expires: f.clock.now().Add(time.Hour)},
+		"no subject": {ID: "s", Identity: Identity{Name: "Ada"}, Expires: f.clock.now().Add(time.Hour)},
+	} {
+		value, err := f.m.seal(sessionCookie, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp := f.requestWith(t, "/portals/pets/", &http.Cookie{Name: sessionCookie, Value: value}); resp.StatusCode != http.StatusFound {
+			t.Errorf("a session with %s got %d, want a sign-in", name, resp.StatusCode)
+		}
+	}
+}
+
+func TestCloneJSON(t *testing.T) {
+	names := []string{"ada"}
+	orig := map[string]any{"names": names, "list": []any{map[string]any{"a": 1.0}}}
+	c := cloneJSON(orig).(map[string]any)
+	c["names"].([]string)[0] = "eve"
+	c["list"].([]any)[0].(map[string]any)["a"] = 2.0
+	if names[0] != "ada" || orig["list"].([]any)[0].(map[string]any)["a"] != 1.0 {
+		t.Errorf("a change to the copy reached the original: %v", orig)
+	}
+}
+
+func TestRevokeForgetsTheSessionsPastTheirExpiry(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	f.m.revoke(session{ID: "short", Expires: f.clock.now().Add(time.Hour)})
+	f.m.revoke(session{ID: "long", Expires: f.clock.now().Add(3 * time.Hour)})
+	f.clock.advance(2 * time.Hour)
+	f.m.revoke(session{ID: "new", Expires: f.clock.now().Add(time.Hour)})
+	f.m.mu.Lock()
+	defer f.m.mu.Unlock()
+	if _, ok := f.m.revoked["short"]; ok || len(f.m.revoked) != 2 {
+		t.Errorf("the revoked sessions %v, want long and new", f.m.revoked)
+	}
+}
+
+func TestSignOutWithoutASession(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	resp := f.requestWith(t, "/auth/sign-out", nil)
+	if resp.StatusCode != http.StatusOK || !deletesTheSession(resp) || f.pages.reached() != 0 {
+		t.Errorf("a sign-out without a session answered %d with the cookies %q", resp.StatusCode, resp.Header.Values("Set-Cookie"))
+	}
+}
+
+func TestARevokedSessionIsRefused(t *testing.T) {
+	f := serveSignIn(t, stubConfig(newStubProvider(t)))
+	c := sessionFor(t, f.m, Identity{Subject: "ada"}, f.clock.now().Add(time.Hour))
+	s := opened(t, f.m, c)
+	f.m.mu.Lock()
+	f.m.revoked[s.ID] = s.Expires
+	f.m.mu.Unlock()
+	if resp := f.requestWith(t, "/portals/pets/", c); resp.StatusCode != http.StatusFound || f.pages.reached() != 0 {
+		t.Errorf("a revoked session got %d, want a sign-in", resp.StatusCode)
 	}
 }
