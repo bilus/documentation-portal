@@ -1,0 +1,61 @@
+# Process 9, the body of source.NewReloader: it puts the first snapshot in
+# service, and then, every refresh interval, runs boxes 9.2, 9.3 and 9.1
+# again in reloader.run, while box 9.4 answers each request.
+# By hand: dfd --box 300x150 --per-row 5 --number --number-prefix 9. docs/flow.9.dfd -o flow.9.svg
+
+{3 Build the portal handler}
+> listing, portal handler
+[9.1. Put the snapshot's listing and portal handler in service
+ so that every request from now on reads that snapshot
+ (source.reloader.swap)]
+    > snapshot in service
+    |Reloader|
+    > swap
+    <Log>
+> refresh interval
+[9.2. Check the source: list it, and compare the listing with the snapshot in service and with the last check's
+ to find a settled change
+ (source.reloader.check)]
+    < snapshot in service, last listing
+    > last listing
+    |Reloader|
+    > keys
+    < listing
+    <Bucket folder>
+    > problem
+    <Log>
+> settled listing
+[9.3. Read the settled listing's snapshot and build its portal handler with the builder
+ so that the new snapshot replaces the old one in one step
+ (source.reloader.rebuild)]
+    > keys
+    < files
+    <Bucket folder>
+    > problem
+    <Log>
+> listing, portal handler
+[9.1. Put the snapshot's listing and portal handler in service
+ so that every request from now on reads that snapshot
+ (source.reloader.swap)]
+    > snapshot in service
+    |Reloader|
+    > swap
+    <Log>
+> request
+[9.4. Answer each request with the portal handler of the snapshot in service
+ (source.reloader.ServeHTTP)]
+    < snapshot in service
+    |Reloader|
+> response
+{HTTP server}
+
+# type: listing = source.Listing
+# type: portal handler = net/http.Handler
+# type: refresh interval = time.Duration
+# type: keys = []string
+# type: settled listing = source.Listing
+# type: files = [][]byte
+# type: problem = error
+# type: swap = string
+# type: request = *net/http.Request
+# type: response = []byte
