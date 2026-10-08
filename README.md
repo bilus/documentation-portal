@@ -128,8 +128,10 @@ line in the log.
 `-root` that holds the whole documentation root as a gzip-compressed tar
 archive, such as `published.tgz`, with the configuration file of `-config`
 at its root. One upload of the object is one version of the documentation,
-so a snapshot never mixes two uploads, and a check reads the object's
-attributes rather than listing the folder.
+so a snapshot never mixes two uploads, a check reads the object's attributes
+rather than listing the folder, and a check that finds a new upload serves
+it at once, within one `-refresh` of the upload, where a folder's change
+waits for a second check to agree.
 
     docportal -root 'gs://docs-bucket?prefix=portal/' -archive published.tgz -config environment.yaml
 

@@ -276,6 +276,9 @@ type emptyWatch struct {
 	empty func()
 }
 
+// Atomic reports whether the watched source is atomic.
+func (w *emptyWatch) Atomic() bool { return atomicSource(w.Source) }
+
 // List lists the source, and calls empty when the listing holds no object.
 func (w *emptyWatch) List(ctx context.Context) (Listing, error) {
 	listing, err := w.Source.List(ctx)

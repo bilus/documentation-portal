@@ -249,3 +249,39 @@ func TestArchivePreviews(t *testing.T) {
 		t.Errorf("a preview without an archive: err = %v, want one wrapping fs.ErrNotExist, as a folder without objects gives", err)
 	}
 }
+
+// atomicFake is a fake source that changes whole, like an archive.
+type atomicFake struct{ fakeSource }
+
+func (*atomicFake) Atomic() bool { return true }
+
+func TestAnAtomicSourceReloadsAtTheFirstCheck(t *testing.T) {
+	src := &atomicFake{}
+	src.set("v1", map[string]string{"index.md": "one"})
+	var builds atomic.Int64
+	build := pageOf(&builds)
+	snap, err := Load(t.Context(), src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := build(snap.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := newReloader(t.Context(), "test", src, snap.Listing, first, 0, build)
+
+	src.set("v2", map[string]string{"index.md": "two"})
+	listing, ok := r.check(t.Context())
+
+	if !ok || len(listing) == 0 {
+		t.Fatal("the first check that sees the new upload must report it: one object write is one whole upload, so there is no half-finished state to wait out")
+	}
+	plain := &fakeSource{}
+	plain.set("v1", map[string]string{"index.md": "one"})
+	snap, _ = Load(t.Context(), plain)
+	pr := newReloader(t.Context(), "test", plain, snap.Listing, first, 0, build)
+	plain.set("v2", map[string]string{"index.md": "two"})
+	if _, ok := pr.check(t.Context()); ok {
+		t.Error("a folder's change still waits for a second check to agree")
+	}
+}

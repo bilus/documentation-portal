@@ -313,14 +313,26 @@ func (r *reloader) run(ctx context.Context, interval time.Duration) {
 
 // swap puts the snapshot with listing and its portal handler h in service,
 // in one step, so that every request from now on reads that snapshot, and
-// logs the swap, unless the listing is empty, as a directory's is. It forgets
-// the last problem, so that the log names it again if it comes back.
+// logs the swap, unless the listing is empty, as a directory's is: one
+// object by its key and time, more by their count. It forgets the last
+// problem, so that the log names it again if it comes back.
 func (r *reloader) swap(listing Listing, h http.Handler) {
 	r.inService.Store(&snapshotInService{listing: listing, handler: h})
-	if len(listing) > 0 {
+	switch {
+	case len(listing) == 1:
+		log.Printf("%s: %s of %s in service", r.name, listing[0].Key, listing[0].ModTime.UTC().Format(time.RFC3339))
+	case len(listing) > 1:
 		log.Printf("%s: %d objects in service", r.name, len(listing))
 	}
 	r.problem = ""
+}
+
+// atomicSource reports whether src changes whole between two listings, as
+// an Archive does, so that a changed listing needs no second look before
+// its snapshot is read.
+func atomicSource(src Source) bool {
+	a, ok := src.(interface{ Atomic() bool })
+	return ok && a.Atomic()
 }
 
 // note logs problem, unless the log already named the same problem last.
@@ -345,6 +357,10 @@ func (r *reloader) check(ctx context.Context) (Listing, bool) {
 	if listing.Equal(r.inService.Load().listing) {
 		r.last, r.lastSeen = nil, false
 		return nil, false
+	}
+	// A change of an atomic source is whole at the first sight of it.
+	if atomicSource(r.src) {
+		return listing, true
 	}
 	// A listing seen for the first time may be an upload in progress.
 	if !r.lastSeen || !listing.Equal(r.last) {

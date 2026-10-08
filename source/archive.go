@@ -47,6 +47,13 @@ func OpenArchive(ctx context.Context, rawURL, key string, limit int64) (*Archive
 	return NewArchive(bucket, key, limit), nil
 }
 
+// Atomic reports that the archive changes whole: one upload replaces the
+// object, so a check that finds it changed reads it at once, rather than
+// waiting for a second check to agree, as a folder's reloader does against
+// an upload in progress. Read still refuses an object that changed between
+// the check and the read, and the next check reads it again.
+func (a *Archive) Atomic() bool { return true }
+
 // Object returns the archive at another key of the same bucket, with the
 // same size limit, such as a preview's archive beside the published one.
 func (a *Archive) Object(key string) *Archive {
