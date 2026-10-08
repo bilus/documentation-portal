@@ -37,6 +37,7 @@ type config struct {
 	Addr        string
 	ConfigName  string        // the configuration file: a local path, or with Root a path inside the bucket folder
 	Root        string        // the bucket folder's URL, or empty for the directory of ConfigName
+	Archive     string        // the key of the archive inside the bucket folder that holds the documentation root, or empty for the folder's objects
 	Refresh     time.Duration // between checks of the bucket folder; 0 turns them off
 	MaxSize     int64         // of a bucket folder's objects, in bytes
 	Previews    string        // the previews location inside the bucket folder, or empty without previews
@@ -162,6 +163,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	if v := getenv("DOCPORTAL_ROOT"); v != "" {
 		cfg.Root = v
 	}
+	if v := getenv("DOCPORTAL_ARCHIVE"); v != "" {
+		cfg.Archive = v
+	}
 	if v := getenv("DOCPORTAL_REFRESH"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
@@ -232,9 +236,10 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&cfg.Addr, "addr", cfg.Addr, "address to listen on")
 	flags.StringVar(&cfg.ConfigName, "config", cfg.ConfigName, "configuration file, which lists the portals and their sections; its directory is the documentation root, or with -root its path inside the bucket folder")
 	flags.StringVar(&cfg.Root, "root", cfg.Root, "bucket folder that holds the documentation, as a Go CDK URL such as gs://bucket?prefix=docs/; without it, the directory of -config")
+	flags.StringVar(&cfg.Archive, "archive", cfg.Archive, "gzip-compressed tar archive inside the bucket folder that holds the documentation root, such as published.tgz; without it, the folder's objects are the root")
 	flags.DurationVar(&cfg.Refresh, "refresh", cfg.Refresh, "how often to check the bucket folder for changes; 0 never")
 	flags.Int64Var(&maxSizeMiB, "max-size", maxSizeMiB, "largest total size of the bucket folder's objects, in MiB; 0 means no limit")
-	flags.StringVar(&cfg.Previews, "previews", cfg.Previews, "previews location: a folder of the bucket folder, such as previews/, with a preview folder for each preview at /previews/{folder}; none turns previews off")
+	flags.StringVar(&cfg.Previews, "previews", cfg.Previews, "previews location: a folder of the bucket folder, such as previews/, with a preview folder for each preview at /previews/{folder}, or with -archive an archive {folder}.tgz; none turns previews off")
 	flags.DurationVar(&cfg.PreviewIdle, "preview-idle", cfg.PreviewIdle, "how long an unused preview's snapshot stays in memory; 0 means no limit")
 	flags.IntVar(&cfg.MaxPreviews, "max-previews", cfg.MaxPreviews, "most preview snapshots in memory; 0 means no limit")
 	flags.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
@@ -256,6 +261,10 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("-max-size: %d MiB is not a size between 0 and %d", maxSizeMiB, math.MaxInt64>>20)
 	}
 	switch {
+	case cfg.Archive != "" && cfg.Root == "":
+		return config{}, errors.New("-archive needs -root: the archive is an object of the bucket folder")
+	case cfg.Archive != "" && !fs.ValidPath(cfg.Archive):
+		return config{}, fmt.Errorf("-archive: %q is not a valid path inside the bucket folder", cfg.Archive)
 	case cfg.Previews != "" && cfg.Root == "":
 		return config{}, errors.New("-previews needs -root: previews are folders of the bucket folder")
 	case cfg.PreviewIdle < 0:
@@ -280,6 +289,13 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 // path inside it. A file:// bucket folder, unlike the directory, reads
 // through a symlink to a file outside it, as the file driver does.
 func openSource(ctx context.Context, cfg config) (source.Source, string, error) {
+	if cfg.Archive != "" {
+		archive, err := source.OpenArchive(ctx, cfg.Root, cfg.Archive, cfg.MaxSize)
+		if err != nil {
+			return nil, "", fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
+		}
+		return archive, cfg.ConfigName, nil
+	}
 	if cfg.Root != "" {
 		bucket, err := source.OpenBucket(ctx, cfg.Root, cfg.MaxSize)
 		if err != nil {
@@ -310,6 +326,9 @@ func openPreviews(ctx context.Context, cfg config, build func(fs.FS) (http.Handl
 	if cfg.Previews == "" {
 		return portal.PreviewsConfig{}, nil
 	}
+	if cfg.Archive != "" {
+		return openArchivePreviews(ctx, cfg, build)
+	}
 	bucket, err := source.OpenBucket(ctx, cfg.Root, cfg.MaxSize)
 	if err != nil {
 		return portal.PreviewsConfig{}, fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
@@ -324,6 +343,24 @@ func openPreviews(ctx context.Context, cfg config, build func(fs.FS) (http.Handl
 			return nil, err
 		}
 		return f, nil
+	}
+	previews := source.NewPreviews(ctx, folder, build, cfg.Refresh, cfg.PreviewIdle, cfg.MaxPreviews)
+	return portal.PreviewsConfig{Open: previews.Handler}, nil
+}
+
+// openArchivePreviews is openPreviews for archives: the preview named name
+// is the archive at {previews}/{name}.tgz inside the bucket folder.
+func openArchivePreviews(ctx context.Context, cfg config, build func(fs.FS) (http.Handler, error)) (portal.PreviewsConfig, error) {
+	location := strings.TrimSuffix(cfg.Previews, "/")
+	if location == "." || !fs.ValidPath(location) {
+		return portal.PreviewsConfig{}, fmt.Errorf("-previews: the folder %q is not a valid path inside the bucket folder", cfg.Previews)
+	}
+	archive, err := source.OpenArchive(ctx, cfg.Root, cfg.Archive, cfg.MaxSize)
+	if err != nil {
+		return portal.PreviewsConfig{}, fmt.Errorf("open bucket folder %s: %w", cfg.Root, err)
+	}
+	folder := func(name string) (source.Source, error) {
+		return archive.Object(location + "/" + name + ".tgz"), nil
 	}
 	previews := source.NewPreviews(ctx, folder, build, cfg.Refresh, cfg.PreviewIdle, cfg.MaxPreviews)
 	return portal.PreviewsConfig{Open: previews.Handler}, nil

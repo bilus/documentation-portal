@@ -122,6 +122,28 @@ divider, and then the markdown files without an entry, under Other documents.
 A missing or invalid toc file brings back the list of markdown files, with a
 line in the log.
 
+## An archive as the documentation root
+
+`-archive` (`DOCPORTAL_ARCHIVE`) names an object of the bucket folder of
+`-root` that holds the whole documentation root as a gzip-compressed tar
+archive, such as `published.tgz`, with the configuration file of `-config`
+at its root. One upload of the object is one version of the documentation,
+so a snapshot never mixes two uploads, and a check reads the object's
+attributes rather than listing the folder.
+
+    docportal -root 'gs://docs-bucket?prefix=portal/' -archive published.tgz -config environment.yaml
+
+The archive holds files alone, at paths relative to its root without a
+leading `./` or `/`; a leading `./` comes off, a directory entry is skipped,
+and docportal refuses an entry that is not a file, a path outside the root,
+a name used twice, or a name that is both a file and a directory. The size
+limit of `-max-size` counts the unpacked content. With `-previews`, each
+preview is the archive `{previews}/{name}.tgz` of the location, such as
+`previews/pr-123.tgz`, and a deleted archive ends its preview as a deleted
+folder does. A program that uses the library opens the archive with
+`source.OpenArchive` and the previews' archives with `Archive.Object`, and
+otherwise proceeds as with a bucket folder.
+
 ## Previews
 
 With `-previews` (`DOCPORTAL_PREVIEWS`) naming a previews location, a folder

@@ -101,6 +101,27 @@ func TestParseConfig(t *testing.T) {
 	}
 }
 
+func TestParseConfigArchive(t *testing.T) {
+	lookup := func(string) string { return "" }
+	cfg, err := parseConfig([]string{"-root", "gs://docs?prefix=portal/", "-archive", "published.tgz"}, lookup)
+	if err != nil || cfg.Archive != "published.tgz" {
+		t.Errorf("cfg = %+v, %v; want the archive key", cfg, err)
+	}
+	env := map[string]string{"DOCPORTAL_ROOT": "gs://docs?prefix=portal/", "DOCPORTAL_ARCHIVE": "published.tgz"}
+	cfg, err = parseConfig(nil, func(k string) string { return env[k] })
+	if err != nil || cfg.Archive != "published.tgz" {
+		t.Errorf("from the environment: cfg = %+v, %v; want the archive key", cfg, err)
+	}
+	for name, args := range map[string][]string{
+		"without -root":           {"-archive", "published.tgz"},
+		"a path outside the root": {"-root", "gs://docs?prefix=portal/", "-archive", "../published.tgz"},
+	} {
+		if _, err := parseConfig(args, lookup); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}
+
 func TestParseConfigRejectsUnknownFlag(t *testing.T) {
 	// The configuration file replaced -root-dir, -spec-path, -docs-path and
 	// -toc-path, and -spec-path replaced -spec.
