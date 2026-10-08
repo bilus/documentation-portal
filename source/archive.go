@@ -25,12 +25,12 @@ import (
 type Archive struct {
 	bucket *blob.Bucket
 	key    string
-	limit  int64 // the size limit in bytes of the unpacked content; 0 means none
+	limit  int64 // the size limit in bytes of the unpacked content; zero disables it
 }
 
 // NewArchive makes the object at key in bucket a documentation source,
-// whose unpacked content holds at most limit bytes; a limit of 0 means no
-// limit.
+// whose unpacked content holds at most limit bytes. A limit of zero
+// disables the limit.
 func NewArchive(bucket *blob.Bucket, key string, limit int64) *Archive {
 	return &Archive{bucket: bucket, key: key, limit: limit}
 }
@@ -55,7 +55,7 @@ func (a *Archive) Object(key string) *Archive {
 
 // List returns the archive's object, with its size, modification time and
 // MD5 sum as the bucket reports them, or an empty listing when the bucket
-// holds no such object, as a folder without objects lists.
+// doesn't hold the object, the same listing a folder without objects gives.
 func (a *Archive) List(ctx context.Context) (Listing, error) {
 	attrs, err := a.bucket.Attributes(ctx, a.key)
 	if gcerrors.Code(err) == gcerrors.NotFound {
@@ -70,16 +70,16 @@ func (a *Archive) List(ctx context.Context) (Listing, error) {
 // Read reads the archive of listing, as List returned it, and unpacks it
 // into a documentation root handle held in memory; an empty listing, from a
 // bucket without the object, reads as an empty root. It refuses an object
-// whose size or MD5 sum differs from the listing's, which changed since the
-// listing; unpacked content over the size limit; and an entry that is not a
+// whose size or MD5 sum differs from the listing's; unpacked content over
+// the size limit; and an entry that is not a
 // file, that is not a valid path, or that names both a file and a
 // directory. A leading "./" comes off each name, and a directory entry is
 // skipped, so an archive packed from "." reads like one packed from a file
 // list.
 func (a *Archive) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 	if len(listing) == 0 {
-		// No object yet, as before the first upload: an empty root, as a
-		// bucket folder without objects reads, for the program to decide on.
+		// No object yet, as before the first upload: an empty root, for the
+		// program to decide on.
 		return fstest.MapFS{}, nil
 	}
 	if len(listing) != 1 || listing[0].Key != a.key {
@@ -91,7 +91,7 @@ func (a *Archive) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 		return nil, fmt.Errorf("read the archive %s: %w", a.key, err)
 	}
 	defer r.Close()
-	// One byte past the listed size tells an object that grew.
+	// Reading one byte past the listed size detects an object that grew.
 	data, err := io.ReadAll(io.LimitReader(r, o.Size+1))
 	if err != nil {
 		return nil, fmt.Errorf("read the archive %s: %w", a.key, err)
@@ -107,7 +107,8 @@ func (a *Archive) Read(ctx context.Context, listing Listing) (fs.FS, error) {
 }
 
 // unpack reads the gzip-compressed tar archive data into a root handle
-// whose files hold at most limit bytes in all; a limit of 0 means none.
+// whose files hold at most limit bytes in all. A limit of zero disables the
+// limit.
 func unpack(data []byte, limit int64) (fs.FS, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
@@ -137,7 +138,7 @@ func unpack(data []byte, limit int64) (fs.FS, error) {
 		case root[name] != nil:
 			return nil, fmt.Errorf("the entry %q appears twice", hdr.Name)
 		}
-		// One byte past the allowance tells content over the limit.
+		// Reading one byte past the allowance detects content over the limit.
 		allowance := int64(1 << 62)
 		if limit > 0 {
 			allowance = limit - unpacked + 1
