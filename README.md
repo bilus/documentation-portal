@@ -166,8 +166,10 @@ a changed page. From then on, every page, raw file and raw spec comes from the
 preview folder, and a banner above the navigation bar names the folder, with
 a link to `/previews/`, the way back to the published documentation. A
 session cookie, `portal-preview`, holds the folder, so a browser shows one
-preview at a time, and every response in a preview carries
-`Cache-Control: private`. A preview has no chat. A folder name is one path
+preview at a time, and every response whose content depends on that cookie,
+the pages in a preview and the switches in and out, carries
+`Cache-Control: no-store` and `Vary: Cookie`, so that a browser's history
+cache never shows a preview page after the reader left the preview. A preview has no chat. A folder name is one path
 segment of ASCII letters, digits, `.`, `_` and `-`, other than `.` and `..`;
 any other name, and a folder without a configuration file, gets a 404 page,
 with the reader still in the preview or the published documentation of the

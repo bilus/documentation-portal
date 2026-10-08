@@ -218,11 +218,11 @@ func (p *previews) send(w http.ResponseWriter, r *http.Request, req previewReque
 	}
 	switch {
 	case req.leave:
-		w.Header().Set("Cache-Control", "private")
+		uncached(w.Header())
 		http.SetCookie(w, expired(previewCookie, p.base))
 		http.Redirect(w, r, p.base+"/", http.StatusFound)
 	case req.enter != "" && err == nil:
-		w.Header().Set("Cache-Control", "private")
+		uncached(w.Header())
 		http.SetCookie(w, &http.Cookie{Name: previewCookie, Value: req.enter, Path: cookiePath(p.base), HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		if req.ended != "" {
 			http.SetCookie(w, expired(endedCookie, p.base))
@@ -230,19 +230,26 @@ func (p *previews) send(w http.ResponseWriter, r *http.Request, req previewReque
 		http.Redirect(w, r, p.base+req.path, http.StatusFound)
 	case req.enter != "":
 		// The published portal handler writes the 404 page, and the cookie stays.
-		private(p.published).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
+		noStore(p.published).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
 	case req.folder != "" && err == nil:
-		private(h).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
+		noStore(h).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
 	case req.folder != "":
 		http.SetCookie(w, expired(previewCookie, p.base))
 		// A page with the notice takes this cookie out of its response.
 		http.SetCookie(w, &http.Cookie{Name: endedCookie, Value: req.folder, Path: cookiePath(p.base), HttpOnly: true, SameSite: http.SameSiteLaxMode})
-		private(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.folder}))
+		noStore(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.folder}))
 	case req.ended != "":
-		private(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.ended}))
+		noStore(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.ended}))
 	default:
 		p.published.ServeHTTP(w, r)
 	}
+}
+
+// uncached marks a response that depends on the preview cookie as one no
+// cache keeps, the browser's history cache included.
+func uncached(h http.Header) {
+	h.Set("Cache-Control", "no-store")
+	h.Add("Vary", "Cookie")
 }
 
 // banner is the line above the navigation bar of a page: the reader's

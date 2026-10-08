@@ -135,8 +135,24 @@ func Private(h http.Handler) http.Handler { return private(h) }
 // unless h took the connection. A status that h writes below the
 // privateWriter, through Unwrap, goes out as h left the header.
 func private(h http.Handler) http.Handler {
+	return withCacheControl(h, "private", false)
+}
+
+// noStore returns h with every response marked Cache-Control: no-store and
+// Vary: Cookie: a response whose content depends on the preview cookie,
+// which a browser must not restore from its history cache after the cookie
+// changed, as it does with private alone when the reader leaves a preview
+// and presses Back.
+func noStore(h http.Handler) http.Handler {
+	return withCacheControl(h, "no-store", true)
+}
+
+// withCacheControl returns h with every response's Cache-Control set to
+// value, and with Vary: Cookie when vary is set, even when the response's
+// handler deleted the header first.
+func withCacheControl(h http.Handler, value string, vary bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		pw := &privateWriter{ResponseWriter: w}
+		pw := &privateWriter{ResponseWriter: w, value: value, vary: vary}
 		h.ServeHTTP(pw, r)
 		if !pw.wrote && !pw.hijacked {
 			pw.WriteHeader(http.StatusOK)
@@ -144,19 +160,27 @@ func private(h http.Handler) http.Handler {
 	})
 }
 
-// privateWriter writes each status through it with Cache-Control: private,
+// privateWriter writes each status through it with its Cache-Control value,
 // even when the response's handler deleted the header first.
 type privateWriter struct {
 	http.ResponseWriter
-	wrote    bool // whether the final status went out
-	hijacked bool // whether the handler took the connection
+	value    string // the Cache-Control value
+	vary     bool   // whether to add Vary: Cookie
+	wrote    bool   // whether the final status went out
+	hijacked bool   // whether the handler took the connection
 }
 
-// WriteHeader writes the status code with Cache-Control: private. As in
+// WriteHeader writes the status code with the Cache-Control value. As in
 // net/http, an informational status other than 101 leaves the final status
 // to a later call.
 func (w *privateWriter) WriteHeader(code int) {
-	w.Header().Set("Cache-Control", "private")
+	if w.value == "" {
+		w.value = "private"
+	}
+	w.Header().Set("Cache-Control", w.value)
+	if w.vary {
+		w.Header().Add("Vary", "Cookie")
+	}
 	if code >= 200 || code == http.StatusSwitchingProtocols {
 		w.wrote = true
 	}

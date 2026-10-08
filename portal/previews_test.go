@@ -251,8 +251,8 @@ func TestAFolderThatDoesNotOpenIsNotFound(t *testing.T) {
 			if c := cookieOf(rec, "portal-preview"); c != nil {
 				t.Errorf("%s with the cookie %q set the cookie %v", path, cookie, c)
 			}
-			if got := rec.Header().Get("Cache-Control"); got != "private" {
-				t.Errorf("%s with the cookie %q: Cache-Control %q, want private", path, cookie, got)
+			if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+				t.Errorf("%s with the cookie %q: Cache-Control %q, want no-store, or the browser restores a preview page from its history after the cookie changed", path, cookie, got)
 			}
 			// A reader in a preview stays there, with the preview's banner.
 			if inside := strings.Contains(body, "Preview <strong>pr-1</strong>"); inside != (cookie != "") {
@@ -282,8 +282,8 @@ func TestAPreviewThatNoLongerOpensReturnsTheReaderWithANotice(t *testing.T) {
 	if c := cookieOf(rec, "portal-preview-ended"); c != nil && c.MaxAge >= 0 {
 		t.Errorf("the page with the notice keeps the notice cookie: %v", c)
 	}
-	if got := rec.Header().Get("Cache-Control"); got != "private" {
-		t.Errorf("the page with the notice: Cache-Control %q, want private", got)
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("the page with the notice: Cache-Control %q, want no-store", got)
 	}
 	// A response that is no page, here the redirect of /, carries the notice
 	// in its cookie to the next page, which clears it.
@@ -299,8 +299,8 @@ func TestAPreviewThatNoLongerOpensReturnsTheReaderWithANotice(t *testing.T) {
 	if c := cookieOf(rec, "portal-preview-ended"); c == nil || c.MaxAge >= 0 {
 		t.Errorf("the page with the notice keeps its cookie: %v", c)
 	}
-	if got := rec.Header().Get("Cache-Control"); got != "private" {
-		t.Errorf("the page with the notice of the cookie: Cache-Control %q, want private", got)
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("the page with the notice of the cookie: Cache-Control %q, want no-store", got)
 	}
 	// A failed load returns the reader too, and its cause goes to the log.
 	rec = getWith(h, "/portals/pets/specs/api", "Cookie", "portal-preview=broken")
@@ -363,8 +363,8 @@ func TestPreviewResponsesArePrivate(t *testing.T) {
 		"/previews/pr-1",
 		"/previews/",
 	} {
-		if got := getWith(h, path, "Cookie", inPreview).Header().Get("Cache-Control"); got != "private" {
-			t.Errorf("%s in the preview: Cache-Control %q, want private", path, got)
+		if got := getWith(h, path, "Cookie", inPreview).Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s in the preview: Cache-Control %q, want no-store", path, got)
 		}
 	}
 	for _, path := range []string{"/", "/portals/pets/docs/documents/a.md", "/portals/pets/api/specs/api"} {
@@ -415,8 +415,8 @@ func TestASwitchReadsThePathAsServeMuxDoes(t *testing.T) {
 	if c := cookieOf(rec, "portal-preview"); rec.Code != http.StatusFound || c == nil || c.MaxAge >= 0 {
 		t.Errorf("/%%70reviews/: %d with the cookie %v, want the way out of the preview", rec.Code, c)
 	}
-	if rec := get(h, "/%70reviews/no-such"); rec.Code != http.StatusNotFound || rec.Header().Get("Cache-Control") != "private" {
-		t.Errorf("/%%70reviews/no-such: %d with Cache-Control %q, want the private 404 page", rec.Code, rec.Header().Get("Cache-Control"))
+	if rec := get(h, "/%70reviews/no-such"); rec.Code != http.StatusNotFound || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("/%%70reviews/no-such: %d with Cache-Control %q, want the uncacheable 404 page", rec.Code, rec.Header().Get("Cache-Control"))
 	}
 }
 
