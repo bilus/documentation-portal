@@ -15,6 +15,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -38,6 +39,7 @@ type config struct {
 	ConfigName  string        // the configuration file: a local path, or with Root a path inside the bucket folder
 	Root        string        // the bucket folder's URL, or empty for the directory of ConfigName
 	Archive     string        // the key of the archive inside the bucket folder that holds the documentation root, or empty for the folder's objects
+	BasePath    string        // the path the portal is served under, such as /docs, or empty for the root
 	Refresh     time.Duration // between checks of the bucket folder; 0 turns them off
 	MaxSize     int64         // of a bucket folder's objects, in bytes
 	Previews    string        // the previews location inside the bucket folder, or empty without previews
@@ -103,11 +105,28 @@ func startup(ctx context.Context, args []string, getenv func(string) string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	h, err = signIn(ctx, signInConfigOf(cfg.SignIn), portal.WithPreviews(reloader, previews))
+	h, err = signIn(ctx, signInConfigOf(cfg.SignIn), underBasePath(cfg.BasePath, portal.WithPreviews(reloader, previews)))
 	if err != nil {
 		return "", nil, err
 	}
 	return cfg.Addr, h, nil
+}
+
+// underBasePath mounts h, the portal handler built with base as its base
+// path, at base and at base with a slash, and sends the root to base, so
+// that a bare host name still lands on the portal. With an empty base it
+// returns h.
+func underBasePath(base string, h http.Handler) http.Handler {
+	if base == "" {
+		return h
+	}
+	mux := http.NewServeMux()
+	mux.Handle(base+"/", h)
+	mux.Handle(base, h)
+	mux.HandleFunc("/{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, base+"/", http.StatusFound)
+	})
+	return mux
 }
 
 // builder builds the portal handler of each snapshot of the documentation
@@ -128,13 +147,14 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 		// Before the first upload the archive is absent and its root empty:
 		// the portal starts and says so, and a check brings the upload.
 		if _, err := fs.Stat(root, b.configPath); errors.Is(err, fs.ErrNotExist) {
-			return portal.Unpublished(addAccount(portal.Config{}, b.cfg.SignIn.Issuer)), nil
+			return portal.Unpublished(addAccount(portal.Config{BasePath: b.cfg.BasePath}, b.cfg.SignIn.Issuer)), nil
 		}
 	}
 	pcfg, err := portal.ReadConfig(root, b.configPath)
 	if err != nil {
 		return nil, err
 	}
+	pcfg.BasePath = b.cfg.BasePath
 	pcfg = setTryIt(pcfg, b.cfg.HideTryIt)
 	pcfg = addAccount(pcfg, b.cfg.SignIn.Issuer)
 	pcfg, b.chat, err = addChat(pcfg, b.cfg.ChatModel, b.chat, b.cfg.SignIn.Issuer)
@@ -153,6 +173,7 @@ func (b *builder) buildPreview(root fs.FS) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	pcfg.BasePath = b.cfg.BasePath
 	pcfg = setTryIt(pcfg, b.cfg.HideTryIt)
 	return portal.New(addAccount(pcfg, b.cfg.SignIn.Issuer))
 }
@@ -172,6 +193,9 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	}
 	if v := getenv("DOCPORTAL_ARCHIVE"); v != "" {
 		cfg.Archive = v
+	}
+	if v := getenv("DOCPORTAL_BASE_PATH"); v != "" {
+		cfg.BasePath = v
 	}
 	if v := getenv("DOCPORTAL_REFRESH"); v != "" {
 		d, err := time.ParseDuration(v)
@@ -244,6 +268,7 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.StringVar(&cfg.ConfigName, "config", cfg.ConfigName, "configuration file, which lists the portals and their sections; its directory is the documentation root, or with -root its path inside the bucket folder")
 	flags.StringVar(&cfg.Root, "root", cfg.Root, "bucket folder that holds the documentation, as a Go CDK URL such as gs://bucket?prefix=docs/; without it, the directory of -config")
 	flags.StringVar(&cfg.Archive, "archive", cfg.Archive, "gzip-compressed tar archive inside the bucket folder that holds the documentation root, such as published.tgz; without it, the folder's objects are the root")
+	flags.StringVar(&cfg.BasePath, "base-path", cfg.BasePath, "path the portal is served under, such as /docs, with / redirecting there; none serves it at the root")
 	flags.DurationVar(&cfg.Refresh, "refresh", cfg.Refresh, "how often to check the bucket folder for changes; 0 never")
 	flags.Int64Var(&maxSizeMiB, "max-size", maxSizeMiB, "largest total size of the bucket folder's objects, in MiB; 0 means no limit")
 	flags.StringVar(&cfg.Previews, "previews", cfg.Previews, "previews location: a folder of the bucket folder, such as previews/, with a preview folder for each preview at /previews/{folder}, or with -archive an archive {folder}.tgz; none turns previews off")
@@ -268,6 +293,8 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("-max-size: %d MiB is not a size between 0 and %d", maxSizeMiB, math.MaxInt64>>20)
 	}
 	switch {
+	case cfg.BasePath != "" && (!strings.HasPrefix(cfg.BasePath, "/") || strings.HasSuffix(cfg.BasePath, "/") || path.Clean(cfg.BasePath) != cfg.BasePath):
+		return config{}, fmt.Errorf("-base-path: %q is not an absolute path without a trailing slash", cfg.BasePath)
 	case cfg.Archive != "" && cfg.Root == "":
 		return config{}, errors.New("-archive needs -root: the archive is an object of the bucket folder")
 	case cfg.Archive != "" && !fs.ValidPath(cfg.Archive):
@@ -352,7 +379,7 @@ func openPreviews(ctx context.Context, cfg config, build func(fs.FS) (http.Handl
 		return f, nil
 	}
 	previews := source.NewPreviews(ctx, folder, build, cfg.Refresh, cfg.PreviewIdle, cfg.MaxPreviews)
-	return portal.PreviewsConfig{Open: previews.Handler}, nil
+	return portal.PreviewsConfig{Open: previews.Handler, BasePath: cfg.BasePath}, nil
 }
 
 // openArchivePreviews is openPreviews for archives: the preview named name
@@ -370,7 +397,7 @@ func openArchivePreviews(ctx context.Context, cfg config, build func(fs.FS) (htt
 		return archive.Object(location + "/" + name + ".tgz"), nil
 	}
 	previews := source.NewPreviews(ctx, folder, build, cfg.Refresh, cfg.PreviewIdle, cfg.MaxPreviews)
-	return portal.PreviewsConfig{Open: previews.Handler}, nil
+	return portal.PreviewsConfig{Open: previews.Handler, BasePath: cfg.BasePath}, nil
 }
 
 // setTryIt adds the Try It setting to the portal configuration.

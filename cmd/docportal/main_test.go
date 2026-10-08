@@ -755,3 +755,25 @@ func TestStartupBeforeTheFirstUploadServesANotice(t *testing.T) {
 		t.Errorf("/ answers %d %q, want the notice that nothing is published yet", rec.Code, rec.Body.String())
 	}
 }
+
+func TestStartupUnderABasePath(t *testing.T) {
+	_, h, err := startup(t.Context(), []string{"-config", sample, "-base-path", "/docs"}, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/docs/" {
+		t.Errorf("/ answers %d to %q, want a redirect to /docs/", rec.Code, rec.Header().Get("Location"))
+	}
+	page := get(h, "/docs/portals/petstore/docs/guides/guide/intro.md")
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `href="/docs/assets/elements/styles.min.css"`) {
+		t.Errorf("a page under the base path: %d %q", page.Code, page.Body.String())
+	}
+	if rec := get(h, "/portals/petstore/docs/guides/"); rec.Code != http.StatusNotFound {
+		t.Errorf("the root path answers %d, want 404 under a base path", rec.Code)
+	}
+	env := map[string]string{"DOCPORTAL_BASE_PATH": "docs"}
+	if _, err := parseConfig([]string{"-config", sample}, func(k string) string { return env[k] }); err == nil {
+		t.Error("a relative base path was accepted")
+	}
+}

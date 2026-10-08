@@ -52,10 +52,13 @@ Credentials on GCP, and the SDK's default chain on AWS.
 docportal reads the whole folder into memory at startup, as one snapshot, and
 refuses a folder over `-max-size` (`DOCPORTAL_MAX_SIZE`) MiB, 256 by default
 and 0 for no limit. Every `-refresh` (`DOCPORTAL_REFRESH`, a duration, one
-minute by default, 0 for never) it lists the folder again, and a change that
-two checks in a row report alike becomes a new snapshot, whose pages replace
-the old ones in one step, so that every request reads one version of the
-documentation and links between documents lead to one version. A check or a
+minute by default, 0 for never) it lists the folder again, and a change
+becomes a new snapshot once two checks in a row agree on it, since an upload
+of many objects may be half done when a check lists the folder. The new
+snapshot's pages replace the old ones in one step, so that every request
+reads one version of the documentation and links between documents lead to
+one version. An archive (see below) is whole once written, so a change to it
+is read at the first check that sees it. A check or a
 reload that fails, from an unreachable bucket or a configuration file that
 docportal refuses, keeps the old snapshot and writes the cause to the log, and
 the next check tries again. The chat keeps its conversations and its question
@@ -74,7 +77,8 @@ after a blank import of the Go CDK drivers it needs, such as
 `gocloud.dev/blob/gcsblob`; loads the first snapshot with `source.Load`;
 builds the portal handler from the snapshot's root; and wraps the handler in
 `source.NewReloader`, which rebuilds it with the program's own builder for
-each settled change.
+each change, once two checks agree on it for a folder, or at the first check
+that sees a new archive.
 
 Portals and sections have slugs: the name or the title in lower case, with
 each run of characters other than letters and digits as one dash, such as
@@ -93,7 +97,9 @@ documentation root, or a toc on a spec section.
 The viewer page shows the Try It console of Stoplight Elements, which sends
 requests from the reader's browser to the servers of the spec, so those
 servers must allow the portal's origin through CORS. `-hide-try-it` hides the
-console.
+console. `-base-path` (`DOCPORTAL_BASE_PATH`) serves the whole portal under
+a path, such as `/docs`, with `/` redirecting there; its links, assets and
+cookies carry the path, as `portal.Config.BasePath` describes below.
 
 A docs section's document list at `/portals/{portal}/docs/{slug}/` lists the
 markdown files of its content directory, `/portals/{portal}/docs/{slug}/{path}`
@@ -144,11 +150,9 @@ with no object at the key, docportal starts and answers every page with a
 notice that nothing is published, in the portal's layout with the reader's
 account links and a link to the previews, until a check finds the archive.
 A program that uses the library serves the same notice with
-`portal.Unpublished`. With
-`-previews`, each
-preview is the archive `{previews}/{name}.tgz` of the location, such as
-`previews/pr-123.tgz`, and a deleted archive ends its preview as a deleted
-folder does. A program that uses the library opens the archive with
+`portal.Unpublished`. With `-previews`, each preview is the archive
+`{previews}/{name}.tgz` of the location, such as `previews/pr-123.tgz`, and a
+deleted archive ends its preview as a deleted folder does. A program that uses the library opens the archive with
 `source.OpenArchive` and the previews' archives with `Archive.Object`, and
 otherwise proceeds as with a bucket folder.
 
