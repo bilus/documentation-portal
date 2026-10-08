@@ -739,3 +739,19 @@ func TestStartupKeepsAPreviewThroughABrokenChange(t *testing.T) {
 		t.Errorf("the preview's page after a broken change: %q", body)
 	}
 }
+
+func TestStartupBeforeTheFirstUploadServesANotice(t *testing.T) {
+	dir := t.TempDir()
+	args := []string{"-addr", "127.0.0.1:0", "-root", "file://" + dir, "-archive", "published.tgz", "-config", "environment.yaml", "-refresh", "0"}
+
+	_, h, err := startup(t.Context(), args, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("before the first upload docportal must start, not fail: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "not been published") {
+		t.Errorf("/ answers %d %q, want the notice that nothing is published yet", rec.Code, rec.Body.String())
+	}
+}

@@ -32,7 +32,7 @@ func TestReadPreviewRequest(t *testing.T) {
 	} {
 		r := httptest.NewRequest(http.MethodGet, tc.target, nil)
 		r.Header.Set("Cookie", tc.cookie)
-		if got := readPreviewRequest(r); got != tc.want {
+		if got := readPreviewRequest(r, ""); got != tc.want {
 			t.Errorf("%s with the cookies %q: %+v, want %+v", tc.target, tc.cookie, got, tc.want)
 		}
 	}

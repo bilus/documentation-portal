@@ -43,6 +43,11 @@ type PreviewsConfig struct {
 	// preview when the reader's access is a PreviewAccess that allows the
 	// folder. Without it, every reader may open every preview.
 	Access func(r *http.Request) (Access, error)
+
+	// BasePath is the base path of the portal handlers, as in Config, so
+	// that the previews handler reads /previews/ under it and sends its
+	// redirects and cookies there.
+	BasePath string
 }
 
 // WithPreviews wraps published, the portal handler of the published
@@ -54,7 +59,7 @@ func WithPreviews(published http.Handler, cfg PreviewsConfig) http.Handler {
 	if cfg.Open == nil {
 		return published
 	}
-	return &previews{published: published, open: cfg.Open, access: cfg.Access}
+	return &previews{published: published, open: cfg.Open, access: cfg.Access, base: cfg.BasePath}
 }
 
 // previews is the previews handler.
@@ -62,13 +67,14 @@ type previews struct {
 	published http.Handler                                        // the published portal handler
 	open      func(context.Context, string) (http.Handler, error) // the portal handler of a preview folder
 	access    func(*http.Request) (Access, error)                 // the access hook, or nil
+	base      string                                              // the base path, or ""
 }
 
 // ServeHTTP answers each request: it reads what the request asks of the
 // previews, asks the access hook for the reader's access, opens the portal
 // handler of the request's folder, and answers.
 func (p *previews) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	req := readPreviewRequest(r)
+	req := readPreviewRequest(r, p.base)
 	access := p.readerAccess(r, req)
 	h, err := p.openFolder(r, req, access)
 	p.send(w, r, req, h, err)
@@ -88,11 +94,13 @@ type previewRequest struct {
 // with the path to open after the switch, the reader's preview from the
 // preview cookie, and an ended preview from the notice cookie. A cookie
 // without a valid folder name counts as none.
-func readPreviewRequest(r *http.Request) previewRequest {
+func readPreviewRequest(r *http.Request, base string) previewRequest {
 	var req previewRequest
-	// ServeMux unescapes each segment of the escaped path on its own.
-	segments := strings.Split(strings.TrimPrefix(r.URL.EscapedPath(), "/"), "/")
-	if first, err := url.PathUnescape(segments[0]); err == nil && first == "previews" {
+	// ServeMux unescapes each segment of the escaped path on its own. A path
+	// outside the base asks nothing of the previews.
+	escaped, under := strings.CutPrefix(r.URL.EscapedPath(), base)
+	segments := strings.Split(strings.TrimPrefix(escaped, "/"), "/")
+	if first, err := url.PathUnescape(segments[0]); under && err == nil && first == "previews" {
 		switch {
 		case len(segments) == 1 || len(segments) == 2 && segments[1] == "":
 			req.leave = true
@@ -211,24 +219,24 @@ func (p *previews) send(w http.ResponseWriter, r *http.Request, req previewReque
 	switch {
 	case req.leave:
 		w.Header().Set("Cache-Control", "private")
-		http.SetCookie(w, expired(previewCookie))
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.SetCookie(w, expired(previewCookie, p.base))
+		http.Redirect(w, r, p.base+"/", http.StatusFound)
 	case req.enter != "" && err == nil:
 		w.Header().Set("Cache-Control", "private")
-		http.SetCookie(w, &http.Cookie{Name: previewCookie, Value: req.enter, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: previewCookie, Value: req.enter, Path: cookiePath(p.base), HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		if req.ended != "" {
-			http.SetCookie(w, expired(endedCookie))
+			http.SetCookie(w, expired(endedCookie, p.base))
 		}
-		http.Redirect(w, r, req.path, http.StatusFound)
+		http.Redirect(w, r, p.base+req.path, http.StatusFound)
 	case req.enter != "":
 		// The published portal handler writes the 404 page, and the cookie stays.
 		private(p.published).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
 	case req.folder != "" && err == nil:
 		private(h).ServeHTTP(w, withBanner(r, banner{Preview: req.folder}))
 	case req.folder != "":
-		http.SetCookie(w, expired(previewCookie))
+		http.SetCookie(w, expired(previewCookie, p.base))
 		// A page with the notice takes this cookie out of its response.
-		http.SetCookie(w, &http.Cookie{Name: endedCookie, Value: req.folder, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+		http.SetCookie(w, &http.Cookie{Name: endedCookie, Value: req.folder, Path: cookiePath(p.base), HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		private(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.folder}))
 	case req.ended != "":
 		private(p.published).ServeHTTP(w, withBanner(r, banner{Ended: req.ended}))
@@ -282,12 +290,19 @@ func dropCookie(h http.Header, name string) bool {
 
 // expired returns the cookie name with the path /, expired, so that the
 // browser drops it.
-func expired(name string) *http.Cookie {
-	return &http.Cookie{Name: name, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+func expired(name, base string) *http.Cookie {
+	return &http.Cookie{Name: name, Path: cookiePath(base), MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode}
+}
+
+// cookiePath returns the path the previews' cookies are set for: the base
+// path with a slash, so that the cookies of a portal under a base path stay
+// off the rest of its host.
+func cookiePath(base string) string {
+	return base + "/"
 }
 
 // previewNotFound writes the 404 page of a /previews/ request that reaches
 // the portal handler: Preview not found, with the folder's name.
 func previewNotFound(w http.ResponseWriter, r *http.Request) {
-	render(w, r, http.StatusNotFound, "error.html", page{Title: "Preview not found", Message: "No preview has the folder name " + r.PathValue("folder") + ".", Nav: navBar{Links: []navLink{{Label: "Portals", URL: "/"}}}})
+	render(w, r, http.StatusNotFound, "error.html", page{Title: "Preview not found", Message: "No preview has the folder name " + r.PathValue("folder") + ".", Nav: navBar{Links: []navLink{{Label: "Portals", URL: baseOf(r) + "/"}}}})
 }

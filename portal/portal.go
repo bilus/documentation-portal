@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 )
 
@@ -32,6 +34,14 @@ type Config struct {
 	Portals   []Portal // in the order of the home page and the portal menu
 	HideTryIt bool     // hides the Try It console of the viewer page
 	Chat      []Route  // the chat pages' routes, or none
+
+	// BasePath is the path the handler is served under, such as /docs, with
+	// no trailing slash, or empty for the root. The handler takes it off each
+	// request's path, so the program mounts the handler at BasePath and at
+	// BasePath followed by a slash, and every link, redirect and cookie of
+	// the pages carries it. The chat's routes are the program's own and get
+	// no prefix.
+	BasePath string
 
 	// Access is the access hook: it returns the access of r's reader, or an
 	// error, which hides every portal from the reader and goes to the log.
@@ -58,6 +68,9 @@ type Route struct {
 // of the portals and sections visible to its reader, or refuses portals that
 // openPortals refuses, or missing Elements assets.
 func New(cfg Config) (http.Handler, error) {
+	if err := checkBasePath(cfg.BasePath); err != nil {
+		return nil, err
+	}
 	sites, err := openPortals(cfg)
 	if err != nil {
 		return nil, err
@@ -66,7 +79,61 @@ func New(cfg Config) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newRouter(cfg, sites, assets)
+	rt, err := newRouter(cfg, sites, assets)
+	if err != nil {
+		return nil, err
+	}
+	return withBasePath(cfg.BasePath, rt), nil
+}
+
+// checkBasePath refuses a base path other than empty or an absolute path
+// without a trailing slash, a dot segment or a doubled slash.
+func checkBasePath(base string) error {
+	if base == "" {
+		return nil
+	}
+	if !strings.HasPrefix(base, "/") || strings.HasSuffix(base, "/") || path.Clean(base) != base {
+		return fmt.Errorf("the base path %q is not an absolute path without a trailing slash", base)
+	}
+	return nil
+}
+
+// baseKey keys the base path in the context of a request under one.
+type baseKey struct{}
+
+// baseOf returns the base path of r: the one its handler was served under,
+// or "" at the root.
+func baseOf(r *http.Request) string {
+	base, _ := r.Context().Value(baseKey{}).(string)
+	return base
+}
+
+// withBasePath returns h served under base: a request for base itself goes
+// to base with a slash, a request outside base gets 404, and any other
+// reaches h with base taken off its path and kept in its context for the
+// pages' links. With an empty base it returns h.
+func withBasePath(base string, h http.Handler) http.Handler {
+	if base == "" {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == base {
+			http.Redirect(w, r, base+"/", http.StatusMovedPermanently)
+			return
+		}
+		if !strings.HasPrefix(r.URL.Path, base+"/") {
+			http.NotFound(w, r)
+			return
+		}
+		stripped := r.Clone(context.WithValue(r.Context(), baseKey{}, base))
+		stripped.URL = new(url.URL)
+		*stripped.URL = *r.URL
+		stripped.URL.Path = strings.TrimPrefix(r.URL.Path, base)
+		if r.URL.RawPath != "" {
+			stripped.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, base)
+		}
+		h.ServeHTTP(w, stripped)
+	})
 }
 
 // loadAssets loads the Elements assets, or refuses to start without them.

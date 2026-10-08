@@ -24,7 +24,8 @@ type site struct {
 	sections  []*section
 	portals   []*site // the site of every portal, for the portal menu
 	hideTryIt bool
-	chat      bool // whether a route of the chat serves the portal's chat page
+	chat      bool   // whether a route of the chat serves the portal's chat page
+	base      string // the base path of every URL of the site's pages, or ""
 }
 
 // newSite returns the site of the portal p of cfg, with sections, p's
@@ -32,11 +33,11 @@ type site struct {
 // portal's URL path. The site links its chat page when a route of cfg.Chat
 // serves that page.
 func newSite(cfg Config, p Portal, sections []*section) *site {
-	s := &site{config: p, root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt}
+	s := &site{config: p, root: cfg.Root, name: p.Name, slug: slugOf(p.Name), sections: sections, hideTryIt: cfg.HideTryIt, base: cfg.BasePath}
 	for _, sec := range sections {
-		sec.base = "/portals/" + s.slug
+		sec.base = cfg.BasePath + "/portals/" + s.slug
 	}
-	s.chat = slices.ContainsFunc(cfg.Chat, func(r Route) bool { return r.Pattern == "GET "+s.chatURL() })
+	s.chat = slices.ContainsFunc(cfg.Chat, func(r Route) bool { return r.Pattern == "GET "+s.chatPath() })
 	return s
 }
 
@@ -44,14 +45,20 @@ func newSite(cfg Config, p Portal, sections []*section) *site {
 // section, or the portal's path without a section.
 func (s *site) url() string {
 	if len(s.sections) == 0 {
-		return (&url.URL{Path: "/portals/" + s.slug + "/"}).String()
+		return (&url.URL{Path: s.base + "/portals/" + s.slug + "/"}).String()
 	}
 	return s.sections[0].pageURL()
 }
 
+// chatPath returns the path of the portal's chat page under the root, as
+// the chat's route names it.
+func (s *site) chatPath() string {
+	return (&url.URL{Path: "/portals/" + s.slug + "/chat"}).String()
+}
+
 // chatURL returns the URL of the portal's chat page.
 func (s *site) chatURL() string {
-	return (&url.URL{Path: "/portals/" + s.slug + "/chat"}).String()
+	return s.base + s.chatPath()
 }
 
 // menu returns the links of the portal menu: the first section of every
@@ -170,6 +177,7 @@ type page struct {
 	Portals   []navLink      // home page only
 	Body      template.HTML  // document page only
 	Banner    *banner        // above the navigation bar, or nil
+	Base      string         // the base path of the assets and the previews link, or ""
 }
 
 // docLink links a document page from the document list.
@@ -218,11 +226,12 @@ var templates = template.Must(template.ParseFS(templateFiles, "templates/*.html"
 func render(w http.ResponseWriter, r *http.Request, status int, name string, p page) {
 	p.Nav.Account = viewOf(r).account
 	p.Banner = bannerOf(r)
+	p.Base = baseOf(r)
 	if p.Banner != nil && p.Banner.Ended != "" {
 		// The notice ends its cookie: the one this response set, and the request's.
 		_, err := r.Cookie(endedCookie)
 		if dropped := dropCookie(w.Header(), endedCookie); !dropped || err == nil {
-			http.SetCookie(w, expired(endedCookie))
+			http.SetCookie(w, expired(endedCookie, baseOf(r)))
 		}
 	}
 	var buf bytes.Buffer

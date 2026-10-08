@@ -137,7 +137,10 @@ The archive holds files alone, at paths relative to its root without a
 leading `./` or `/`; a leading `./` comes off, a directory entry is skipped,
 and docportal refuses an entry that is not a file, a path outside the root,
 a name used twice, or a name that is both a file and a directory. The size
-limit of `-max-size` counts the unpacked content. With `-previews`, each
+limit of `-max-size` counts the unpacked content. Before the first upload,
+with no object at the key, docportal starts and answers every page with a
+notice that nothing is published, until a check finds the archive. With
+`-previews`, each
 preview is the archive `{previews}/{name}.tgz` of the location, such as
 `previews/pr-123.tgz`, and a deleted archive ends its preview as a deleted
 folder does. A program that uses the library opens the archive with
@@ -268,7 +271,13 @@ the package `anthropicmodel` makes of an Anthropic model with
     log.Fatal(http.ListenAndServe(":8080", mux))
 
 The portal handler serves `/`, `/portals/`, `/previews/`, `/assets/elements/`
-and, with a chat, the chat's socket at `/live/websocket` and its scripts. A pattern of
+and, with a chat, the chat's socket at `/live/websocket` and its scripts.
+With `portal.Config.BasePath`, such as `/docs`, it serves all of them under
+that path instead: the program mounts the handler at the base path and at
+the base path with a slash, the handler takes the base path off each
+request's path, and every link, redirect and cookie of the pages carries it.
+`portal.PreviewsConfig.BasePath` tells the previews handler the same. The
+chat's routes are the program's own and get no prefix. A pattern of
 the program's own, such as `/auth/`, is more specific than `/`, so the parent
 mux sends its requests to the program. The portal knows no identity
 provider: the program's middleware signs each reader in and keeps the
