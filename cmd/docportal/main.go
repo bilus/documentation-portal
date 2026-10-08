@@ -128,7 +128,7 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 		// Before the first upload the archive is absent and its root empty:
 		// the portal starts and says so, and a check brings the upload.
 		if _, err := fs.Stat(root, b.configPath); errors.Is(err, fs.ErrNotExist) {
-			return http.HandlerFunc(unpublished), nil
+			return portal.Unpublished(addAccount(portal.Config{}, b.cfg.SignIn.Issuer)), nil
 		}
 	}
 	pcfg, err := portal.ReadConfig(root, b.configPath)
@@ -142,16 +142,6 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 		return nil, err
 	}
 	return portal.New(pcfg)
-}
-
-// unpublished answers every request of an archive root that holds no
-// documentation yet: a page saying so, sent uncacheable, since the next
-// check may bring the documentation.
-func unpublished(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusServiceUnavailable)
-	_, _ = w.Write([]byte("<!doctype html><title>Documentation</title><h1>No documentation yet</h1><p>The documentation has not been published. Try again in a few minutes.</p>"))
 }
 
 // buildPreview builds the portal handler of a preview folder's snapshot at

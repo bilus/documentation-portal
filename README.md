@@ -139,7 +139,10 @@ and docportal refuses an entry that is not a file, a path outside the root,
 a name used twice, or a name that is both a file and a directory. The size
 limit of `-max-size` counts the unpacked content. Before the first upload,
 with no object at the key, docportal starts and answers every page with a
-notice that nothing is published, until a check finds the archive. With
+notice that nothing is published, in the portal's layout with the reader's
+account links and a link to the previews, until a check finds the archive.
+A program that uses the library serves the same notice with
+`portal.Unpublished`. With
 `-previews`, each
 preview is the archive `{previews}/{name}.tgz` of the location, such as
 `previews/pr-123.tgz`, and a deleted archive ends its preview as a deleted

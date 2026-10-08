@@ -680,7 +680,7 @@ func TestStartupServesAPreviewWithoutTheChat(t *testing.T) {
 		t.Fatalf("the switch to pr-1: %d to %q with the cookies %v", rec.Code, rec.Header().Get("Location"), cookies)
 	}
 	page := getIn(h, "/portals/pets/docs/guides/a.md", "portal-preview=pr-1")
-	if body := page.Body.String(); !strings.Contains(body, "The preview version") || !strings.Contains(body, `class="portal-banner"`) || strings.Contains(body, `href="/portals/pets/chat"`) || page.Header().Get("Cache-Control") != "private" {
+	if body := page.Body.String(); !strings.Contains(body, "The preview version") || !strings.Contains(body, `class="portal-banner"`) || strings.Contains(body, `href="/portals/pets/chat"`) || page.Header().Get("Cache-Control") != "no-store" {
 		t.Errorf("the preview's page: %q", body)
 	}
 	if rec := getIn(h, "/portals/pets/chat", "portal-preview=pr-1"); rec.Code != http.StatusNotFound {
