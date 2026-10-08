@@ -4,9 +4,11 @@
 with [Stoplight Elements](https://github.com/stoplightio/elements), and of
 markdown files, each as a section of its navigation bar.
 
-Everything runs through [devbox](https://www.jetify.com/devbox). The first
-`make` target that needs them downloads the Elements assets, checked against a
-pinned SHA-256, into `portal/elements/`, where the binary embeds them.
+Everything runs through [devbox](https://www.jetify.com/devbox). The Elements
+assets are committed in `portal/elements/`, where the binary embeds them, so
+the module works as a dependency; `make setup` refreshes them from the pinned
+version, checked against its SHA-256, after a bump of `ELEMENTS_VERSION` in
+the Makefile.
 
     devbox run make run ARGS='-config testdata/environment.yaml'
 

@@ -2,6 +2,3 @@
 /todo.org
 /.claude/launch.json
 
-# Downloaded by `make setup`.
-/portal/elements/*
-!/portal/elements/.gitkeep

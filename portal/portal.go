@@ -74,9 +74,10 @@ func loadAssets() (fs.FS, error) {
 	return assetsIn(elements)
 }
 
-// all: also embeds elements/.gitkeep, so this compiles before `make setup`.
+// The Elements assets are committed, so the module embeds them wherever it
+// is built; `make setup` refreshes them after a version bump.
 //
-//go:embed all:elements
+//go:embed elements
 var elements embed.FS
 
 // assetsIn returns the elements directory of fsys, or an error naming each
