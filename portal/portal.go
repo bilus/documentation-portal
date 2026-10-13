@@ -65,15 +65,27 @@ type Route struct {
 }
 
 // New builds the portal handler, which answers each request with the pages
-// of the portals and sections visible to its reader, or refuses portals that
-// openPortals refuses, or missing Elements assets.
-func New(cfg Config) (http.Handler, error) {
+// of the portals and sections visible to its reader, rendering markdown as
+// opts say, or refuses portals that openPortals refuses, an option it cannot
+// apply, or missing Elements assets.
+func New(cfg Config, opts ...Option) (http.Handler, error) {
 	if err := checkBasePath(cfg.BasePath); err != nil {
+		return nil, err
+	}
+	var ro renderOptions
+	for _, opt := range opts {
+		opt(&ro)
+	}
+	rend, err := newRenderer(ro)
+	if err != nil {
 		return nil, err
 	}
 	sites, err := openPortals(cfg)
 	if err != nil {
 		return nil, err
+	}
+	for _, s := range sites {
+		s.render = rend
 	}
 	assets, err := loadAssets()
 	if err != nil {

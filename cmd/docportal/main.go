@@ -46,8 +46,14 @@ type config struct {
 	PreviewIdle time.Duration // after which an unused preview's snapshot leaves memory; 0 never
 	MaxPreviews int           // preview snapshots in memory; 0 means no limit
 	HideTryIt   bool
-	ChatModel   string       // empty without a chat
-	SignIn      signInConfig // the sign-in settings; without an issuer, readers do not sign in
+	// EmbedVideo renders the raw HTML of guides and keeps HTML5 video players
+	// (portal.WithEmbeddedVideo).
+	EmbedVideo bool
+	// HighlightCode highlights code blocks on a dark background
+	// (portal.WithCodeHighlighting, in portal.DefaultCodeStyle).
+	HighlightCode bool
+	ChatModel     string       // empty without a chat
+	SignIn        signInConfig // the sign-in settings; without an issuer, readers do not sign in
 }
 
 // signInConfig holds the sign-in settings: the OpenID Connect provider of
@@ -161,13 +167,14 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return portal.New(pcfg)
+	return portal.New(pcfg, b.renderOptions()...)
 }
 
 // buildPreview builds the portal handler of a preview folder's snapshot at
 // root like build, without the chat: it reads the portal configuration from
 // the configuration file, adds the Try It setting and the sign-in's account
-// hook, and builds the handler.
+// hook, and builds the handler, rendering markdown as the published
+// documentation does.
 func (b *builder) buildPreview(root fs.FS) (http.Handler, error) {
 	pcfg, err := portal.ReadConfig(root, b.configPath)
 	if err != nil {
@@ -175,7 +182,19 @@ func (b *builder) buildPreview(root fs.FS) (http.Handler, error) {
 	}
 	pcfg.BasePath = b.cfg.BasePath
 	pcfg = setTryIt(pcfg, b.cfg.HideTryIt)
-	return portal.New(addAccount(pcfg, b.cfg.SignIn.Issuer))
+	return portal.New(addAccount(pcfg, b.cfg.SignIn.Issuer), b.renderOptions()...)
+}
+
+// renderOptions returns the portal options of the rendering settings.
+func (b *builder) renderOptions() []portal.Option {
+	var opts []portal.Option
+	if b.cfg.EmbedVideo {
+		opts = append(opts, portal.WithEmbeddedVideo())
+	}
+	if b.cfg.HighlightCode {
+		opts = append(opts, portal.WithCodeHighlighting(""))
+	}
+	return opts
 }
 
 // parseConfig reads the configuration from the flags and the environment.
@@ -221,6 +240,15 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 			return config{}, fmt.Errorf("DOCPORTAL_HIDE_TRY_IT: %q is not a boolean", v)
 		}
 		cfg.HideTryIt = hide
+	}
+	for name, field := range map[string]*bool{"DOCPORTAL_EMBED_VIDEO": &cfg.EmbedVideo, "DOCPORTAL_HIGHLIGHT_CODE": &cfg.HighlightCode} {
+		if v := getenv(name); v != "" {
+			on, err := strconv.ParseBool(v)
+			if err != nil {
+				return config{}, fmt.Errorf("%s: %q is not a boolean", name, v)
+			}
+			*field = on
+		}
 	}
 	if v := getenv("DOCPORTAL_PREVIEWS"); v != "" {
 		cfg.Previews = v
@@ -275,6 +303,8 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.DurationVar(&cfg.PreviewIdle, "preview-idle", cfg.PreviewIdle, "how long an unused preview's snapshot stays in memory; 0 means no limit")
 	flags.IntVar(&cfg.MaxPreviews, "max-previews", cfg.MaxPreviews, "most preview snapshots in memory; 0 means no limit")
 	flags.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
+	flags.BoolVar(&cfg.EmbedVideo, "embed-video", cfg.EmbedVideo, "render the raw HTML of guides and keep HTML5 video players, sanitised")
+	flags.BoolVar(&cfg.HighlightCode, "highlight-code", cfg.HighlightCode, "highlight code blocks by language, on a dark background")
 	flags.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
 	flags.StringVar(&cfg.SignIn.Issuer, "oidc-issuer", cfg.SignIn.Issuer, "issuer URL of the OpenID Connect provider for the readers' sign-in, such as https://TENANT.auth0.com/; none serves every reader without a sign-in")
 	flags.StringVar(&cfg.SignIn.ClientID, "oidc-client-id", cfg.SignIn.ClientID, "the portal's client ID at the provider; DOCPORTAL_OIDC_CLIENT_SECRET holds its secret")

@@ -13,11 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/microcosm-cc/bluemonday"
-	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
@@ -35,14 +31,20 @@ func (s *site) docsRoot(w http.ResponseWriter, r *http.Request) {
 
 // docList writes the document list of the docs section with the request's
 // slug, or a 404 for a slug of no docs section. With the section's toc file,
-// the list shows the toc's groups as the sidebar does, and then a link to the
-// document page of each other markdown file of the content directory. Without
-// one, or with a problem in it, the list links every markdown file. The files
-// come sorted by path.
+// the list shows the toc's groups as the sidebar does, and nothing else: a
+// markdown file the toc leaves out keeps its document page, for the links
+// that lead to it, but no list names it. Without a toc file, or with a
+// problem in it, the list links every markdown file, sorted by path.
 func (s *site) docList(w http.ResponseWriter, r *http.Request) {
 	sec, ok := s.docsFor(r.PathValue("slug"))
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	list := page{Title: sec.Title, Section: sec.Title, Nav: s.nav()}
+	if contents, _, ok := s.tocContents(sec, ""); ok {
+		list.Sidebar, list.Contents = contents, contents
+		render(w, r, http.StatusOK, "list.html", list)
 		return
 	}
 	paths, err := markdownFiles(sec.docs)
@@ -50,17 +52,9 @@ func (s *site) docList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	list := page{Title: sec.Title, Section: sec.Title, Nav: s.nav()}
-	contents, linked, ok := s.tocContents(sec, "")
-	if ok {
-		list.Sidebar, list.Contents = contents, contents
-	} else {
-		list.Sidebar = fileSidebar(sec, paths, "")
-	}
+	list.Sidebar = fileSidebar(sec, paths, "")
 	for _, p := range paths {
-		if !linked[p] {
-			list.Docs = append(list.Docs, docLink{Path: p, URL: sec.docURL(p, "", "")})
-		}
+		list.Docs = append(list.Docs, docLink{Path: p, URL: sec.docURL(p, "", "")})
 	}
 	render(w, r, http.StatusOK, "list.html", list)
 }
@@ -115,7 +109,7 @@ func (s *site) docPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	render(w, r, http.StatusOK, "doc.html", page{Title: p, Section: sec.Title, Body: body, Nav: s.nav(), Sidebar: s.sidebar(sec, p)})
+	render(w, r, http.StatusOK, "doc.html", page{Title: p, Section: sec.Title, Body: body, CodeCSS: s.renderer().codeCSS, Nav: s.nav(), Sidebar: s.sidebar(sec, p)})
 }
 
 // errNoDoc means the request names no markdown file of a content directory.
@@ -138,19 +132,13 @@ func (sec *section) readDoc(p string) ([]byte, error) {
 	return fs.ReadFile(sec.docs, p)
 }
 
-var markdown = goldmark.New(
-	goldmark.WithExtensions(extension.GFM),
-	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
-)
-
-var sanitizer = bluemonday.UGCPolicy()
-
 // renderMarkdown renders src, the markdown file at docPath of the docs
 // section sec, as HTML without active content, with its relative image
 // references under the section's /raw/ URLs and each relative link pointed at
-// the page that serves its link target.
+// the page that serves its link target, in the site's way of rendering.
 func (s *site) renderMarkdown(sec *section, src []byte, docPath string) (template.HTML, error) {
-	doc := markdown.Parser().Parse(text.NewReader(src))
+	rend := s.renderer()
+	doc := rend.markdown.Parser().Parse(text.NewReader(src))
 	dir := path.Dir(docPath)
 	var nowhere []*ast.Link
 	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -185,10 +173,10 @@ func (s *site) renderMarkdown(sec *section, src []byte, docPath string) (templat
 		parent.RemoveChild(parent, link)
 	}
 	var buf bytes.Buffer
-	if err := markdown.Renderer().Render(&buf, src, doc); err != nil {
+	if err := rend.markdown.Renderer().Render(&buf, src, doc); err != nil {
 		return "", err
 	}
-	return template.HTML(sanitizer.SanitizeBytes(buf.Bytes())), nil
+	return template.HTML(rend.sanitizer.SanitizeBytes(buf.Bytes())), nil
 }
 
 // unescape resolves the backslash escapes and character references of a link

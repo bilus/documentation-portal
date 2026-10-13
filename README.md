@@ -124,9 +124,25 @@ its document page, in any docs section, one for a spec or one of its
 operations links its section's viewer page, and an http or https URL stays as
 it is. The sidebar leaves out an entry that no page serves. The section's
 document list shows the same entries, with a heading for each group and
-divider, and then the markdown files without an entry, under Other documents.
-A missing or invalid toc file brings back the list of markdown files, with a
-line in the log.
+divider, and nothing else: a markdown file without an entry keeps its
+document page, so that links to it work, but no list names it, as on
+Stoplight. A missing or invalid toc file brings back the list of markdown
+files, with a line in the log.
+
+Two settings change how document pages render markdown, each off by default.
+`-embed-video` (`DOCPORTAL_EMBED_VIDEO`), or `portal.WithEmbeddedVideo` for a
+program, renders a markdown file's raw HTML instead of dropping it, and keeps
+HTML5 video players in it: `<video>` with `controls`, `width`, `height`,
+`poster`, `preload`, `muted`, `loop` and `playsinline`, and `<source>` with
+`src` and `type`, where `src` and `poster` are https URLs. The sanitiser still
+removes scripts, event handlers, styles and every element it does not know.
+`-highlight-code` (`DOCPORTAL_HIGHLIGHT_CODE`), or
+`portal.WithCodeHighlighting` with the name of a chroma style or empty for
+`github-dark`, highlights fenced code blocks by the language of their info
+string and gives every code block of the page the style's background, a block
+without a language included. `portal.New` takes both as options:
+
+    portal.New(cfg, portal.WithEmbeddedVideo(), portal.WithCodeHighlighting(""))
 
 ## An archive as the documentation root
 

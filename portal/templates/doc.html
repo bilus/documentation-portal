@@ -6,7 +6,8 @@
 <title>{{.Title}}</title>
 <link rel="stylesheet" href="{{.Base}}/assets/elements/styles.min.css">
 <style>html, body { height: 100%; margin: 0; } body { display: flex; flex-direction: column; } .portal-docs { flex: 1; min-height: 0; }</style>
-</head>
+{{with .CodeCSS}}<style>{{.}}</style>
+{{end}}</head>
 <body>
 {{template "banner" .}}{{template "nav" .}}
 <div class="portal-docs">
@@ -15,7 +16,7 @@
 {{template "sidebar" .}}
 <div class="sl-overflow-y-auto sl-flex-1 sl-w-full sl-px-24 sl-bg-canvas">
 <div class="sl-py-16">
-<div class="sl-prose sl-markdown-viewer">
+<div class="sl-prose sl-markdown-viewer{{if .CodeCSS}} portal-code{{end}}">
 {{.Body}}
 </div>
 </div>

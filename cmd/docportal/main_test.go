@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/bilus/documentation-portal/portal"
@@ -775,5 +776,46 @@ func TestStartupUnderABasePath(t *testing.T) {
 	env := map[string]string{"DOCPORTAL_BASE_PATH": "docs"}
 	if _, err := parseConfig([]string{"-config", sample}, func(k string) string { return env[k] }); err == nil {
 		t.Error("a relative base path was accepted")
+	}
+}
+
+func TestParseConfigReadsTheRenderingOptions(t *testing.T) {
+	env := func(kv map[string]string) func(string) string {
+		return func(k string) string { return kv[k] }
+	}
+	if cfg, err := parseConfig(nil, noEnv); err != nil || cfg.EmbedVideo || cfg.HighlightCode {
+		t.Errorf("by default both are off: %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig(nil, env(map[string]string{"DOCPORTAL_EMBED_VIDEO": "true", "DOCPORTAL_HIGHLIGHT_CODE": "1"})); err != nil || !cfg.EmbedVideo || !cfg.HighlightCode {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig([]string{"-embed-video", "-highlight-code"}, noEnv); err != nil || !cfg.EmbedVideo || !cfg.HighlightCode {
+		t.Errorf("from the flags: %+v, %v", cfg, err)
+	}
+	if cfg, err := parseConfig([]string{"-embed-video=false"}, env(map[string]string{"DOCPORTAL_EMBED_VIDEO": "true"})); err != nil || cfg.EmbedVideo {
+		t.Errorf("the flag over the environment: %+v, %v", cfg, err)
+	}
+	for _, name := range []string{"DOCPORTAL_EMBED_VIDEO", "DOCPORTAL_HIGHLIGHT_CODE"} {
+		if _, err := parseConfig(nil, env(map[string]string{name: "maybe"})); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("err = %v, want it to name %s", err, name)
+		}
+	}
+}
+
+func TestBuildersRenderWithTheRenderingOptions(t *testing.T) {
+	root := fstest.MapFS{
+		"environment.yaml": {Data: []byte("portals:\n  - name: Guides\n    sections:\n      - title: Docs\n        type: docs\n        input: docs\n")},
+		"docs/guide.md":    {Data: []byte("# Guide\n\n<video controls><source src=\"https://s.example.com/g.mp4\" type=\"video/mp4\"></video>\n\n```json\n{\"a\": true}\n```\n")},
+	}
+	b := &builder{cfg: config{EmbedVideo: true, HighlightCode: true}, configPath: "environment.yaml"}
+	for name, build := range map[string]func(fs.FS) (http.Handler, error){"published": b.build, "preview": b.buildPreview} {
+		h, err := build(root)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		page := get(h, "/portals/guides/docs/docs/guide.md").Body.String()
+		if !strings.Contains(page, `<source src="https://s.example.com/g.mp4"`) || !strings.Contains(page, "portal-chroma") {
+			t.Errorf("%s: the page lacks the video or the highlighted code: %s", name, page)
+		}
 	}
 }

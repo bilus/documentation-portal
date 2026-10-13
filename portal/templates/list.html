@@ -21,10 +21,6 @@
 {{end}}<ul>
 {{range .Links}}<li><a href="{{.URL}}">{{.Title}}</a></li>
 {{end}}</ul>
-{{end}}{{with .Docs}}<h2>Other documents</h2>
-<ul>
-{{range .}}<li><a href="{{.URL}}">{{.Path}}</a></li>
-{{end}}</ul>
 {{end}}{{else}}<ul>
 {{range .Docs}}<li><a href="{{.URL}}">{{.Path}}</a></li>
 {{end}}</ul>

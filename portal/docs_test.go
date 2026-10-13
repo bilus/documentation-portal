@@ -188,8 +188,8 @@ func TestDocPageSidebarFollowsToc(t *testing.T) {
 	if rec := get(h, "/portals/pets/docs/documents/unlisted.md"); rec.Code != http.StatusOK {
 		t.Errorf("a markdown file missing from the toc file: %d", rec.Code)
 	}
-	if list := get(h, "/portals/pets/docs/documents/").Body.String(); !strings.Contains(list, "unlisted.md") {
-		t.Error("the document list left out a markdown file missing from the toc file")
+	if list := get(h, "/portals/pets/docs/documents/").Body.String(); strings.Contains(list, "unlisted.md") {
+		t.Error("the document list names a markdown file missing from the toc file, which lists the toc's entries alone")
 	}
 }
 
@@ -427,9 +427,6 @@ func TestDocListFollowsToc(t *testing.T) {
 		"<h2>Reference</h2>",
 		`<a href="/portals/pets/specs/api">API</a>`,
 		`<a href="https://status.example.com/">Status</a>`,
-		"<h2>Other documents</h2>",
-		`<a href="/portals/pets/docs/documents/guides/devices.md">guides/devices.md</a>`,
-		`<a href="/portals/pets/docs/documents/unlisted.md">unlisted.md</a>`,
 	} {
 		i := strings.Index(main[at:], want)
 		if i < 0 {
@@ -439,6 +436,16 @@ func TestDocListFollowsToc(t *testing.T) {
 	}
 	if strings.Contains(main, ">start.md</a>") || strings.Contains(main, ">guides/oauth.md</a>") {
 		t.Errorf("the document list repeats a file of the toc under its path: %q", main)
+	}
+	for _, unlisted := range []string{"Other documents", "devices.md", "unlisted.md"} {
+		if strings.Contains(main, unlisted) {
+			t.Errorf("with a toc, the document list shows the toc's entries alone, but it has %q: %q", unlisted, main)
+		}
+	}
+	for _, p := range []string{"/portals/pets/docs/documents/unlisted.md", "/portals/pets/docs/documents/guides/devices.md"} {
+		if rec := get(h, p); rec.Code != http.StatusOK {
+			t.Errorf("%s: %d, want 200: a file outside the toc is still served, so links to it keep working", p, rec.Code)
+		}
 	}
 }
 

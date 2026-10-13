@@ -24,8 +24,17 @@ type site struct {
 	sections  []*section
 	portals   []*site // the site of every portal, for the portal menu
 	hideTryIt bool
-	chat      bool   // whether a route of the chat serves the portal's chat page
-	base      string // the base path of every URL of the site's pages, or ""
+	chat      bool      // whether a route of the chat serves the portal's chat page
+	base      string    // the base path of every URL of the site's pages, or ""
+	render    *renderer // how document pages render markdown; nil renders plainly
+}
+
+// renderer returns how the site renders the markdown of its document pages.
+func (s *site) renderer() *renderer {
+	if s.render == nil {
+		return plainRenderer
+	}
+	return s.render
 }
 
 // newSite returns the site of the portal p of cfg, with sections, p's
@@ -173,9 +182,10 @@ type page struct {
 	Section   string         // the docs section's title: document pages and lists only
 	Sidebar   []sidebarGroup // document pages and lists only
 	Contents  []sidebarGroup // document list only: the toc file's groups, or none
-	Docs      []docLink      // document list only: the markdown files outside Contents
+	Docs      []docLink      // document list only, without Contents: every markdown file
 	Portals   []navLink      // home page only
 	Body      template.HTML  // document page only
+	CodeCSS   template.CSS   // document page only: the stylesheet of highlighted code, or empty
 	Banner    *banner        // above the navigation bar, or nil
 	Base      string         // the base path of the assets and the previews link, or ""
 }
