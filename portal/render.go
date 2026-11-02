@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"regexp"
 
 	"github.com/alecthomas/chroma/v2"
@@ -17,15 +18,18 @@ import (
 	"github.com/yuin/goldmark/renderer/html"
 )
 
-// Option adjusts how the portal renders the markdown of its docs sections.
-// Without options it renders as it always has: raw HTML is dropped and code
-// blocks are plain.
+// Option adjusts how the portal renders its pages: the markdown of its docs
+// sections, and the templates and assets of the pages. Without options it
+// renders as it always has: raw HTML is dropped, code blocks are plain, and
+// the pages are the built-in ones.
 type Option func(*renderOptions)
 
 type renderOptions struct {
 	video     bool
 	highlight bool
 	style     string
+	templates fs.FS // the custom templates, or nil
+	assets    fs.FS // the custom assets, or nil
 }
 
 // WithEmbeddedVideo renders the raw HTML of markdown files instead of

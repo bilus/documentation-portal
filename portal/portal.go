@@ -17,6 +17,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
@@ -80,6 +81,10 @@ func New(cfg Config, opts ...Option) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	pages, err := pageTemplates(ro.templates)
+	if err != nil {
+		return nil, err
+	}
 	sites, err := openPortals(cfg)
 	if err != nil {
 		return nil, err
@@ -91,7 +96,7 @@ func New(cfg Config, opts ...Option) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	rt, err := newRouter(cfg, sites, assets)
+	rt, err := newRouter(cfg, sites, assets, pages, ro.assets)
 	if err != nil {
 		return nil, err
 	}
@@ -186,9 +191,9 @@ func assetsIn(fsys fs.FS) (fs.FS, error) {
 // a chat its routes, each portal's chat page behind the check of the other
 // routes of its portal. The router keeps the sites, the access hook and the
 // account hook for its answer to each request.
-func newRouter(cfg Config, sites []*site, assets fs.FS) (http.Handler, error) {
+func newRouter(cfg Config, sites []*site, assets fs.FS, pages *template.Template, custom fs.FS) (http.Handler, error) {
 	mux := http.NewServeMux()
-	rt := &router{sites: sites, access: cfg.Access, account: cfg.Account, mux: mux}
+	rt := &router{sites: sites, access: cfg.Access, account: cfg.Account, pages: pages, mux: mux}
 	mux.HandleFunc("GET /{$}", rt.home)
 	mux.HandleFunc("GET /portals/{portal}", rt.serve((*site).index))
 	mux.HandleFunc("GET /portals/{portal}/{$}", rt.serve((*site).index))
@@ -201,6 +206,9 @@ func newRouter(cfg Config, sites []*site, assets fs.FS) (http.Handler, error) {
 	// Any other path of a portal: the named 404 for a slug of no portal.
 	mux.HandleFunc("GET /portals/{portal}/{rest...}", rt.serve(func(_ *site, w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
 	mux.Handle("GET /assets/elements/", http.StripPrefix("/assets/elements/", http.FileServerFS(assets)))
+	if custom != nil {
+		mux.Handle("GET /assets/custom/", customAssets(custom))
+	}
 	mux.HandleFunc("GET /previews/{folder}", previewNotFound)
 	mux.HandleFunc("GET /previews/{folder}/{path...}", previewNotFound)
 	for _, r := range cfg.Chat {
@@ -217,6 +225,7 @@ type router struct {
 	sites   []*site                             // one for each portal, in the order of the portal configuration
 	access  func(*http.Request) (Access, error) // the access hook, or nil
 	account func(*http.Request) []AccountLink   // the account hook, or nil
+	pages   *template.Template                  // the page templates
 	mux     *http.ServeMux                      // the routes of newRouter
 }
 
@@ -262,7 +271,7 @@ func (rt *router) accountLinks(r *http.Request) []AccountLink {
 // of the request reads only what is visible to the reader and ends every
 // navigation bar with the reader's account links.
 func (rt *router) viewFor(access Access, links []AccountLink) *view {
-	return &view{access: access, account: links, sites: visibleSites(rt.sites, access)}
+	return &view{access: access, account: links, sites: visibleSites(rt.sites, access), pages: rt.pages}
 }
 
 // route sends r with the reader's view v through the routes to its page, and

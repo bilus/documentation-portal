@@ -819,3 +819,78 @@ func TestBuildersRenderWithTheRenderingOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestTheTemplatesAndAssetsFlagsNameDirectories(t *testing.T) {
+	templates, assets := t.TempDir(), t.TempDir()
+	if cfg, err := parseConfig([]string{"-templates", templates, "-assets", assets}, noEnv); err != nil || cfg.Templates != templates || cfg.Assets != assets {
+		t.Errorf("from the flags: %+v, %v", cfg, err)
+	}
+	env := map[string]string{"DOCPORTAL_TEMPLATES": templates, "DOCPORTAL_ASSETS": assets}
+	if cfg, err := parseConfig(nil, func(k string) string { return env[k] }); err != nil || cfg.Templates != templates || cfg.Assets != assets {
+		t.Errorf("from the environment: %+v, %v", cfg, err)
+	}
+	file := filepath.Join(templates, "home.html")
+	if err := os.WriteFile(file, []byte("home"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"-templates", filepath.Join(templates, "missing")}, {"-assets", file}} {
+		if _, err := parseConfig(args, noEnv); err == nil || !strings.Contains(err.Error(), args[0]) {
+			t.Errorf("%v: err = %v, want one naming %s", args, err, args[0])
+		}
+	}
+	if _, err := parseConfig([]string{"-templates", filepath.Join(templates, "missing")}, noEnv); err == nil || !strings.Contains(err.Error(), "no such file") {
+		t.Errorf("err = %v, want one with its cause", err)
+	}
+}
+
+func TestBuildersRenderWithTheCustomTemplatesAndAssets(t *testing.T) {
+	templates, assets := t.TempDir(), t.TempDir()
+	for path, data := range map[string]string{
+		filepath.Join(templates, "error.html"): `<link rel="stylesheet" href="{{.Base}}/assets/custom/brand.css">{{.Title}}`,
+		filepath.Join(assets, "brand.css"):     "body {}",
+	} {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(assets, "fonts"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for link, target := range map[string]string{"inside.css": "brand.css", "outside.txt": filepath.Join(outside, "secret.txt"), "up": outside} {
+		if err := os.Symlink(target, filepath.Join(assets, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := fstest.MapFS{"environment.yaml": {Data: []byte("portals:\n  - name: Guides\n    sections:\n      - title: Docs\n        type: docs\n        input: docs\n")}, "docs/guide.md": {Data: []byte("# Guide\n")}}
+	b, err := newBuilder(config{Templates: templates, Assets: assets, Archive: "published.tgz"}, "environment.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		build func(fs.FS) (http.Handler, error)
+		root  fs.FS
+	}{"published": {b.build, root}, "preview": {b.buildPreview, root}, "unpublished": {b.build, fstest.MapFS{}}} {
+		h, err := tc.build(tc.root)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if page := get(h, "/portals/guides/docs/docs/missing.md").Body.String(); !strings.HasPrefix(page, `<link rel="stylesheet" href="/assets/custom/brand.css">`) {
+			t.Errorf("%s: the error page is not the custom one: %s", name, page)
+		}
+		if css := get(h, "/assets/custom/brand.css"); css.Code != http.StatusOK || css.Body.String() != "body {}" {
+			t.Errorf("%s: the stylesheet: %d %q", name, css.Code, css.Body)
+		}
+		if rec := get(h, "/assets/custom/inside.css"); rec.Code != http.StatusOK || rec.Body.String() != "body {}" {
+			t.Errorf("%s: a symlink inside the directory: %d %q", name, rec.Code, rec.Body)
+		}
+		for _, path := range []string{"/assets/custom/outside.txt", "/assets/custom/up/secret.txt", "/assets/custom/fonts", "/assets/custom/fonts/"} {
+			if rec := get(h, path); rec.Code != http.StatusNotFound {
+				t.Errorf("%s: %s answers %d, want 404: a symlink out of the directory and a directory are not served", name, path, rec.Code)
+			}
+		}
+	}
+}

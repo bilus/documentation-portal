@@ -144,6 +144,76 @@ without a language included. `portal.New` takes both as options:
 
     portal.New(cfg, portal.WithEmbeddedVideo(), portal.WithCodeHighlighting(""))
 
+## Custom templates and assets
+
+`-templates` (`DOCPORTAL_TEMPLATES`) names a directory of `html/template`
+files, or `portal.WithCustomTemplates` an `fs.FS` for a program. Each
+`*.html` file at its top replaces the built-in template of the same name; a
+page without a file keeps the built-in one. The pages are `home.html`, the
+list of portals; `doc.html`, a document page; `list.html`, a docs section's
+document list; `viewer.html`, a spec's viewer page; and `error.html`, every
+error page and the page that says no documentation is published yet. Every
+page calls the partials `nav.html` (`{{define "nav"}}`), `banner.html`
+(`{{define "banner"}}`, the preview banner) and, on document pages and
+lists, `sidebar.html` (`{{define "sidebar"}}`), so a file of that name
+changes them on every page. A file of another name, such as `layout.html`,
+adds its templates for the others to call. The chat page keeps its own
+layout.
+
+`-assets` (`DOCPORTAL_ASSETS`), or `portal.WithCustomAssets`, serves a
+directory's files, such as stylesheets, images and fonts, at
+`/assets/custom/` under the base path. Only files are served: a directory, a
+path with a segment starting with a dot, such as `.env`, and a path that does
+not open get 404. docportal opens both directories with `os.OpenRoot`, so a
+symlink is followed inside the directory only; a program serving a directory
+of its own passes `os.Root`'s `FS` for the same. A template links the assets
+through `{{.Base}}`, which holds the base path:
+
+    <link rel="stylesheet" href="{{.Base}}/assets/custom/brand.css">
+
+Both are options of `portal.New` and `portal.Unpublished`; a program embeds
+its theme with `embed.FS` and `fs.Sub`:
+
+    //go:embed theme
+    var theme embed.FS
+
+    templates, _ := fs.Sub(theme, "theme/templates")
+    assets, _ := fs.Sub(theme, "theme/assets")
+    h, err := portal.New(cfg, portal.WithCustomTemplates(templates), portal.WithCustomAssets(assets))
+
+`portal.New` refuses templates that do not parse, a `nav.html`,
+`banner.html` or `sidebar.html` that does not define its partial with
+`{{define "nav"}}` and so on, and templates that fail to render the sample
+pages. Each page renders the samples a request can bring it, such as the home
+page with portals and without, with each preview banner and with and without
+account links, so that a template naming a field a page lacks, or a template
+that no file defines, stops the portal at startup instead of failing a
+reader's request. A template may rely on what every request brings its page,
+such as the first link of a document page's sidebar.
+
+Every page gets the same data, whose fields a page sets as far as it needs
+them:
+
+| Field | Pages | Holds |
+| :--- | :--- | :--- |
+| `.Title` | all | the page's title |
+| `.Base` | all | the base path, such as `/docs`, or empty |
+| `.Nav.Links` | all | the navigation bar's links, each with `.Label` and `.URL` |
+| `.Nav.Portal`, `.Nav.Menu` | portal pages | the page's portal's name, and the links of the portal menu when there are other portals |
+| `.Nav.Account` | all | the reader's account links; a link without `.URL` shows its `.Label` alone |
+| `.Banner` | all | the preview banner, with `.Preview` the folder of the reader's preview or `.Ended` that of an ended one, or nil |
+| `.Portals` | `home.html` | the visible portals, each with `.Label`, its name, and `.URL`; empty when none is open to the reader |
+| `.Message` | `home.html`, `error.html` | why the page has nothing to show |
+| `.Section`, `.Sidebar` | `doc.html`, `list.html` | the docs section's title, and the sidebar's groups, each with `.Title` and `.Links` of `.Title`, `.URL` and `.Current` |
+| `.Contents` | `list.html` | the toc file's groups, as `.Sidebar`, or none |
+| `.Docs` | `list.html` | without `.Contents`, every markdown file, each with `.Path` and `.URL` |
+| `.Body`, `.CodeCSS` | `doc.html` | the rendered markdown, and the stylesheet of highlighted code or empty |
+| `.SpecURL`, `.HideTryIt` | `viewer.html` | the raw spec's URL, and whether the Try It console is hidden |
+
+The built-in templates in `portal/templates/` are the starting point for an
+override. With one portal visible, `/` redirects to its first section, so
+the home page shows only when the reader sees several or none.
+
 ## An archive as the documentation root
 
 `-archive` (`DOCPORTAL_ARCHIVE`) names an object of the bucket folder of
@@ -297,8 +367,9 @@ the package `anthropicmodel` makes of an Anthropic model with
     mux.Handle("/", signIn(h))       // its sign-in middleware around the portal
     log.Fatal(http.ListenAndServe(":8080", mux))
 
-The portal handler serves `/`, `/portals/`, `/previews/`, `/assets/elements/`
-and, with a chat, the chat's socket at `/live/websocket` and its scripts.
+The portal handler serves `/`, `/portals/`, `/previews/`, `/assets/elements/`,
+with custom assets `/assets/custom/`, and, with a chat, the chat's socket at
+`/live/websocket` and its scripts.
 With `portal.Config.BasePath`, such as `/docs`, it serves all of them under
 that path instead: the program mounts the handler at the base path and at
 the base path with a slash, the handler takes the base path off each

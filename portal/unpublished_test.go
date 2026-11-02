@@ -8,11 +8,21 @@ import (
 	"github.com/bilus/documentation-portal/portal"
 )
 
+// unpublished returns the handler of Unpublished with cfg and opts.
+func unpublished(t *testing.T, cfg portal.Config, opts ...portal.Option) http.Handler {
+	t.Helper()
+	h, err := portal.Unpublished(cfg, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
 func TestUnpublishedSaysSoInThePortalsLayout(t *testing.T) {
 	account := func(*http.Request) []portal.AccountLink {
 		return []portal.AccountLink{{Label: "Ada"}, {Label: "Sign out", URL: "/docs/auth/logout"}}
 	}
-	h := portal.Unpublished(portal.Config{BasePath: "/docs", Account: account})
+	h := unpublished(t, portal.Config{BasePath: "/docs", Account: account})
 
 	rec := get(h, "/docs/portals/pets/specs/api")
 
@@ -37,7 +47,7 @@ func TestUnpublishedSaysSoInThePortalsLayout(t *testing.T) {
 }
 
 func TestUnpublishedAtTheRoot(t *testing.T) {
-	h := portal.Unpublished(portal.Config{})
+	h := unpublished(t, portal.Config{})
 
 	rec := get(h, "/anything")
 

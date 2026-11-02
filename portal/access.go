@@ -2,6 +2,7 @@ package portal
 
 import (
 	"bufio"
+	"html/template"
 	"net"
 	"net/http"
 )
@@ -53,8 +54,9 @@ func AccessOf(r *http.Request) Access {
 // reader's access, the reader's account links and the reader's sites.
 type view struct {
 	access  Access
-	account []AccountLink // the reader's account links, or none
-	sites   []*site       // each with only its visible sections, in the order of the portal configuration
+	account []AccountLink      // the reader's account links, or none
+	sites   []*site            // each with only its visible sections, in the order of the portal configuration
+	pages   *template.Template // the page templates, or nil for the built-in ones
 }
 
 // viewKey keys the reader's view in the context of a request served by the

@@ -245,7 +245,11 @@ func render(w http.ResponseWriter, r *http.Request, status int, name string, p p
 		}
 	}
 	var buf bytes.Buffer
-	if err := templates.ExecuteTemplate(&buf, name, p); err != nil {
+	pages := viewOf(r).pages
+	if pages == nil {
+		pages = templates
+	}
+	if err := pages.ExecuteTemplate(&buf, name, p); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

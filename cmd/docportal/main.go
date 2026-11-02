@@ -52,6 +52,8 @@ type config struct {
 	// HighlightCode highlights code blocks on a dark background
 	// (portal.WithCodeHighlighting, in portal.DefaultCodeStyle).
 	HighlightCode bool
+	Templates     string       // the directory of custom page templates (portal.WithCustomTemplates), or empty
+	Assets        string       // the directory of custom assets (portal.WithCustomAssets), or empty
 	ChatModel     string       // empty without a chat
 	SignIn        signInConfig // the sign-in settings; without an issuer, readers do not sign in
 }
@@ -101,7 +103,10 @@ func startup(ctx context.Context, args []string, getenv func(string) string) (st
 	if err != nil {
 		return "", nil, err
 	}
-	b := &builder{cfg: cfg, configPath: configPath}
+	b, err := newBuilder(cfg, configPath)
+	if err != nil {
+		return "", nil, err
+	}
 	h, err := b.build(snap.Root)
 	if err != nil {
 		return "", nil, err
@@ -140,6 +145,8 @@ func underBasePath(base string, h http.Handler) http.Handler {
 type builder struct {
 	cfg        config
 	configPath string     // the configuration file's path inside the snapshot
+	templates  fs.FS      // the directory of cfg.Templates, or nil
+	assets     fs.FS      // the directory of cfg.Assets, or nil
 	chat       *chat.Chat // nil until the first build with a chat model
 }
 
@@ -153,7 +160,7 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 		// Before the first upload the archive is absent and its root empty:
 		// the portal starts and says so, and a check brings the upload.
 		if _, err := fs.Stat(root, b.configPath); errors.Is(err, fs.ErrNotExist) {
-			return portal.Unpublished(addAccount(portal.Config{BasePath: b.cfg.BasePath}, b.cfg.SignIn.Issuer)), nil
+			return portal.Unpublished(addAccount(portal.Config{BasePath: b.cfg.BasePath}, b.cfg.SignIn.Issuer), b.renderOptions()...)
 		}
 	}
 	pcfg, err := portal.ReadConfig(root, b.configPath)
@@ -185,7 +192,29 @@ func (b *builder) buildPreview(root fs.FS) (http.Handler, error) {
 	return portal.New(addAccount(pcfg, b.cfg.SignIn.Issuer), b.renderOptions()...)
 }
 
-// renderOptions returns the portal options of the rendering settings.
+// newBuilder returns the builder of cfg, with the directories of its custom
+// templates and assets opened once as os.Root file systems, which keep
+// symlinks inside the directory, or the error of one that does not open.
+func newBuilder(cfg config, configPath string) (*builder, error) {
+	b := &builder{cfg: cfg, configPath: configPath}
+	for _, d := range []struct {
+		flag, dir string
+		fsys      *fs.FS
+	}{{"-templates", cfg.Templates, &b.templates}, {"-assets", cfg.Assets, &b.assets}} {
+		if d.dir == "" {
+			continue
+		}
+		root, err := os.OpenRoot(d.dir)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", d.flag, err)
+		}
+		*d.fsys = root.FS()
+	}
+	return b, nil
+}
+
+// renderOptions returns the portal options of the rendering settings and the
+// custom templates and assets.
 func (b *builder) renderOptions() []portal.Option {
 	var opts []portal.Option
 	if b.cfg.EmbedVideo {
@@ -193,6 +222,12 @@ func (b *builder) renderOptions() []portal.Option {
 	}
 	if b.cfg.HighlightCode {
 		opts = append(opts, portal.WithCodeHighlighting(""))
+	}
+	if b.templates != nil {
+		opts = append(opts, portal.WithCustomTemplates(b.templates))
+	}
+	if b.assets != nil {
+		opts = append(opts, portal.WithCustomAssets(b.assets))
 	}
 	return opts
 }
@@ -250,6 +285,12 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 			*field = on
 		}
 	}
+	if v := getenv("DOCPORTAL_TEMPLATES"); v != "" {
+		cfg.Templates = v
+	}
+	if v := getenv("DOCPORTAL_ASSETS"); v != "" {
+		cfg.Assets = v
+	}
 	if v := getenv("DOCPORTAL_PREVIEWS"); v != "" {
 		cfg.Previews = v
 	}
@@ -305,6 +346,8 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 	flags.BoolVar(&cfg.HideTryIt, "hide-try-it", cfg.HideTryIt, "hide the Try It console of the viewer page")
 	flags.BoolVar(&cfg.EmbedVideo, "embed-video", cfg.EmbedVideo, "render the raw HTML of guides and keep HTML5 video players, sanitised")
 	flags.BoolVar(&cfg.HighlightCode, "highlight-code", cfg.HighlightCode, "highlight code blocks by language, on a dark background")
+	flags.StringVar(&cfg.Templates, "templates", cfg.Templates, "directory of html/template files that replace the built-in page templates of the same name, such as home.html; none keeps the built-in pages")
+	flags.StringVar(&cfg.Assets, "assets", cfg.Assets, "directory of files, such as the stylesheets of -templates, served at /assets/custom/ under the base path; none serves no custom assets")
 	flags.StringVar(&cfg.ChatModel, "chat-model", cfg.ChatModel, "Anthropic model of the chat page, such as claude-opus-5-5; none disables the chat")
 	flags.StringVar(&cfg.SignIn.Issuer, "oidc-issuer", cfg.SignIn.Issuer, "issuer URL of the OpenID Connect provider for the readers' sign-in, such as https://TENANT.auth0.com/; none serves every reader without a sign-in")
 	flags.StringVar(&cfg.SignIn.ClientID, "oidc-client-id", cfg.SignIn.ClientID, "the portal's client ID at the provider; DOCPORTAL_OIDC_CLIENT_SECRET holds its secret")
@@ -335,6 +378,18 @@ func parseConfig(args []string, getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("-preview-idle: %v is negative", cfg.PreviewIdle)
 	case cfg.MaxPreviews < 0:
 		return config{}, fmt.Errorf("-max-previews: %d is negative", cfg.MaxPreviews)
+	}
+	for name, dir := range map[string]string{"-templates": cfg.Templates, "-assets": cfg.Assets} {
+		if dir == "" {
+			continue
+		}
+		info, err := os.Stat(dir)
+		if err != nil {
+			return config{}, fmt.Errorf("%s: %w", name, err)
+		}
+		if !info.IsDir() {
+			return config{}, fmt.Errorf("%s: %q is not a directory", name, dir)
+		}
 	}
 	cfg.MaxSize = maxSizeMiB << 20
 	if cfg.SignIn.Issuer == "" && cfg.SignIn != (signInConfig{}) {
