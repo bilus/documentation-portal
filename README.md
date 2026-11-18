@@ -14,8 +14,9 @@ the Makefile.
 
 Then open http://localhost:8080. The configuration file lists the portals,
 each a named set of sections, and each section shows under its title in the
-navigation bar: a spec, or a content directory of markdown files with an
-optional toc file.
+navigation bar: a spec, a content directory of markdown files with an
+optional toc file, or a link to a page outside the portal (see Link
+sections).
 
     portals:
       - name: Petstore
@@ -143,6 +144,59 @@ string and gives every code block of the page the style's background, a block
 without a language included. `portal.New` takes both as options:
 
     portal.New(cfg, portal.WithEmbeddedVideo(), portal.WithCodeHighlighting(""))
+
+## Link sections
+
+A section of type `link` puts a link of its own into the navigation bar, to
+a page that the portal does not serve: a route of the program that embeds the
+portal, or another site.
+
+    sections:
+      - title: API
+        type: spec
+        input: specs/pets.yaml
+      - title: Support
+        type: link
+        url: /support
+      - title: Status
+        type: link
+        url: https://status.example.com/
+
+The `url` is a path that starts with one `/`, or an http or https URL with a
+host; a link section has no `input` and no `toc`, and no other section has a
+`url`. The portal does not start with any other URL, such as `support`,
+`//example.com/support` or a `javascript:` URL. The link is the URL as
+written, without the base path, so a program that serves the portal under
+`/docs` and its page beside it at `/docs/support` writes `/docs/support`.
+
+A portal opens at its first section, and so at a link section that comes
+first: the home page, the portal menu and `/portals/{portal}/` then lead to
+the URL, which lets a program put a landing page of its own before the
+documentation. Do not point a first link section at the portal's own
+`/portals/{portal}/`, which would redirect to itself.
+
+The portal lists the link and nothing more. The program serves the page in
+its own mux, beside the portal handler, and draws the page's navigation bar
+itself, from the sections of the portal's library:
+
+    cfg, err := portal.ReadConfig(root, "environment.yaml")
+    // ...
+    h, err := portal.New(cfg)
+    libs, err := portal.NewLibraries(cfg) // one for each portal
+
+    mux := http.NewServeMux()
+    mux.HandleFunc("GET /support", func(w http.ResponseWriter, r *http.Request) {
+    	for _, s := range libs[0].Sections() {
+    		// a link of the page's bar: s.Title and s.URL
+    	}
+    })
+    mux.Handle("/", h)
+
+The access hook hides a link section like any other, by its labels or its
+title, and `Library.For` gives the program the sections visible to one
+reader's access for its bar. Hiding the link does not close the page: the
+route is the program's, so its handler checks the reader itself. A reader in
+a preview who follows the link leaves the preview's pages.
 
 ## Custom templates and assets
 

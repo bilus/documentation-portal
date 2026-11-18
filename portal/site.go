@@ -105,8 +105,11 @@ func (s *site) firstSpec() (*section, bool) {
 }
 
 // pageURL returns the URL of the section's page: a spec section's viewer
-// page, or a docs section's document list.
+// page, a docs section's document list, or a link section's URL.
 func (sec *section) pageURL() string {
+	if sec.Type == LinkSection {
+		return sec.link
+	}
 	if sec.Type == SpecSection {
 		return sec.viewerURL("")
 	}

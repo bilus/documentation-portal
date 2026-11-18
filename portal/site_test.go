@@ -26,6 +26,27 @@ func docsOf(input string, docs fs.FS, toc string) *section {
 	return &section{Section: Section{Title: "Documents", Type: DocsSection, Input: input, Toc: toc}, slug: "documents", docs: docs}
 }
 
+func TestLinkSectionURL(t *testing.T) {
+	for raw, want := range map[string]string{
+		"/support":                 "/support",
+		"/support?from=docs#top":   "/support?from=docs#top",
+		"/a b":                     "/a%20b",
+		`/\example.com`:            "/%5Cexample.com", // a browser would read the backslash as a second slash
+		"/%2f/x":                   "/%2f/x",
+		"https://example.com":      "https://example.com",
+		"HTTP://example.com:8080/": "http://example.com:8080/",
+	} {
+		if got, err := linkURL(raw); err != nil || got != want {
+			t.Errorf("linkURL(%q) = %q, %v, want %q", raw, got, err, want)
+		}
+	}
+	for _, raw := range []string{"", "support", "./support", "?from=docs", "#top", " /support", "/support\n", "//example.com", "///support", "////example.com", "http:support", "https:///support", "ftp://example.com/", "javascript:alert(1)", "data:text/html,x"} {
+		if got, err := linkURL(raw); err == nil {
+			t.Errorf("linkURL(%q) = %q, want an error", raw, got)
+		}
+	}
+}
+
 func TestSpecFor(t *testing.T) {
 	s := &site{sections: []*section{
 		{Section: Section{Title: "Guides", Type: DocsSection, Input: "docs"}, slug: "guides"},

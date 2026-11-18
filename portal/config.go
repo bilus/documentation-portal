@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"strings"
 	"sync"
 	"unicode"
@@ -13,22 +14,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Section is a spec or a content directory of the documentation root, shown
-// under its title in the navigation bar.
+// Section is a spec or a content directory of the documentation root, or a
+// link to a page that the program or another site serves, shown under its
+// title in the navigation bar.
 type Section struct {
 	Title  string      `yaml:"title"`
 	Type   SectionType `yaml:"type"`
 	Input  string      `yaml:"input"`  // the spec path or the content directory path, relative to Root
 	Toc    string      `yaml:"toc"`    // a docs section's toc path, relative to Root, or empty
+	URL    string      `yaml:"url"`    // a link section's URL: a path from the server's root, or an http or https URL
 	Labels []string    `yaml:"labels"` // for the access hook's rules; the portal reads none
 }
 
-// SectionType says what a section's input names.
+// SectionType says what a section's input names, or that its URL names its
+// page.
 type SectionType string
 
 const (
 	SpecSection SectionType = "spec" // an API spec
 	DocsSection SectionType = "docs" // a content directory
+	LinkSection SectionType = "link" // a page outside the portal handler
 )
 
 // Portal is a named set of sections, whose pages have URLs of their own under
@@ -134,6 +139,7 @@ type section struct {
 	slug   string
 	base   string // the URL path of its portal, such as /portals/pets, or empty
 	docs   fs.FS  // a docs section's content directory handle, else nil
+	link   string // a link section's URL as linkURL wrote it, else empty
 
 	tocMu      sync.Mutex
 	tocProblem string // the toc file's problem that the log named last, or empty
@@ -146,7 +152,8 @@ type section struct {
 // sections, a section without a title, with an empty slug or without an
 // input, an unknown type, two sections with one slug, an input or a toc path
 // outside the root, a docs input that names no directory reached through no
-// symlink, and a toc on a spec section.
+// symlink, a toc on a spec section, a link section that linkSection refuses,
+// and a URL on a section of another type.
 func openSections(root fs.FS, sections []Section) ([]*section, error) {
 	if root == nil {
 		return nil, errors.New("no documentation root")
@@ -174,13 +181,18 @@ func openSections(root fs.FS, sections []Section) ([]*section, error) {
 }
 
 // openSection checks s, a section with a title, with its paths cleaned, and
-// opens its content directory when it is a docs section.
+// opens its content directory when it is a docs section. A link section has
+// no paths, and linkSection checks it.
 func openSection(root fs.FS, s Section) (*section, error) {
 	sec := &section{Section: s, config: s, slug: slugOf(s.Title)}
 	sec.Input, sec.Toc = cleanPath(s.Input), cleanPath(s.Toc)
 	switch {
 	case sec.slug == "":
 		return nil, errors.New("the title gives an empty slug")
+	case s.Type == LinkSection:
+		return linkSection(sec)
+	case s.URL != "":
+		return nil, fmt.Errorf("url %q needs the type %q", s.URL, LinkSection)
 	case sec.Input == "":
 		return nil, fmt.Errorf("input %q names no path inside the documentation root", s.Input)
 	case s.Toc != "" && (sec.Toc == "" || sec.Toc == "." || !fs.ValidPath(sec.Toc)):
@@ -201,9 +213,47 @@ func openSection(root fs.FS, s Section) (*section, error) {
 		}
 		sec.docs = docs
 	default:
-		return nil, fmt.Errorf("the type %q is neither %q nor %q", s.Type, SpecSection, DocsSection)
+		return nil, fmt.Errorf("the type %q is none of %q, %q and %q", s.Type, SpecSection, DocsSection, LinkSection)
 	}
 	return sec, nil
+}
+
+// linkSection returns sec, a link section with a slug, with the URL that its
+// navigation bar links, or refuses an input, a toc and a URL that linkURL
+// refuses.
+func linkSection(sec *section) (*section, error) {
+	switch {
+	case sec.URL == "":
+		return nil, errors.New("a link section needs a url")
+	case sec.config.Input != "":
+		return nil, fmt.Errorf("input %q: a link section takes a url and no input", sec.config.Input)
+	case sec.config.Toc != "":
+		return nil, fmt.Errorf("toc path %q needs a content directory, whose document pages show the sidebar", sec.config.Toc)
+	}
+	link, err := linkURL(sec.URL)
+	if err != nil {
+		return nil, err
+	}
+	sec.link = link
+	return sec, nil
+}
+
+// linkURL returns raw, a link section's URL, as net/url writes it back, or
+// refuses a URL that is neither a path starting with one slash nor an http
+// or https URL with a host.
+func linkURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("url %q: %w", raw, err)
+	}
+	// String would write a path of two slashes back as a host.
+	p := u.EscapedPath()
+	rooted := u.Scheme == "" && u.Host == "" && u.User == nil && strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//")
+	web := (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	if !rooted && !web {
+		return "", fmt.Errorf("url %q is neither a path that starts with one / nor an http or https URL with a host", raw)
+	}
+	return u.String(), nil
 }
 
 // cleanPath returns p without a leading ./ and a trailing /, so that ./docs/
