@@ -699,7 +699,6 @@ func TestChatPageMenuFollowsAccess(t *testing.T) {
 }
 
 func TestChatPageMenuListsLinkPortals(t *testing.T) {
-	t.Skip("HOLE(3): list the link portals in the chat page's portal menu")
 	h := collected(t, portal.Everything, nil, portal.Portal{Name: "Pets"}, portal.Portal{Name: "Store"})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))

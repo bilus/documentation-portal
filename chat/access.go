@@ -96,6 +96,37 @@ func pageAccessOf(access portal.Access, agents []*portalAgent) pageAccess {
 	return page
 }
 
+// menuOf returns the portal menu of a chat page for a reader with access: of
+// the menu of the portals' own pages, which is the same on every portal, the
+// chat's portals and the link portals, with the collections that hold one,
+// or none with fewer than two of them.
+func (c *Chat) menuOf(access portal.Access) pageMenu {
+	agents := c.currentAgents()
+	if len(agents) == 0 {
+		return pageMenu{}
+	}
+	shown := func(portals []portal.PortalLink) []portal.PortalLink {
+		var kept []portal.PortalLink
+		for _, p := range portals {
+			if p.Link || slices.ContainsFunc(agents, func(a *portalAgent) bool { return a.lib.Name() == p.Name }) {
+				kept = append(kept, p)
+			}
+		}
+		return kept
+	}
+	all, collections := agents[0].lib.Menu(access)
+	menu := pageMenu{Portals: shown(all)}
+	if len(menu.Portals) < 2 {
+		return pageMenu{}
+	}
+	for _, col := range collections {
+		if portals := shown(col.Portals); len(portals) > 0 {
+			menu.Collections = append(menu.Collections, portal.MenuCollection{Name: col.Name, Portals: portals})
+		}
+	}
+	return menu
+}
+
 // readPageAccess returns the page access in value, a page's session value,
 // or an access that hides every portal for a value that does not hold one.
 func readPageAccess(value string) pageAccess {
@@ -109,7 +140,8 @@ func readPageAccess(value string) pageAccess {
 // sessionOf returns the session of a chat page for r: the client of r, as
 // clientOf names it, the reader ID of r's reader, from the reader hook, the
 // page access of r's reader over the chat's portals, from portal.AccessOf,
-// and the account links of r's reader, from portal.AccountLinksOf.
+// the account links of r's reader, from portal.AccountLinksOf, and the
+// portal menu of r's reader, from the library's Menu.
 func (c *Chat) sessionOf(r *http.Request) (map[string]string, error) {
 	session, err := clientOf(r)
 	if err != nil {
@@ -126,5 +158,10 @@ func (c *Chat) sessionOf(r *http.Request) (map[string]string, error) {
 		return nil, err
 	}
 	session["account"] = string(links)
+	menu, err := json.Marshal(c.menuOf(portal.AccessOf(r)))
+	if err != nil {
+		return nil, err
+	}
+	session["menu"] = string(menu)
 	return session, nil
 }

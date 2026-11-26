@@ -14,7 +14,7 @@ Branch: `bilus/development`, from `be2f627`, the tip of the collections change. 
 6. The access hook gets a link portal as the portal configuration gives it, with its type, URL and labels. A link portal is visible when the hook allows it; it needs no visible section.
 7. A link portal follows the rules of every portal for its name and its slug: a name, a slug that is not empty, and a slug that no other portal shares.
 8. A link portal counts as a listed portal: with one listed portal that is a link portal, `/` redirects to its URL, and two listed portals give a menu.
-9. `NewLibraries` returns no library for a link portal, so the chat has no agent and no page for it. `Library.Menu(access)` returns the portal menu as the pages of the library's portal show it, link portals and collections included, and the chat page's menu is that menu.
+9. `NewLibraries` returns no library for a link portal, so the chat has no agent and no page for it. `Library.Menu(access)` returns the portal menu as the pages of the library's portal show it, link portals and collections included, each link marked as a link portal's or not. The chat page's menu is that menu limited to the chat's portals and the link portals, kept in the page's session from the page's GET.
 10. Without a link portal, every page is as it is today. The existing tests guard this.
 11. The README, the vocabulary and the doc comments of `portal.Portal` describe link portals.
 
