@@ -71,6 +71,10 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Link portals alone publish nothing to ask about.
+	if len(libs) == 0 {
+		return portal.New(cfg)
+	}
 	if b.chat == nil {
 		m, err := anthropicmodel.New(b.model.model, anthropicmodel.Config{APIKey: b.model.apiKey, BaseURL: b.model.baseURL})
 		if err != nil {

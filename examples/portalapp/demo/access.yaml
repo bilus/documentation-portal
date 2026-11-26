@@ -4,6 +4,10 @@
 # through its provider and whose claim holds one of its values. The GitHub
 # rules name IDs, which never change hands, unlike the names in their
 # comments, which another account may take after a rename.
+# The unrestricted labels sort the portals into the collections of the
+# configuration file and close nothing. Any other label without rules here
+# closes its portal or section to every reader.
+unrestricted: [api, ops]
 labels:
   staff:
     - provider: auth0

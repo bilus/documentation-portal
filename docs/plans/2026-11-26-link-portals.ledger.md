@@ -23,3 +23,4 @@
 - 2026-11-26. The eight wrong implementations rerun on the working tree: each now fails a test.
 - 2026-11-26. Stage 4 complete: `make build lint test test-e2e` green, census 0, score unchanged. Waiting for approval; then the pull requests.
 - 2026-11-26. Stage 4 approved: the user asked for the commit of the example and for the pull requests. The example application, outside the plan: its demo gains two collections and a link portal, and its access file the list `unrestricted`, since its access rule treats every label as an access label.
+- 2026-11-26. Pre-squash tip: `3085689`, kept as the branch `backup/collections-links-presquash`. The branch is reshaped to one commit per stage.
