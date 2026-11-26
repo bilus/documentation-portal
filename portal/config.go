@@ -136,8 +136,9 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 // content directory of each docs section, so that every input and toc path
 // stays inside the documentation root. It returns a site for each portal, in
 // order, and refuses no portals, a portal without a name, with an empty slug
-// or with the slug of another portal, and the sections that openSections
-// refuses.
+// or with the slug of another portal, a type other than LinkPortal, a URL
+// without that type, a link portal that linkPortal refuses, and the sections
+// that openSections refuses.
 func openPortals(cfg Config) ([]*site, error) {
 	if cfg.Root == nil {
 		return nil, errors.New("no documentation root")
@@ -166,7 +167,12 @@ func openPortals(cfg Config) ([]*site, error) {
 			sites = append(sites, s)
 			continue
 		}
-		// HOLE(2): refuse a type other than LinkPortal, and a url on a portal with sections
+		switch {
+		case p.Type != "":
+			return nil, fmt.Errorf("portal %q: the type %q is not %q", p.Name, p.Type, LinkPortal)
+		case p.URL != "":
+			return nil, fmt.Errorf("portal %q: url %q needs the type %q", p.Name, p.URL, LinkPortal)
+		}
 		sections, err := openSections(cfg.Root, p.Sections)
 		if err != nil {
 			return nil, fmt.Errorf("portal %q: %w", p.Name, err)
@@ -183,8 +189,19 @@ func openPortals(cfg Config) ([]*site, error) {
 // slug, with the URL that the home page and the portal menu link, or refuses
 // sections and a URL that linkURL refuses.
 func linkPortal(cfg Config, p Portal) (*site, error) {
-	// HOLE(2): check the url with linkURL, keep it as the site's link, and refuse sections
-	return newSite(cfg, p, nil), nil
+	switch {
+	case p.URL == "":
+		return nil, errors.New("a link portal needs a url")
+	case len(p.Sections) > 0:
+		return nil, errors.New("a link portal takes a url and no sections")
+	}
+	link, err := linkURL(p.URL)
+	if err != nil {
+		return nil, err
+	}
+	s := newSite(cfg, p, nil)
+	s.link = link
+	return s, nil
 }
 
 // section is a section of the portal configuration after openSections has

@@ -187,6 +187,34 @@ docportal does not start with a collection that has no name, no `matchLabels`, a
 empty match label, or the name of another collection. A program sets
 `portal.Config.Collections`, which `portal.ReadConfig` fills from the file.
 
+## Link portals
+
+A portal of type `link` puts a link of its own on the home page and into the
+portal menu, to a page that the portal does not serve: a route of the program
+that embeds the portal, or another site.
+
+    portals:
+      - name: Delivery API
+        sections: [...]
+      - name: Status
+        type: link
+        url: https://status.example.com/
+        labels: [ops]
+
+The `url` follows the rule of a link section's: a path that starts with one
+`/`, or an http or https URL with a host, written into the link without the
+base path. A link portal has no `sections`, and no other portal has a `url`
+or a `type`. docportal does not start with a link portal that breaks these
+rules. Its name follows the rules of every portal, so no other portal may
+share its slug.
+
+A link portal shows at its place in the order of `portals:`, and in each
+collection that its labels match, in that same order. The access hook hides
+it like any portal, by its labels or its name; hiding the link does not close
+the page behind it. It has no pages: `/portals/{portal}/` with its slug
+answers 404, and it has no chat page. When a link portal is the only listed
+portal, `/` redirects to its URL.
+
 ## Link sections
 
 A section of type `link` puts a link of its own into the navigation bar, to
