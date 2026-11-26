@@ -18,8 +18,9 @@ import (
 // markdown files of the docs sections, each with the URL of its page.
 type Library struct{ s *site }
 
-// NewLibraries returns the published documentation of each portal of cfg, in
-// order, or the error that New gives for cfg.
+// NewLibraries returns the published documentation of each portal of cfg
+// with sections, in order, so none for a link portal, or the error that New
+// gives for cfg.
 func NewLibraries(cfg Config) ([]*Library, error) {
 	sites, err := openPortals(cfg)
 	if err != nil {
@@ -28,10 +29,12 @@ func NewLibraries(cfg Config) ([]*Library, error) {
 	if _, err := matchCollections(cfg.Collections, sites); err != nil {
 		return nil, err
 	}
-	// HOLE(3): leave out the link portals, which publish nothing
 	libs := make([]*Library, 0, len(sites))
 	for _, s := range sites {
-		libs = append(libs, &Library{s: s})
+		// A link portal publishes nothing.
+		if s.link == "" {
+			libs = append(libs, &Library{s: s})
+		}
 	}
 	return libs, nil
 }
@@ -78,6 +81,7 @@ func (l *Library) CollectionNames() []string {
 type PortalLink struct {
 	Name string
 	URL  string
+	Link bool // whether the portal is a link portal
 }
 
 // MenuCollection is a collection of the portal menu: its name over the
@@ -89,11 +93,30 @@ type MenuCollection struct {
 
 // Menu returns the portal menu for a reader with access, as the pages of
 // the library's portal show it: the listed portals, link portals included,
-// each once, and with collections the same links under each collection's
-// name. It returns none with fewer than two listed portals.
+// each once and marked when it is a link portal, and with collections the
+// same links under each collection's name. It returns none with fewer than two listed portals.
 func (l *Library) Menu(access Access) ([]PortalLink, []MenuCollection) {
-	// HOLE(3): the menu of the reader's site
-	return nil, nil
+	visible := visibleSites(l.s.portals, access)
+	listed, collections := listPortals(visible)
+	if len(listed) < 2 {
+		return nil, nil
+	}
+	linked := map[string]bool{} // whether the portal with each name is a link portal
+	for _, s := range visible {
+		linked[s.name] = s.link != ""
+	}
+	links := func(navs []navLink) []PortalLink {
+		portals := make([]PortalLink, 0, len(navs))
+		for _, n := range navs {
+			portals = append(portals, PortalLink{Name: n.Label, URL: n.URL, Link: linked[n.Label]})
+		}
+		return portals
+	}
+	var menu []MenuCollection
+	for _, c := range collections {
+		menu = append(menu, MenuCollection{Name: c.Name, Portals: links(c.Links)})
+	}
+	return links(linksTo(listed)), menu
 }
 
 // SectionLink links a section's page from the navigation bar.

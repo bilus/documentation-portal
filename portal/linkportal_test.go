@@ -185,7 +185,6 @@ func TestOneListedLinkPortalOpensAtHome(t *testing.T) {
 }
 
 func TestLibrariesLeaveOutLinkPortals(t *testing.T) {
-	t.Skip("HOLE(3): give a link portal no library")
 	libs, err := portal.NewLibraries(linked())
 	if err != nil {
 		t.Fatal(err)
@@ -196,14 +195,13 @@ func TestLibrariesLeaveOutLinkPortals(t *testing.T) {
 }
 
 func TestLibraryMenu(t *testing.T) {
-	t.Skip("HOLE(3): give a library the portal menu of its portal's pages")
 	quiet(t)
 	cfg := linked()
 	libs, err := portal.NewLibraries(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	all := []portal.PortalLink{{Name: "Pets", URL: "/portals/pets/specs/api"}, {Name: "Status", URL: "https://status.example.com/"}, {Name: "Store", URL: "/portals/store/specs/api"}, {Name: "Support", URL: "/support"}}
+	all := []portal.PortalLink{{Name: "Pets", URL: "/portals/pets/specs/api"}, {Name: "Status", URL: "https://status.example.com/", Link: true}, {Name: "Store", URL: "/portals/store/specs/api"}, {Name: "Support", URL: "/support", Link: true}}
 	if menu, collections := libs[1].Menu(portal.Everything); !reflect.DeepEqual(menu, all) || collections != nil {
 		t.Errorf("the menu: %+v %+v", menu, collections)
 	}
