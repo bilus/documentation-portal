@@ -1,3 +1,5 @@
+//go:build chat
+
 package chat
 
 import (

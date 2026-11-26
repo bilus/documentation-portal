@@ -1,18 +1,18 @@
+//go:build chat
+
 package chat
 
 import (
-	"net/url"
+	"errors"
 	"testing"
 	"testing/fstest"
-
-	"github.com/bilus/live-templ/interpreter"
 
 	"github.com/bilus/documentation-portal/internal/fakemodel"
 	"github.com/bilus/documentation-portal/portal"
 )
 
-// A page whose route was built before a reload takes its menu's collections
-// from the reloaded snapshot, as it takes the menu's portals.
+// A page loaded after a reload takes its menu's collections and portals
+// from the reloaded snapshot.
 func TestTheChatMenuFollowsAReload(t *testing.T) {
 	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
 	libsOf := func(collection string) []*portal.Library {
@@ -30,16 +30,29 @@ func TestTheChatMenuFollowsAReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := c.currentAgents()[0]
 	if err := c.Reload(libsOf("New name")); err != nil {
 		t.Fatal(err)
 	}
-	u := &url.URL{Path: "/portals/pets/chat"}
-	p, err := c.mount(interpreter.NewCtx(t.Context(), u.Path, u, map[string]string{"access": `{"all":true}`}, true), before)
-	if err != nil {
+	menu := c.menuOf(portal.Everything)
+	if len(menu.Collections) != 1 || menu.Collections[0].Name != "New name" || len(menu.Collections[0].Portals) != 2 {
+		t.Errorf("the menu after a reload: %+v, want the collection New name with both portals", menu.Collections)
+	}
+}
+
+func TestAClearedChatAnswersNoQuestion(t *testing.T) {
+	c := newChat(t, fakemodel.New("opus", []fakemodel.Exchange{{Reply: "an answer"}}), Limits{})
+	slug := c.currentAgents()[0].lib.Slug()
+	c.Clear()
+	if _, err := c.Ask(t.Context(), slug, portal.Everything, AskerOf("", "client"), "conv", "How?"); !errors.Is(err, ErrNoPortal) {
+		t.Errorf("a question after Clear: err = %v, want ErrNoPortal", err)
+	}
+	if menu := c.menuOf(portal.Everything); len(menu.Portals) != 0 {
+		t.Errorf("the menu after Clear: %+v", menu)
+	}
+	if err := c.Reload([]*portal.Library{library(t)}); err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Collections) != 1 || p.Collections[0].Name != "New name" || len(p.Collections[0].Links) != 2 {
-		t.Errorf("the menu of a page mounted after a reload: %+v, want the collection New name with both portals", p.Collections)
+	if _, err := c.Ask(t.Context(), slug, portal.Everything, AskerOf("", "client"), "conv", "How?"); err != nil {
+		t.Errorf("a question after the next Reload: %v", err)
 	}
 }

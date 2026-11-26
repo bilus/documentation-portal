@@ -1,3 +1,5 @@
+//go:build chat
+
 package chat
 
 import (
@@ -643,7 +645,9 @@ func (w without) Section(portal.Portal, portal.Section) bool { return true }
 func collected(t *testing.T, access portal.Access, collections []portal.Collection, portals ...portal.Portal) http.Handler {
 	t.Helper()
 	for i := range portals {
-		portals[i].Sections = []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
+		if portals[i].Type != portal.LinkPortal {
+			portals[i].Sections = []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
+		}
 	}
 	cfg := portal.Config{
 		Root:        fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")}},
@@ -693,5 +697,59 @@ func TestChatPageMenuFollowsAccess(t *testing.T) {
 	page := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(page, `>AutoStage API</span>`) || !strings.Contains(page, `>Production</a>`) || strings.Contains(page, "Ingest") {
 		t.Errorf("the chat menu without Ingest: %d %q", rec.Code, page)
+	}
+}
+
+func TestChatPageMenuListsLinkPortals(t *testing.T) {
+	h := collected(t, portal.Everything, nil, portal.Portal{Name: "Pets"}, portal.Portal{Name: "Store"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))
+	if page := rec.Body.String(); rec.Code != http.StatusOK || strings.Contains(page, "Status") {
+		t.Fatalf("without a link portal: %d %q", rec.Code, page)
+	}
+	h = collected(t, portal.Everything, nil, portal.Portal{Name: "Pets"}, portal.Portal{Name: "Status", Type: portal.LinkPortal, URL: "https://status.example.com/"})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))
+	page := rec.Body.String()
+	if want := `<a href="/portals/pets/specs/api">Pets</a><a href="https://status.example.com/">Status</a>`; rec.Code != http.StatusOK || !strings.Contains(page, want) {
+		t.Errorf("the chat page's menu lacks the link portal: %d %q", rec.Code, page)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/status/chat", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("a link portal's chat page: %d, want 404", rec.Code)
+	}
+}
+
+func TestChatPageMenuDropsACollectionWithoutTheChatsPortals(t *testing.T) {
+	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
+	cfg := portal.Config{
+		Root: fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")}},
+		Portals: []portal.Portal{
+			{Name: "Pets", Labels: []string{"apis"}, Sections: api},
+			{Name: "Store", Labels: []string{"shops"}, Sections: api},
+			{Name: "Status", Type: portal.LinkPortal, URL: "https://status.example.com/", Labels: []string{"apis"}},
+		},
+		Collections: []portal.Collection{{Name: "APIs", MatchLabels: []string{"apis"}}, {Name: "Shops", MatchLabels: []string{"shops"}}},
+	}
+	libs, err := portal.NewLibraries(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A chat over Pets alone, in a portal handler that serves Store too.
+	c, err := New(Config{Model: fakemodel.New("opus", nil), Libraries: libs[:1]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Chat = c.Routes()
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, `>APIs</span>`) || !strings.Contains(page, `>Status</a>`) || strings.Contains(page, "Shops") || strings.Contains(page, `>Store</a>`) {
+		t.Errorf("the chat menu of a chat over Pets alone: %d %q", rec.Code, page)
 	}
 }

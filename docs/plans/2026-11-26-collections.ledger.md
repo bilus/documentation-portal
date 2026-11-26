@@ -30,3 +30,4 @@
 - 2026-11-26. Stage 6 complete: `make build lint test test-e2e` green, census 0, score unchanged. Waiting for approval. Next, at the user's word: link portals, as a feature with a plan of its own.
 - 2026-11-26. Stage 6 approved. The user confirmed that a collection lists its portals in the order of `portals:`, which `TestHomePageListsCollections` asserts. The pull request waits: the user chose to plan link portals first.
 - 2026-11-26. Review of pull request 46 (Copilot), applied: the chat page took its menu's collection names from the snapshot of its route and the portals from the current one; both now come from the current one. Test: `TestTheChatMenuFollowsAReload`.
+- 2026-11-26. Pre-squash tip: `3085689`, kept as the branch `backup/collections-links-presquash`. The branch is reshaped to one commit per stage.

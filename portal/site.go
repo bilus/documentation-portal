@@ -26,6 +26,7 @@ type site struct {
 	collections     []string // the names of the portal's collections, in the collections' order
 	collectionNames []string // the name of every collection, in order, or none without collections
 	hideTryIt       bool
+	link            string    // a link portal's URL as linkURL wrote it, else empty
 	chat            bool      // whether a route of the chat serves the portal's chat page
 	base            string    // the base path of every URL of the site's pages, or ""
 	render          *renderer // how document pages render markdown; nil renders plainly
@@ -52,9 +53,12 @@ func newSite(cfg Config, p Portal, sections []*section) *site {
 	return s
 }
 
-// url returns the URL that opens the site's portal: the page of its first
-// section, or the portal's path without a section.
+// url returns the URL that opens the site's portal: a link portal's URL,
+// the page of its first section, or the portal's path without a section.
 func (s *site) url() string {
+	if s.link != "" {
+		return s.link
+	}
 	if len(s.sections) == 0 {
 		return (&url.URL{Path: s.base + "/portals/" + s.slug + "/"}).String()
 	}
@@ -143,7 +147,7 @@ func (s *site) docsFor(slug string) (*section, bool) {
 	return nil, false
 }
 
-// index redirects to the first section's page.
+// index redirects to the first section's page. A link portal has none.
 func (s *site) index(w http.ResponseWriter, r *http.Request) {
 	if len(s.sections) == 0 {
 		http.NotFound(w, r)

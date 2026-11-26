@@ -37,12 +37,22 @@ const (
 )
 
 // Portal is a named set of sections, whose pages have URLs of their own under
-// /portals/{slug}/, where the slug comes from the name.
+// /portals/{slug}/, where the slug comes from the name, or with the type
+// LinkPortal a link to a page outside the portal handler, shown under its
+// name on the home page and in the portal menu.
 type Portal struct {
-	Name     string    `yaml:"name"`
-	Sections []Section `yaml:"sections"`
-	Labels   []string  `yaml:"labels"` // for the access hook's rules and the collections' match labels
+	Name     string     `yaml:"name"`
+	Type     PortalType `yaml:"type"` // empty for a portal with sections, or LinkPortal
+	URL      string     `yaml:"url"`  // a link portal's URL: a path from the server's root, or an http or https URL
+	Sections []Section  `yaml:"sections"`
+	Labels   []string   `yaml:"labels"` // for the access hook's rules and the collections' match labels
 }
+
+// PortalType says whether a portal holds sections or links a page.
+type PortalType string
+
+// LinkPortal is the type of a link portal, which has a URL and no sections.
+const LinkPortal PortalType = "link"
 
 // Collection is a named set of portals, listed under its name on the home page
 // and in the portal menu: the portals whose labels hold every match label.
@@ -71,6 +81,8 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 	var file struct {
 		Portals []*struct {
 			Name     string     `yaml:"name"`
+			Type     PortalType `yaml:"type"`
+			URL      string     `yaml:"url"`
 			Sections []*Section `yaml:"sections"`
 			Labels   []string   `yaml:"labels"`
 		} `yaml:"portals"`
@@ -101,7 +113,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			}
 			sections = append(sections, *sec)
 		}
-		portals = append(portals, Portal{Name: p.Name, Sections: sections, Labels: p.Labels})
+		portals = append(portals, Portal{Name: p.Name, Type: p.Type, URL: p.URL, Sections: sections, Labels: p.Labels})
 	}
 	var collections []Collection
 	for i, g := range file.Collections {
@@ -124,8 +136,9 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 // content directory of each docs section, so that every input and toc path
 // stays inside the documentation root. It returns a site for each portal, in
 // order, and refuses no portals, a portal without a name, with an empty slug
-// or with the slug of another portal, and the sections that openSections
-// refuses.
+// or with the slug of another portal, a type other than LinkPortal, a URL
+// without that type, a link portal that linkPortal refuses, and the sections
+// that openSections refuses.
 func openPortals(cfg Config) ([]*site, error) {
 	if cfg.Root == nil {
 		return nil, errors.New("no documentation root")
@@ -146,6 +159,20 @@ func openPortals(cfg Config) ([]*site, error) {
 			return nil, fmt.Errorf("portals %q and %q share the slug %q", other, p.Name, slug)
 		}
 		names[slug] = p.Name
+		if p.Type == LinkPortal {
+			s, err := linkPortal(cfg, p)
+			if err != nil {
+				return nil, fmt.Errorf("portal %q: %w", p.Name, err)
+			}
+			sites = append(sites, s)
+			continue
+		}
+		switch {
+		case p.Type != "":
+			return nil, fmt.Errorf("portal %q: the type %q is not %q", p.Name, p.Type, LinkPortal)
+		case p.URL != "":
+			return nil, fmt.Errorf("portal %q: url %q needs the type %q", p.Name, shownURL(p.URL), LinkPortal)
+		}
 		sections, err := openSections(cfg.Root, p.Sections)
 		if err != nil {
 			return nil, fmt.Errorf("portal %q: %w", p.Name, err)
@@ -156,6 +183,25 @@ func openPortals(cfg Config) ([]*site, error) {
 		s.portals = sites
 	}
 	return sites, nil
+}
+
+// linkPortal returns the site of p, a link portal of cfg with a name and a
+// slug, with the URL that the home page and the portal menu link, or refuses
+// sections and a URL that linkURL refuses.
+func linkPortal(cfg Config, p Portal) (*site, error) {
+	switch {
+	case p.URL == "":
+		return nil, errors.New("a link portal needs a url")
+	case len(p.Sections) > 0:
+		return nil, errors.New("a link portal takes a url and no sections")
+	}
+	link, err := linkURL(p.URL)
+	if err != nil {
+		return nil, err
+	}
+	s := newSite(cfg, p, nil)
+	s.link = link
+	return s, nil
 }
 
 // section is a section of the portal configuration after openSections has
@@ -219,7 +265,7 @@ func openSection(root fs.FS, s Section) (*section, error) {
 	case s.Type == LinkSection:
 		return linkSection(sec)
 	case s.URL != "":
-		return nil, fmt.Errorf("url %q needs the type %q", s.URL, LinkSection)
+		return nil, fmt.Errorf("url %q needs the type %q", shownURL(s.URL), LinkSection)
 	case sec.Input == "":
 		return nil, fmt.Errorf("input %q names no path inside the documentation root", s.Input)
 	case s.Toc != "" && (sec.Toc == "" || sec.Toc == "." || !fs.ValidPath(sec.Toc)):
@@ -267,20 +313,47 @@ func linkSection(sec *section) (*section, error) {
 
 // linkURL returns raw, a link section's URL, as net/url writes it back, or
 // refuses a URL that is neither a path starting with one slash nor an http
-// or https URL with a host.
+// or https URL with a host, and one with a user name or a password.
 func linkURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("url %q: %w", raw, err)
+		// The parser's error quotes the whole URL, so only its cause is kept,
+		// and not even that beside a user part.
+		var parse *url.Error
+		if strings.Contains(raw, "@") || !errors.As(err, &parse) {
+			return "", fmt.Errorf("url %q does not parse", shownURL(raw))
+		}
+		return "", fmt.Errorf("url %q: %w", raw, parse.Err)
+	}
+	if u.User != nil {
+		// The error leaves the user part out, which may hold a password.
+		u.User = nil
+		return "", fmt.Errorf("url %q holds a user name or a password", u.String())
 	}
 	// String would write a path of two slashes back as a host.
 	p := u.EscapedPath()
-	rooted := u.Scheme == "" && u.Host == "" && u.User == nil && strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//")
+	rooted := u.Scheme == "" && u.Host == "" && strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//")
 	web := (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 	if !rooted && !web {
-		return "", fmt.Errorf("url %q is neither a path that starts with one / nor an http or https URL with a host", raw)
+		return "", fmt.Errorf("url %q is neither a path that starts with one / nor an http or https URL with a host", shownURL(raw))
 	}
 	return u.String(), nil
+}
+
+// shownURL returns raw, a URL of the configuration, for an error message:
+// as it is without an @, which every user part needs, else without its user
+// part, and not at all when it does not parse, so that no message holds a
+// password.
+func shownURL(raw string) string {
+	if !strings.Contains(raw, "@") {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(not shown)"
+	}
+	u.User = nil
+	return u.String()
 }
 
 // cleanPath returns p without a leading ./ and a trailing /, so that ./docs/

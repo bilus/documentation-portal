@@ -198,75 +198,6 @@ func TestTheSignInSecretsComeFromTheEnvironmentAlone(t *testing.T) {
 	}
 }
 
-func TestStartupSignsReadersIn(t *testing.T) {
-	o := mockProvider(t)
-	srv := httptest.NewUnstartedServer(nil)
-	defer srv.Close()
-	env := map[string]string{"DOCPORTAL_OIDC_CLIENT_SECRET": o.ClientSecret, "DOCPORTAL_SESSION_KEY": sessionKey}
-	_, h, err := startup(t.Context(), []string{
-		"-config", sample,
-		"-chat-model", "claude-opus-5-5",
-		"-oidc-issuer", o.Issuer(),
-		"-oidc-client-id", o.ClientID,
-		"-oidc-callback-url", "http://" + srv.Listener.Addr().String() + "/auth/callback",
-	}, func(k string) string { return env[k] })
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv.Config.Handler = h
-	srv.Start()
-
-	// Without a session, a page sends the reader to the provider.
-	resp, err := (&http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Get(srv.URL + "/portals/petstore/docs/guides/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if loc := resp.Header.Get("Location"); resp.StatusCode != http.StatusFound || !strings.HasPrefix(loc, o.AuthorizationEndpoint()+"?") {
-		t.Errorf("a page without a session answered %d for %q, want the provider's authorization endpoint", resp.StatusCode, loc)
-	}
-
-	// The reader signs in, returns to the page and sees the account links.
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b := &http.Client{Jar: jar}
-	resp, err = b.Get(srv.URL + "/portals/petstore/docs/guides/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	page, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	links := `<span class="portal-account"><span>jane.doe</span><span><a href="/auth/sign-out">Sign out</a></span></span>`
-	if resp.Request.URL.Path != "/portals/petstore/docs/guides/" || !strings.Contains(string(page), links) {
-		t.Errorf("the sign-in ended at %s with a page without the account links %s", resp.Request.URL, links)
-	}
-	if cc := resp.Header.Get("Cache-Control"); cc != "private" {
-		t.Errorf("the signed-in reader's page has Cache-Control %q, want private", cc)
-	}
-	// The chat page is the signed-in reader's too.
-	resp, err = b.Get(srv.URL + "/portals/petstore/chat")
-	if err != nil {
-		t.Fatal(err)
-	}
-	page, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "jane.doe") || !strings.Contains(string(page), `href="/auth/sign-out"`) {
-		t.Errorf("the chat page answered %d without the account links", resp.StatusCode)
-	}
-	// The sign-out link ends the session.
-	resp, err = b.Get(srv.URL + "/auth/sign-out")
-	if err != nil {
-		t.Fatal(err)
-	}
-	page, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "signed out") {
-		t.Errorf("the sign-out answered %d with %q", resp.StatusCode, page)
-	}
-}
-
 func TestStartupSignsAReaderIntoAPreview(t *testing.T) {
 	dir, url := bucketFolder(t)
 	writePreview(t, dir, "pr-1", "# The preview version\n")
@@ -374,26 +305,5 @@ func TestAddAccountNeedsAnIssuer(t *testing.T) {
 	rec := get(h, "/portals/petstore/docs/guides/")
 	if cc := rec.Header().Get("Cache-Control"); cc != "private" || strings.Contains(rec.Body.String(), "portal-account") {
 		t.Errorf("with an issuer, a page outside the middleware has Cache-Control %q and account links %v", cc, strings.Contains(rec.Body.String(), "portal-account"))
-	}
-}
-
-func TestAddChatTakesTheReaderHookWithAnIssuer(t *testing.T) {
-	pcfg, err := portal.ReadConfig(os.DirFS("../../testdata"), "environment.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The chat's reader hook makes its pages private.
-	for issuer, want := range map[string]string{"": "", "https://tenant.auth0.com/": "private"} {
-		withChat, _, err := addChat(pcfg, "claude-opus-5-5", nil, issuer)
-		if err != nil {
-			t.Fatal(err)
-		}
-		h, err := portal.New(withChat)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := get(h, "/portals/petstore/chat").Header().Get("Cache-Control"); got != want {
-			t.Errorf("issuer %q: the chat page has Cache-Control %q, want %q", issuer, got, want)
-		}
 	}
 }

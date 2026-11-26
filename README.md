@@ -187,6 +187,34 @@ docportal does not start with a collection that has no name, no `matchLabels`, a
 empty match label, or the name of another collection. A program sets
 `portal.Config.Collections`, which `portal.ReadConfig` fills from the file.
 
+## Link portals
+
+A portal of type `link` puts a link of its own on the home page and into the
+portal menu, to a page that the portal does not serve: a route of the program
+that embeds the portal, or another site.
+
+    portals:
+      - name: Delivery API
+        sections: [...]
+      - name: Status
+        type: link
+        url: https://status.example.com/
+        labels: [ops]
+
+The `url` follows the rule of a link section's: a path that starts with one
+`/`, or an http or https URL with a host, written into the link without the
+base path. A link portal has no `sections`, and no other portal has a `url`
+or a `type`. docportal does not start with a link portal that breaks these
+rules. Its name follows the rules of every portal, so no other portal may
+share its slug.
+
+A link portal shows at its place in the order of `portals:`, and in each
+collection that its labels match, in that same order. The access hook hides
+it like any portal, by its labels or its name; hiding the link does not close
+the page behind it. It has no pages: `/portals/{portal}/` with its slug
+answers 404, and it has no chat page. When a link portal is the only listed
+portal, `/` shows the home page with its link, and does not redirect.
+
 ## Link sections
 
 A section of type `link` puts a link of its own into the navigation bar, to
@@ -205,7 +233,7 @@ portal, or another site.
         url: https://status.example.com/
 
 The `url` is a path that starts with one `/`, or an http or https URL with a
-host; a link section has no `input` and no `toc`, and no other section has a
+host and without a user name or a password; a link section has no `input` and no `toc`, and no other section has a
 `url`. The portal does not start with any other URL, such as `support`,
 `//example.com/support` or a `javascript:` URL. The link is the URL as
 written, without the base path, so a program that serves the portal under
@@ -416,6 +444,14 @@ reader may open any preview. The previews handler asks the access hook once
 for each request with a folder to switch to or a preview to serve.
 
 ## Chat
+
+The chat is left out of a plain build. Its package needs the private module
+`github.com/bilus/live-templ`, so `go build ./cmd/docportal` builds a
+docportal without it, which refuses `-chat-model`, and `go build -tags chat
+./cmd/docportal` builds one with it. The Makefile's targets build with the
+tag; `make build lint test TAGS=` leaves the chat out, as CI does. A program
+that embeds the portal gets the chat by importing package `chat` and
+building with `-tags chat`.
 
 With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
 `claude-opus-5-5`, every portal has a chat page at `/portals/{portal}/chat`,

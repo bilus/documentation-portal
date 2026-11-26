@@ -27,8 +27,6 @@ import (
 	_ "gocloud.dev/blob/gcsblob"
 	_ "gocloud.dev/blob/s3blob"
 
-	"github.com/bilus/documentation-portal/anthropicmodel"
-	"github.com/bilus/documentation-portal/chat"
 	"github.com/bilus/documentation-portal/portal"
 	"github.com/bilus/documentation-portal/signin"
 	"github.com/bilus/documentation-portal/source"
@@ -147,7 +145,7 @@ type builder struct {
 	configPath string     // the configuration file's path inside the snapshot
 	templates  fs.FS      // the directory of cfg.Templates, or nil
 	assets     fs.FS      // the directory of cfg.Assets, or nil
-	chat       *chat.Chat // nil until the first build with a chat model
+	chat       chatHandle // the chat, once a build with a chat model made one
 }
 
 // build builds the portal handler of the snapshot at root: it reads the
@@ -499,42 +497,6 @@ func addAccount(pcfg portal.Config, issuer string) portal.Config {
 		pcfg.Account = signin.AccountLinks
 	}
 	return pcfg
-}
-
-// addChat adds the chat's routes to the portal configuration when modelID
-// names a model, so that the portal handler serves a chat page in every
-// portal. It builds the chat for the first snapshot, when c is nil, with the
-// reader hook of the sign-in when issuer is not empty, so that a signed-in
-// reader's questions count against one limit, and gives an existing chat the
-// new snapshot's libraries, so that the chat keeps its conversations across
-// snapshots. It returns the chat for the next snapshot: the one it built or
-// was given, and on a failure the one it was given, so that a snapshot that
-// fails never costs the chat its conversations.
-func addChat(pcfg portal.Config, modelID string, c *chat.Chat, issuer string) (portal.Config, *chat.Chat, error) {
-	if modelID == "" {
-		return pcfg, nil, nil
-	}
-	libs, err := portal.NewLibraries(pcfg)
-	if err != nil {
-		return portal.Config{}, c, err
-	}
-	if c == nil {
-		m, err := anthropicmodel.New(modelID, anthropicmodel.Config{})
-		if err != nil {
-			return portal.Config{}, nil, err
-		}
-		var reader func(*http.Request) string
-		if issuer != "" {
-			reader = signin.ReaderID
-		}
-		if c, err = chat.New(chat.Config{Model: m, Libraries: libs, Reader: reader}); err != nil {
-			return portal.Config{}, nil, err
-		}
-	} else if err := c.Reload(libs); err != nil {
-		return portal.Config{}, c, err
-	}
-	pcfg.Chat = c.Routes()
-	return pcfg, c, nil
 }
 
 // signInConfigOf makes the sign-in configuration of the sign-in settings s:
