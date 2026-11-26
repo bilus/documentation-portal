@@ -22,9 +22,10 @@ type site struct {
 	name            string // the portal's name
 	slug            string // the portal's slug
 	sections        []*section
-	portals         []*site  // the site of every portal, for the portal menu
-	collections     []string // the names of the portal's collections, in the collections' order
-	collectionNames []string // the name of every collection, in order, or none without collections
+	portals         []*site      // the site of every portal, for the portal menu
+	collections     []string     // the names of the portal's collections, in the collections' order; on a reader's site, of those shown to the reader
+	collectionNames []string     // the name of every collection, in order, or none without collections; on a reader's site, of those shown to the reader
+	configured      []Collection // every collection as the portal configuration gives it, in order, for the collection access
 	hideTryIt       bool
 	link            string    // a link portal's URL as linkURL wrote it, else empty
 	chat            bool      // whether a route of the chat serves the portal's chat page

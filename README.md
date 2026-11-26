@@ -182,7 +182,9 @@ time it builds the portal, as it does for a collection that matches no portal:
 Such a portal keeps its pages under `/portals/{portal}/`, for a reader with
 the URL. Collections do not restrict anything: the access hook decides who may
 read a portal, and a collection lists only the portals visible to the reader, or
-is left out when it has none. `/` redirects when one portal is listed.
+is left out when it has none. `/` redirects when one portal is listed. A
+program can hide a collection from some readers; see
+[Access per reader](#access-per-reader).
 docportal does not start with a collection that has no name, no `matchLabels`, an
 empty match label, or the name of another collection. A program sets
 `portal.Config.Collections`, which `portal.ReadConfig` fills from the file.
@@ -263,9 +265,17 @@ program a `portal.Portal` give it a copy of its own, made with
 `Portal.Clone`: its labels, its sections and its extension fields are the
 caller's to keep or change, and no write reaches another request.
 
-Only portals take extension fields. docportal still refuses any other key
-it does not know: one without `x-` on a portal, and an `x-` key on a
-section, a collection or the top level of the file. docportal itself reads
+A collection takes extension fields in the same way, with `Collection.Ext`,
+`Collection.GetExt` and `Collection.Clone`:
+
+    collections:
+      - name: Internal
+        matchLabels: [internal]
+        x-roles: [staff]
+
+Only portals and collections take extension fields. docportal still refuses
+any other key it does not know: one without `x-` on a portal or a
+collection, and an `x-` key on a section or the top level of the file. docportal itself reads
 no extension field; they are for a program that embeds the portal.
 
 ## Link sections
@@ -624,6 +634,22 @@ one of its pages shows as plain text, the document sidebar leaves out its toc
 entries, and the chat answers without it. With one visible portal, `/` opens
 it, and with none, the home page says so. Without a hook, every reader sees
 everything; docportal sets none.
+
+An access may also decide which collections its reader sees, with a third
+method, `Collection(c)`, of `portal.CollectionAccess`:
+
+    func (a readerAccess) Collection(c portal.Collection) bool {
+    	ext, err := c.GetExt[allowedRoles]()
+    	return err == nil && slices.Contains(ext.Roles, a.role)
+    }
+
+The portal handler asks it about each collection once for each request,
+with a copy and its extension fields. A hidden collection is absent from the
+home page, the portal menu and the chat's menu, so the templates receive
+only the collections shown to the reader. Hiding a collection closes no
+page: a portal of no shown collection is not listed, and keeps its pages for
+a reader whom `Portal(p)` allows. An access without the method shows every
+collection.
 
 The portal knows no identity provider. The program authenticates each
 request in its own middleware, keeps the reader's claims in the request's

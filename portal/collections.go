@@ -30,7 +30,8 @@ func collectPortals(collections []Collection, sites []*site) error {
 
 // matchCollections gives each site the names of the collections whose match
 // labels its portal's labels all hold, and every site the name of every
-// collection. It returns a problem for each portal of no collection and each
+// collection and a clone of each, so that a later write to collections
+// reaches no request. It returns a problem for each portal of no collection and each
 // collection of no portal, and refuses a collection without a name, without
 // match labels, with a match label that is empty or blank, or with the name of another
 // collection. Without collections it changes nothing.
@@ -39,6 +40,7 @@ func matchCollections(collections []Collection, sites []*site) (problems []strin
 		return nil, nil
 	}
 	names := make([]string, 0, len(collections))
+	configured := make([]Collection, 0, len(collections))
 	for i, g := range collections {
 		switch {
 		case strings.TrimSpace(g.Name) == "":
@@ -51,10 +53,11 @@ func matchCollections(collections []Collection, sites []*site) (problems []strin
 			return nil, fmt.Errorf("collection %q has an empty match label", g.Name)
 		}
 		names = append(names, g.Name)
+		configured = append(configured, g.Clone())
 	}
 	matched := map[string]bool{}
 	for _, s := range sites {
-		s.collectionNames, s.collections = names, nil
+		s.collectionNames, s.collections, s.configured = names, nil, configured
 		for _, g := range collections {
 			if holdsAll(s.config.Labels, g.MatchLabels) {
 				s.collections = append(s.collections, g.Name)

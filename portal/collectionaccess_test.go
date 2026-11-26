@@ -103,7 +103,6 @@ func TestNewWithACollectionAccess(t *testing.T) {
 }
 
 func TestRolesOpenCollectionsAndPortals(t *testing.T) {
-	t.Skip("HOLE(3): the collection access hides a collection; HOLE(2) reads a collection's x-roles")
 	cfg := readExt(t, rolesFile)
 	cfg.Access = byRole
 	h, err := portal.New(cfg)
@@ -154,7 +153,6 @@ func TestRolesOpenCollectionsAndPortals(t *testing.T) {
 }
 
 func TestAHiddenCollectionLeavesItsPortalsPages(t *testing.T) {
-	t.Skip("HOLE(3): the collection access hides a collection")
 	quiet(t)
 	cfg := stages()
 	access := shown{"Ingest APIs", "Prerelease"}
@@ -198,7 +196,6 @@ func (w *scribbling) Collection(c portal.Collection) bool {
 }
 
 func TestEachCollectionCallGetsItsOwnCollection(t *testing.T) {
-	t.Skip("HOLE(3): the collection access is asked, with a clone for each call")
 	quiet(t)
 	cfg := stages()
 	for i := range cfg.Collections {
@@ -229,7 +226,6 @@ func TestEachCollectionCallGetsItsOwnCollection(t *testing.T) {
 }
 
 func TestLibraryMenuHidesACollection(t *testing.T) {
-	t.Skip("HOLE(3): the collection access hides a collection")
 	quiet(t)
 	libs, err := portal.NewLibraries(stages())
 	if err != nil {

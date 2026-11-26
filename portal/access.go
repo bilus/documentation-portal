@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"slices"
 )
 
 // Access is the access of one reader: whether the reader may see each portal
@@ -122,7 +123,28 @@ func visibleSites(sites []*site, access Access) []*site {
 // access that is no CollectionAccess, and else those that it allows, asked
 // once for each collection, with a clone of its own.
 func showCollections(visible []*site, access Access) {
-	// HOLE(3): ask a CollectionAccess about a clone of each collection, once, and keep on each site only the collections it allows
+	ca, ok := access.(CollectionAccess)
+	if !ok || len(visible) == 0 || visible[0].collectionNames == nil {
+		return
+	}
+	// Not nil even when empty: listPortals reads nil as a configuration
+	// without collections, which lists every portal.
+	shown := []string{}
+	for _, c := range visible[0].configured {
+		if ca.Collection(c.Clone()) {
+			shown = append(shown, c.Name)
+		}
+	}
+	for _, v := range visible {
+		// A slice of its own: v shares collections with the site it copies.
+		var own []string
+		for _, name := range v.collections {
+			if slices.Contains(shown, name) {
+				own = append(own, name)
+			}
+		}
+		v.collectionNames, v.collections = shown, own
+	}
 }
 
 // visibleTo returns a copy of the site with only the sections visible to the

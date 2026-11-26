@@ -12,3 +12,8 @@
 - 2026-11-26. Holes filled: `2 portal.ReadConfig`, `2 portal.Collection.Clone`, `2 portal.Collection.GetExt`, with the unexported decoder `decodeExt` that `Portal.GetExt` now shares; three tests unskipped, unchanged; the collection case removed from `TestReadConfigStillRefusesOtherKeys` (Q4).
 - 2026-11-26. Stage 2 complete, uncommitted at the user's word: `GOFLAGS=-count=1 devbox run make build lint test test-e2e` passes; the census holds 1 hole, `3 portal.showCollections`, and 4 skipped tests; score unchanged. The review page compares with `624be75`. Waiting for review.
 - 2026-11-26. Stage 2 approved. Score card cached.
+- 2026-11-26. Stage 3 started from `55d6468`.
+- 2026-11-26. Hole filled: `3 portal.showCollections`. Each site keeps clones of the configured collections in `configured`, from `matchCollections`. Four tests unskipped, unchanged; `TestChatPageMenuFollowsTheCollectionAccess` added in package chat (Q5); README sections Collections, Extension fields and Access per reader extended.
+- 2026-11-26. One gate run failed in package source, which this change does not touch: `TestPreviewsRememberAFailedLoadForTheRefreshInterval`, "three requests listed the empty folder 1 times, want 3". It passed 30 times alone and in the next full run. Not investigated; it depends on a 200 ms refresh interval.
+- 2026-11-26. Stage 3 complete, uncommitted at the user's word: `GOFLAGS=-count=1 devbox run make build lint test test-e2e` passes; the census is empty; score unchanged. The review page compares with `55d6468`. Waiting for review; the defect review follows.
+- 2026-11-26. Stage 3 approved. Score card cached. The defect review of AGENTS.md runs on `bb158a7..` this commit.
