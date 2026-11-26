@@ -172,15 +172,82 @@ func TestLinkPortalsFollowAccess(t *testing.T) {
 	}
 }
 
-func TestOneListedLinkPortalOpensAtHome(t *testing.T) {
+func TestOneListedLinkPortalShowsTheHomePage(t *testing.T) {
 	cfg := linked()
 	cfg.Portals = cfg.Portals[1:2]
+	for _, url := range []string{"https://status.example.com/", "/"} {
+		cfg.Portals[0].URL = url
+		h, err := portal.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rec := get(h, "/"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `<a href="`+url+`">Status</a>`) {
+			t.Errorf("/ with the link portal %s alone: %d to %q: %q", url, rec.Code, rec.Header().Get("Location"), rec.Body)
+		}
+	}
+}
+
+func TestALinkPortalsURLIsWrittenAsChecked(t *testing.T) {
+	cfg := linked()
+	cfg.Portals[1].URL = "HTTPS://status.example.com/"
 	h, err := portal.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "https://status.example.com/" {
-		t.Errorf("/: %d to %q, want the link", rec.Code, rec.Header().Get("Location"))
+	if home := get(h, "/").Body.String(); !strings.Contains(home, statusLink) {
+		t.Errorf("the home page links the URL as configured, not as net/url writes it: %q", home)
+	}
+}
+
+func TestLinkURLsHoldNoCredentials(t *testing.T) {
+	cfg := linked()
+	cfg.Portals[1].URL = "https://ops:hunter2@status.example.com/"
+	_, err := portal.New(cfg)
+	if err == nil || !strings.Contains(err.Error(), `url "https://status.example.com/" holds a user name or a password`) || strings.Contains(err.Error(), "hunter2") {
+		t.Errorf("a link portal's URL with credentials: err = %v", err)
+	}
+	cfg = linked()
+	cfg.Portals[0].Sections = append(cfg.Portals[0].Sections, portal.Section{Title: "Reports", Type: portal.LinkSection, URL: "https://reports@reports.example.com/x"})
+	if _, err = portal.New(cfg); err == nil || !strings.Contains(err.Error(), `url "https://reports.example.com/x" holds a user name or a password`) {
+		t.Errorf("a link section's URL with a user name: err = %v", err)
+	}
+}
+
+func TestTheLinkTypeIsExact(t *testing.T) {
+	cfg := linked()
+	cfg.Portals[1].Type = "Link"
+	if _, err := portal.New(cfg); err == nil || !strings.Contains(err.Error(), `the type "Link" is not "link"`) {
+		t.Errorf("the type Link: err = %v", err)
+	}
+}
+
+func TestALinkPortalOfNoCollectionIsWarnedAbout(t *testing.T) {
+	logged := quiet(t)
+	cfg := linked()
+	cfg.Collections = []portal.Collection{{Name: "APIs", MatchLabels: []string{"apis"}}}
+	if _, err := portal.New(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if want := `portal "Support" is in no collection and is not listed`; strings.Count(logged.String(), want) != 1 || strings.Count(logged.String(), "\n") != 1 {
+		t.Errorf("logged %q, want one line with %s", logged.String(), want)
+	}
+}
+
+func TestReadConfigKeepsALinkPortalsSections(t *testing.T) {
+	const file = `
+portals:
+  - name: Status
+    type: link
+    url: /status
+    sections:
+      - {title: API, type: spec, input: pets.yaml}
+`
+	cfg, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(file)}, "pets.yaml": {Data: []byte(pets)}}, "environment.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := portal.New(cfg); err == nil || !strings.Contains(err.Error(), "a link portal takes a url and no sections") {
+		t.Errorf("a link portal with sections in the file: err = %v", err)
 	}
 }
 

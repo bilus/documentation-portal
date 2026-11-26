@@ -340,13 +340,14 @@ func servePortal(w http.ResponseWriter, r *http.Request, slug string, h func(*si
 	h(s, w, r)
 }
 
-// home redirects to the first visible section of the only listed portal, or
-// writes the home page, which links the first visible section of each listed
+// home redirects to the first visible section of the only listed portal,
+// unless it is a link portal, or writes the home page, which links the first visible section of each listed
 // portal under its name, with collections under each collection's name, or says that
 // no portal is open to the reader.
 func (rt *router) home(w http.ResponseWriter, r *http.Request) {
 	listed, collections := listPortals(viewOf(r).sites)
-	if len(listed) == 1 {
+	// A redirect to a link portal's URL could lead back here.
+	if len(listed) == 1 && listed[0].link == "" {
 		listed[0].index(w, r)
 		return
 	}

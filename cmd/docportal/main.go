@@ -509,7 +509,8 @@ func addAccount(pcfg portal.Config, issuer string) portal.Config {
 // new snapshot's libraries, so that the chat keeps its conversations across
 // snapshots. It returns the chat for the next snapshot: the one it built or
 // was given, and on a failure the one it was given, so that a snapshot that
-// fails never costs the chat its conversations.
+// fails never costs the chat its conversations. A snapshot with link portals
+// alone gets no chat page and keeps the chat it was given.
 func addChat(pcfg portal.Config, modelID string, c *chat.Chat, issuer string) (portal.Config, *chat.Chat, error) {
 	if modelID == "" {
 		return pcfg, nil, nil
@@ -517,6 +518,10 @@ func addChat(pcfg portal.Config, modelID string, c *chat.Chat, issuer string) (p
 	libs, err := portal.NewLibraries(pcfg)
 	if err != nil {
 		return portal.Config{}, c, err
+	}
+	// Link portals alone publish nothing to ask about.
+	if len(libs) == 0 {
+		return pcfg, c, nil
 	}
 	if c == nil {
 		m, err := anthropicmodel.New(modelID, anthropicmodel.Config{})

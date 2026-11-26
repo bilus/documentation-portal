@@ -70,7 +70,7 @@ func (l Limits) withDefaults() Limits {
 // Config configures the chat.
 type Config struct {
 	Model     model.LLM
-	Libraries []*portal.Library // one for each portal, whose chat page the chat serves
+	Libraries []*portal.Library // one for each portal, whose chat page the chat serves, all from one NewLibraries call
 	Limits    Limits
 
 	// Reader is the reader hook: it returns the reader ID of r's reader,
