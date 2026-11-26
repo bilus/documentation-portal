@@ -6,10 +6,16 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
+	"math"
 	"net/url"
+	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
+	"unsafe"
 
 	"gopkg.in/yaml.v3"
 )
@@ -41,11 +47,218 @@ const (
 // LinkPortal a link to a page outside the portal handler, shown under its
 // name on the home page and in the portal menu.
 type Portal struct {
-	Name     string     `yaml:"name"`
-	Type     PortalType `yaml:"type"` // empty for a portal with sections, or LinkPortal
-	URL      string     `yaml:"url"`  // a link portal's URL: a path from the server's root, or an http or https URL
-	Sections []Section  `yaml:"sections"`
-	Labels   []string   `yaml:"labels"` // for the access hook's rules and the collections' match labels
+	Name     string         `yaml:"name"`
+	Type     PortalType     `yaml:"type"` // empty for a portal with sections, or LinkPortal
+	URL      string         `yaml:"url"`  // a link portal's URL: a path from the server's root, or an http or https URL
+	Sections []Section      `yaml:"sections"`
+	Labels   []string       `yaml:"labels"`  // for the access hook's rules and the collections' match labels
+	Ext      map[string]any `yaml:",inline"` // the extension fields: those whose keys start with x-, by key, or nil
+}
+
+// Clone returns a copy of the portal that shares nothing with it: its own
+// labels, its own sections with their labels, and its own extension fields,
+// at every depth and whatever the types of their values. The portal handler keeps a clone of each portal of its
+// configuration, and gives each caller, such as the access hook, a clone of
+// its own, so that no caller's write reaches another.
+func (p Portal) Clone() Portal {
+	p.Labels = slices.Clone(p.Labels)
+	if p.Sections != nil {
+		sections := make([]Section, len(p.Sections))
+		for i, s := range p.Sections {
+			sections[i] = s.Clone()
+		}
+		p.Sections = sections
+	}
+	if p.Ext != nil {
+		p.Ext = cloneValue(p.Ext).(map[string]any)
+	}
+	return p
+}
+
+// Clone returns a copy of the section with labels of its own.
+func (s Section) Clone() Section {
+	s.Labels = slices.Clone(s.Labels)
+	return s
+}
+
+// cloneValue returns a copy of v, a value of an extension field, that shares
+// no map, list, array or pointer with it, whatever their types: those that
+// YAML gives, such as map[string]any, and those set in code, such as
+// []string or a pointer to a struct. A channel and a function, which have no
+// copy, stay shared.
+func cloneValue(v any) any {
+	if v == nil {
+		return nil
+	}
+	return deepCopy(reflect.ValueOf(v), map[visit]reflect.Value{}).Interface()
+}
+
+// visit names a map, a list or a pointer that deepCopy has copied, so that a
+// value that holds itself is copied once.
+type visit struct {
+	typ reflect.Type
+	ptr unsafe.Pointer
+	len int
+}
+
+// deepCopy returns a copy of v that shares no map, list, array or pointer
+// with it, and with seen keeps each one's copy for its other holders.
+func deepCopy(v reflect.Value, seen map[visit]reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Map:
+		if v.IsNil() {
+			return v
+		}
+		key := visit{v.Type(), v.UnsafePointer(), 0}
+		if c, ok := seen[key]; ok {
+			return c
+		}
+		c := reflect.MakeMapWithSize(v.Type(), v.Len())
+		seen[key] = c
+		for iter := v.MapRange(); iter.Next(); {
+			c.SetMapIndex(deepCopy(iter.Key(), seen), deepCopy(iter.Value(), seen))
+		}
+		return c
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
+		}
+		key := visit{v.Type(), v.UnsafePointer(), v.Len()}
+		if c, ok := seen[key]; ok {
+			return c
+		}
+		c := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		seen[key] = c
+		for i := range v.Len() {
+			c.Index(i).Set(deepCopy(v.Index(i), seen))
+		}
+		return c
+	case reflect.Array:
+		c := reflect.New(v.Type()).Elem()
+		for i := range v.Len() {
+			c.Index(i).Set(deepCopy(v.Index(i), seen))
+		}
+		return c
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		key := visit{v.Type(), v.UnsafePointer(), 0}
+		if c, ok := seen[key]; ok {
+			return c
+		}
+		c := reflect.New(v.Type().Elem())
+		seen[key] = c
+		c.Elem().Set(deepCopy(v.Elem(), seen))
+		return c
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		c := reflect.New(v.Type()).Elem()
+		c.Set(deepCopy(v.Elem(), seen))
+		return c
+	case reflect.Struct:
+		// A field that is not exported, as in time.Time, keeps its value.
+		c := reflect.New(v.Type()).Elem()
+		c.Set(v)
+		for i := range v.NumField() {
+			if c.Field(i).CanSet() {
+				c.Field(i).Set(deepCopy(v.Field(i), seen))
+			}
+		}
+		return c
+	}
+	return v
+}
+
+// GetExt returns the portal's extension fields as a T, whose fields name
+// their keys in yaml tags, such as `yaml:"x-host"`: T's zero value without
+// extension fields, or an error for an extension field that T lacks and for a
+// value that does not fit T's field. As in YAML, a number or a boolean fits a
+// string field, and a null leaves its field at the zero value. The result
+// shares nothing with the portal.
+func (p Portal) GetExt[T any]() (ext T, err error) {
+	if len(p.Ext) == 0 {
+		return ext, nil
+	}
+	// The YAML encoder panics on a value it cannot write, such as a channel
+	// set in code.
+	defer func() {
+		if r := recover(); r != nil {
+			var none T
+			ext, err = none, fmt.Errorf("portal %q: extension fields: %v", p.Name, r)
+		}
+	}()
+	data, err := yaml.Marshal(p.Ext)
+	if err != nil {
+		return ext, fmt.Errorf("portal %q: extension fields: %w", p.Name, err)
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&ext); err != nil {
+		var none T
+		return none, fmt.Errorf("portal %q: extension fields: %w", p.Name, err)
+	}
+	return ext, nil
+}
+
+// extensionFields returns unknown, the keys of a portal that its fields do
+// not name, as its extension fields, or nil without any. It refuses, naming
+// every one in order, the keys that do not start with x- and the key x-
+// alone, and then the first field in order whose value extensionValue
+// refuses.
+func extensionFields(unknown map[string]any) (map[string]any, error) {
+	if len(unknown) == 0 {
+		return nil, nil
+	}
+	keys := slices.Sorted(maps.Keys(unknown))
+	var refused []string
+	for _, key := range keys {
+		if !strings.HasPrefix(key, "x-") || key == "x-" {
+			refused = append(refused, strconv.Quote(key))
+		}
+	}
+	switch len(refused) {
+	case 0:
+	case 1:
+		return nil, fmt.Errorf("unknown key %s: only a key that starts with x- and names a field is free", refused[0])
+	default:
+		return nil, fmt.Errorf("unknown keys %s: only a key that starts with x- and names a field is free", strings.Join(refused, ", "))
+	}
+	for _, key := range keys {
+		if err := extensionValue(unknown[key]); err != nil {
+			return nil, fmt.Errorf("extension field %s: %w", key, err)
+		}
+	}
+	return unknown, nil
+}
+
+// extensionValue refuses v, a YAML value, when it holds, at any depth, a map
+// with a key that is not a string, or a number that is not finite, which
+// JSON cannot write.
+func extensionValue(v any) error {
+	switch v := v.(type) {
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(v)) {
+			if err := extensionValue(v[key]); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, e := range v {
+			if err := extensionValue(e); err != nil {
+				return err
+			}
+		}
+	case map[any]any:
+		return errors.New("a map key that is not a string")
+	case float64:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return errors.New("a number that is not finite, such as .nan or .inf")
+		}
+	}
+	return nil
 }
 
 // PortalType says whether a portal holds sections or links a page.
@@ -63,10 +276,12 @@ type Collection struct {
 
 // ReadConfig reads the portals and the collections from the configuration
 // file at name, a path inside root, into the portal configuration of root. It
-// refuses no root, a file that is missing, that is not YAML or that holds
-// more than one YAML document, a key it does not know, and an empty entry in
-// a list of portals, of sections, of collections or of match labels. An
-// empty file gives no portals. New checks the portals and the collections.
+// keeps a portal's fields whose keys start with x- as its extension fields.
+// It refuses no root, a file that is missing, that is not YAML or that holds
+// more than one YAML document, any other key it does not know, and an empty
+// entry in a list of portals, of sections, of collections or of match
+// labels. An empty file gives no portals. New checks the portals and the
+// collections.
 func ReadConfig(root fs.FS, name string) (Config, error) {
 	if root == nil {
 		return Config{}, errors.New("no documentation root")
@@ -84,7 +299,9 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			Type     PortalType `yaml:"type"`
 			URL      string     `yaml:"url"`
 			Sections []*Section `yaml:"sections"`
-			Labels   []string   `yaml:"labels"`
+			// Every key that the fields above do not name, of which only x- keys pass.
+			Ext    map[string]any `yaml:",inline"`
+			Labels []string       `yaml:"labels"`
 		} `yaml:"portals"`
 		// Pointers keep a null match label, which yaml.v3 drops from a list of strings.
 		Collections []*struct {
@@ -113,7 +330,11 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			}
 			sections = append(sections, *sec)
 		}
-		portals = append(portals, Portal{Name: p.Name, Type: p.Type, URL: p.URL, Sections: sections, Labels: p.Labels})
+		ext, err := extensionFields(p.Ext)
+		if err != nil {
+			return Config{}, fmt.Errorf("configuration file %s: portal %q: %w", name, p.Name, err)
+		}
+		portals = append(portals, Portal{Name: p.Name, Type: p.Type, URL: p.URL, Sections: sections, Labels: p.Labels, Ext: ext})
 	}
 	var collections []Collection
 	for i, g := range file.Collections {
@@ -149,6 +370,8 @@ func openPortals(cfg Config) ([]*site, error) {
 	sites := make([]*site, 0, len(cfg.Portals))
 	names := map[string]string{} // the name of the portal with each slug
 	for i, p := range cfg.Portals {
+		// The sites keep copies, so that a later write to cfg reaches no page.
+		p = p.Clone()
 		slug := slugOf(p.Name)
 		switch other, taken := names[slug]; {
 		case p.Name == "":

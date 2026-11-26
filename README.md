@@ -215,6 +215,59 @@ the page behind it. It has no pages: `/portals/{portal}/` with its slug
 answers 404, and it has no chat page. When a link portal is the only listed
 portal, `/` shows the home page with its link, and does not redirect.
 
+## Extension fields
+
+A portal of the configuration file may hold fields of the program's own,
+under keys that start with `x-`:
+
+    portals:
+      - name: Foo
+        type: link
+        url: https://foo.example.com/
+        x-host: foobar
+        x-tiers: [gold, silver]
+
+The portal reads none of them. `portal.ReadConfig` keeps them in the
+portal's `Ext`, a `map[string]any`, and every `portal.Portal` that reaches
+the program carries them, the access hook's included. `Portal.GetExt`
+decodes them into a type of the program, whose yaml tags name the keys:
+
+    type PortalExt struct {
+    	Host  string   `yaml:"x-host"`
+    	Tiers []string `yaml:"x-tiers"`
+    }
+
+    ext, err := p.GetExt[PortalExt]()
+
+A value is what YAML makes of it: a string, a number, a boolean, a list, a
+map with string keys, a null, or a timestamp for an unquoted date such as
+`2026-01-31`. docportal refuses `.nan` and `.inf`. As in YAML, a number or
+a boolean fits a string field, and a null leaves its field at the zero
+value.
+
+`GetExt` returns the zero value for a portal without extension fields, and
+an error for a field the type lacks or a value that does not fit, so a
+misspelt `x-hots` fails there and not when the file is read. A program that
+wants the failure at startup decodes every portal once after `ReadConfig`:
+
+    cfg, err := portal.ReadConfig(root, "environment.yaml")
+    // ...
+    for _, p := range cfg.Portals {
+    	if _, err := p.GetExt[PortalExt](); err != nil {
+    		return err
+    	}
+    }
+
+The access hook, `Library.Portal` and every other call that gives the
+program a `portal.Portal` give it a copy of its own, made with
+`Portal.Clone`: its labels, its sections and its extension fields are the
+caller's to keep or change, and no write reaches another request.
+
+Only portals take extension fields. docportal still refuses any other key
+it does not know: one without `x-` on a portal, and an `x-` key on a
+section, a collection or the top level of the file. docportal itself reads
+no extension field; they are for a program that embeds the portal.
+
 ## Link sections
 
 A section of type `link` puts a link of its own into the navigation bar, to
