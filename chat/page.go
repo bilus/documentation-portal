@@ -184,7 +184,13 @@ func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 			visible = append(visible, lib)
 		}
 	}
-	menu, collections := menuOf(visible, a.lib.CollectionNames())
+	// The names come from the snapshot of visible, not from a's, which a
+	// reload may have replaced since the page's route was built.
+	var names []string
+	if len(visible) > 0 {
+		names = visible[0].CollectionNames()
+	}
+	menu, collections := menuOf(visible, names)
 	return &page{chat: c, portal: a.lib.Slug(), access: access, asker: AskerOf(readerIDIn(lv.Session("readerID")), lv.Session("client")), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu, Collections: collections, Account: readAccountLinks(lv.Session("account"))}, nil
 }
 
