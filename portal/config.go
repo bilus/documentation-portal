@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
+	"math"
 	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -49,15 +53,76 @@ type Portal struct {
 	Ext      map[string]any `yaml:",inline"` // the extension fields: those whose keys start with x-, by key, or nil
 }
 
+// Clone returns a copy of the portal that shares nothing with it: its own
+// labels, its own sections with their labels, and its own extension fields,
+// at every depth. The portal handler keeps a clone of each portal of its
+// configuration, and gives each caller, such as the access hook, a clone of
+// its own, so that no caller's write reaches another.
+func (p Portal) Clone() Portal {
+	p.Labels = slices.Clone(p.Labels)
+	if p.Sections != nil {
+		sections := make([]Section, len(p.Sections))
+		for i, s := range p.Sections {
+			sections[i] = s.Clone()
+		}
+		p.Sections = sections
+	}
+	if p.Ext != nil {
+		p.Ext = cloneValue(p.Ext).(map[string]any)
+	}
+	return p
+}
+
+// Clone returns a copy of the section with labels of its own.
+func (s Section) Clone() Section {
+	s.Labels = slices.Clone(s.Labels)
+	return s
+}
+
+// cloneValue returns a copy of v, a value of an extension field, with every
+// map and list in it copied.
+func cloneValue(v any) any {
+	switch v := v.(type) {
+	case map[string]any:
+		m := make(map[string]any, len(v))
+		for k, e := range v {
+			m[k] = cloneValue(e)
+		}
+		return m
+	case map[any]any:
+		m := make(map[any]any, len(v))
+		for k, e := range v {
+			m[k] = cloneValue(e)
+		}
+		return m
+	case []any:
+		l := make([]any, len(v))
+		for i, e := range v {
+			l[i] = cloneValue(e)
+		}
+		return l
+	}
+	return v
+}
+
 // GetExt returns the portal's extension fields as a T, whose fields name
 // their keys in yaml tags, such as `yaml:"x-host"`: T's zero value without
 // extension fields, or an error for an extension field that T lacks and for a
-// value that does not fit T's field.
-func (p Portal) GetExt[T any]() (T, error) {
-	var ext T
+// value that does not fit T's field. As in YAML, a number or a boolean fits a
+// string field, and a null leaves its field at the zero value. The result
+// shares nothing with the portal.
+func (p Portal) GetExt[T any]() (ext T, err error) {
 	if len(p.Ext) == 0 {
 		return ext, nil
 	}
+	// The YAML encoder panics on a value it cannot write, such as a channel
+	// set in code.
+	defer func() {
+		if r := recover(); r != nil {
+			var none T
+			ext, err = none, fmt.Errorf("portal %q: extension fields: %v", p.Name, r)
+		}
+	}()
 	data, err := yaml.Marshal(p.Ext)
 	if err != nil {
 		return ext, fmt.Errorf("portal %q: extension fields: %w", p.Name, err)
@@ -72,44 +137,61 @@ func (p Portal) GetExt[T any]() (T, error) {
 }
 
 // extensionFields returns unknown, the keys of a portal that its fields do
-// not name, as its extension fields, or nil without any. It refuses a key
-// that does not start with x-, the key x- alone, and a value that holds a
-// map with a key that is not a string.
+// not name, as its extension fields, or nil without any. It refuses, naming
+// every one in order, the keys that do not start with x- and the key x-
+// alone, and then the first field in order whose value extensionValue
+// refuses.
 func extensionFields(unknown map[string]any) (map[string]any, error) {
 	if len(unknown) == 0 {
 		return nil, nil
 	}
-	for key, value := range unknown {
+	keys := slices.Sorted(maps.Keys(unknown))
+	var refused []string
+	for _, key := range keys {
 		if !strings.HasPrefix(key, "x-") || key == "x-" {
-			return nil, fmt.Errorf("unknown key %q: only the keys that start with x- and name a field are free", key)
+			refused = append(refused, strconv.Quote(key))
 		}
-		if !plainValue(value) {
-			return nil, fmt.Errorf("extension field %s: a map key that is not a string", key)
+	}
+	switch len(refused) {
+	case 0:
+	case 1:
+		return nil, fmt.Errorf("unknown key %s: only a key that starts with x- and names a field is free", refused[0])
+	default:
+		return nil, fmt.Errorf("unknown keys %s: only a key that starts with x- and names a field is free", strings.Join(refused, ", "))
+	}
+	for _, key := range keys {
+		if err := extensionValue(unknown[key]); err != nil {
+			return nil, fmt.Errorf("extension field %s: %w", key, err)
 		}
 	}
 	return unknown, nil
 }
 
-// plainValue reports whether v, a YAML value, holds maps with string keys
-// alone, at any depth.
-func plainValue(v any) bool {
+// extensionValue refuses v, a YAML value, when it holds, at any depth, a map
+// with a key that is not a string, or a number that is not finite, which
+// JSON cannot write.
+func extensionValue(v any) error {
 	switch v := v.(type) {
 	case map[string]any:
-		for _, e := range v {
-			if !plainValue(e) {
-				return false
+		for _, key := range slices.Sorted(maps.Keys(v)) {
+			if err := extensionValue(v[key]); err != nil {
+				return err
 			}
 		}
 	case []any:
 		for _, e := range v {
-			if !plainValue(e) {
-				return false
+			if err := extensionValue(e); err != nil {
+				return err
 			}
 		}
 	case map[any]any:
-		return false
+		return errors.New("a map key that is not a string")
+	case float64:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return errors.New("a number that is not finite, such as .nan or .inf")
+		}
 	}
-	return true
+	return nil
 }
 
 // PortalType says whether a portal holds sections or links a page.
@@ -221,6 +303,8 @@ func openPortals(cfg Config) ([]*site, error) {
 	sites := make([]*site, 0, len(cfg.Portals))
 	names := map[string]string{} // the name of the portal with each slug
 	for i, p := range cfg.Portals {
+		// The sites keep copies, so that a later write to cfg reaches no page.
+		p = p.Clone()
 		slug := slugOf(p.Name)
 		switch other, taken := names[slug]; {
 		case p.Name == "":

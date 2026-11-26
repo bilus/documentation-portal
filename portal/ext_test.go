@@ -162,3 +162,171 @@ func TestTheAccessHookGetsTheExtensionFields(t *testing.T) {
 		t.Errorf("the hook's portal: %+v, %v, want its extension fields", ext, err)
 	}
 }
+
+func TestClone(t *testing.T) {
+	p := portal.Portal{
+		Name:     "Pets",
+		Labels:   []string{"apis"},
+		Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "pets.yaml", Labels: []string{"public"}}},
+		Ext:      map[string]any{"x-host": "foobar", "x-tiers": []any{"gold", map[string]any{"name": "silver"}}, "x-owner": map[string]any{"team": "platform"}},
+	}
+	c := p.Clone()
+	if !reflect.DeepEqual(c, p) {
+		t.Fatalf("the clone %+v differs from %+v", c, p)
+	}
+	c.Labels[0] = "changed"
+	c.Sections[0].Labels[0] = "changed"
+	c.Sections[0].Title = "changed"
+	c.Ext["x-host"] = "changed"
+	c.Ext["x-new"] = true
+	c.Ext["x-tiers"].([]any)[0] = "changed"
+	c.Ext["x-tiers"].([]any)[1].(map[string]any)["name"] = "changed"
+	c.Ext["x-owner"].(map[string]any)["team"] = "changed"
+	want := portal.Portal{
+		Name:     "Pets",
+		Labels:   []string{"apis"},
+		Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "pets.yaml", Labels: []string{"public"}}},
+		Ext:      map[string]any{"x-host": "foobar", "x-tiers": []any{"gold", map[string]any{"name": "silver"}}, "x-owner": map[string]any{"team": "platform"}},
+	}
+	if !reflect.DeepEqual(p, want) {
+		t.Errorf("a write to the clone shows in the portal: %+v", p)
+	}
+	if bare := (portal.Portal{Name: "Bare"}).Clone(); bare.Labels != nil || bare.Sections != nil || bare.Ext != nil {
+		t.Errorf("the clone of a portal without lists: %+v, want nil lists", bare)
+	}
+	s := portal.Section{Title: "API", Labels: []string{"public"}}
+	sc := s.Clone()
+	sc.Labels[0] = "changed"
+	if s.Labels[0] != "public" {
+		t.Error("a write to a section's clone shows in the section")
+	}
+}
+
+// scribbler allows everything, records the portals and sections it is asked
+// about, and then writes over every part of them.
+type scribbler struct {
+	portals  []portal.Portal
+	sections []portal.Section
+}
+
+func (w *scribbler) Portal(p portal.Portal) bool {
+	w.portals = append(w.portals, p.Clone())
+	p.Ext["x-host"] = "scribbled"
+	p.Ext["x-tiers"].([]any)[0] = "scribbled"
+	p.Labels[0] = "scribbled"
+	p.Sections[0].Labels[0] = "scribbled"
+	return true
+}
+
+func (w *scribbler) Section(p portal.Portal, s portal.Section) bool {
+	w.sections = append(w.sections, s.Clone())
+	s.Labels[0] = "scribbled"
+	return true
+}
+
+func TestAHooksWritesReachNoOtherCall(t *testing.T) {
+	newConfig := func() portal.Config {
+		cfg := linked()
+		cfg.Portals = cfg.Portals[:1]
+		cfg.Portals[0].Sections[0].Labels = []string{"public"}
+		cfg.Portals[0].Ext = map[string]any{"x-host": "foobar", "x-tiers": []any{"gold"}}
+		return cfg
+	}
+	cfg, want := newConfig(), newConfig()
+	hook := &scribbler{}
+	cfg.Access = func(*http.Request) (portal.Access, error) { return hook, nil }
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if rec := get(h, "/portals/pets/specs/api"); rec.Code != http.StatusOK {
+			t.Fatalf("a page: %d", rec.Code)
+		}
+	}
+	if len(hook.portals) != 3 || len(hook.sections) != 3 {
+		t.Fatalf("the hook was asked about %d portals and %d sections, want 3 of each", len(hook.portals), len(hook.sections))
+	}
+	for i := range 3 {
+		if !reflect.DeepEqual(hook.portals[i], want.Portals[0]) || !reflect.DeepEqual(hook.sections[i], want.Portals[0].Sections[0]) {
+			t.Errorf("request %d: the hook got %+v and %+v, want the portal as configured", i+1, hook.portals[i], hook.sections[i])
+		}
+	}
+	if !reflect.DeepEqual(cfg.Portals, want.Portals) {
+		t.Errorf("the hook's writes show in the program's configuration: %+v", cfg.Portals)
+	}
+	// A write to the configuration after New reaches no page.
+	cfg.Portals[0].Ext["x-host"] = "late"
+	cfg.Portals[0].Labels[0] = "late"
+	get(h, "/portals/pets/specs/api")
+	if got := hook.portals[3]; !reflect.DeepEqual(got, want.Portals[0]) {
+		t.Errorf("the hook got %+v after a write to the configuration, want the portal as New read it", got)
+	}
+	libs, err := portal.NewLibraries(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	libs[0].Portal().Ext["x-host"] = "scribbled"
+	if got := libs[0].Portal(); !reflect.DeepEqual(got, want.Portals[0]) {
+		t.Errorf("a write to Library.Portal's result shows in the library: %+v", got)
+	}
+}
+
+func TestReadConfigReadsExtensionFieldsOfAPortalWithSections(t *testing.T) {
+	cfg := readExt(t, "portals:\n  - name: Pets\n    x-host: foobar\n    sections:\n      - {title: API, type: spec, input: pets.yaml}\n")
+	if ext, err := cfg.Portals[0].GetExt[portalExt](); err != nil || ext.Host != "foobar" {
+		t.Errorf("a portal with sections: %+v, %v", ext, err)
+	}
+}
+
+func TestReadConfigRefusesValuesJSONCannotWrite(t *testing.T) {
+	for value, want := range map[string]string{
+		".nan":            "not finite",
+		".inf":            "not finite",
+		"-.inf":           "not finite",
+		"[1, [.nan]]":     "not finite",
+		"{a: {b: .inf}}":  "not finite",
+		"[{1: a}]":        "not a string",
+		"{a: {1: b}}":     "not a string",
+		"[[{a: {~: b}}]]": "not a string",
+	} {
+		file := "portals:\n  - name: Pets\n    type: link\n    url: /pets\n    x-ok: fine\n    x-value: " + value + "\n"
+		_, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(file)}}, "environment.yaml")
+		if err == nil || !strings.Contains(err.Error(), "x-value") || !strings.Contains(err.Error(), want) {
+			t.Errorf("x-value: %s: err = %v, want one naming the field and %q", value, err, want)
+		}
+	}
+}
+
+func TestReadConfigNamesEveryUnknownKey(t *testing.T) {
+	for keys, want := range map[string]string{
+		"x-a: 1\n    zeta: 2":               `unknown key "zeta"`,
+		"alpha: 1\n    x-z: 2":              `unknown key "alpha"`,
+		"zeta: 1\n    x-m: 2\n    alpha: 3": `unknown keys "alpha", "zeta"`,
+	} {
+		file := "portals:\n  - name: Pets\n    type: link\n    url: /pets\n    " + keys + "\n"
+		for range 5 {
+			_, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(file)}}, "environment.yaml")
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("%q: err = %v, want %s", keys, err, want)
+			}
+		}
+	}
+}
+
+func TestGetExtFailsCleanly(t *testing.T) {
+	type twoFields struct {
+		Host  string `yaml:"x-a-host"`
+		Count int    `yaml:"x-b-count"`
+	}
+	p := portal.Portal{Name: "Foo", Ext: map[string]any{"x-a-host": "foobar", "x-b-count": "many"}}
+	if ext, err := p.GetExt[twoFields](); err == nil || ext != (twoFields{}) {
+		t.Errorf("a value that does not fit: %+v, %v, want the zero value and an error", ext, err)
+	}
+	for name, value := range map[string]any{"a channel": make(chan int), "a function": func() {}} {
+		p := portal.Portal{Name: "Foo", Ext: map[string]any{"x-host": value}}
+		if ext, err := p.GetExt[portalExt](); err == nil || !strings.Contains(err.Error(), "Foo") || !reflect.DeepEqual(ext, portalExt{}) {
+			t.Errorf("%s: %+v, %v, want the zero value and an error naming the portal", name, ext, err)
+		}
+	}
+}

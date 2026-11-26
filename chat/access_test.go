@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"iter"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -405,6 +406,22 @@ func TestAReconfiguredPortalStartsTheConversationOver(t *testing.T) {
 		if strings.Contains(strings.ToLower(seen), "new guide") {
 			t.Errorf("request %d after the snapshot holds the guide, hidden from the reader now: %s", i+1, seen)
 		}
+	}
+}
+
+func TestADigestToldApartWhateverTheExtensionValues(t *testing.T) {
+	nan := func(name string) portal.Portal {
+		return portal.Portal{Name: name, Ext: map[string]any{"x-f": math.NaN()}}
+	}
+	if digest(nan("Pets")) == digest(nan("Store")) {
+		t.Error("two portals with a value that JSON refuses share a digest")
+	}
+	if digest(nan("Pets")) != digest(nan("Pets")) {
+		t.Error("one portal has two digests")
+	}
+	inf := portal.Portal{Name: "Pets", Ext: map[string]any{"x-f": math.Inf(1)}}
+	if digest(inf) == digest(nan("Pets")) {
+		t.Error("two extension values that JSON refuses share a digest")
 	}
 }
 
