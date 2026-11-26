@@ -53,10 +53,12 @@ func newSite(cfg Config, p Portal, sections []*section) *site {
 	return s
 }
 
-// url returns the URL that opens the site's portal: the page of its first
-// section, or the portal's path without a section.
+// url returns the URL that opens the site's portal: a link portal's URL,
+// the page of its first section, or the portal's path without a section.
 func (s *site) url() string {
-	// HOLE(2): a link portal's URL
+	if s.link != "" {
+		return s.link
+	}
 	if len(s.sections) == 0 {
 		return (&url.URL{Path: s.base + "/portals/" + s.slug + "/"}).String()
 	}
@@ -145,9 +147,12 @@ func (s *site) docsFor(slug string) (*section, bool) {
 	return nil, false
 }
 
-// index redirects to the first section's page.
+// index redirects to a link portal's URL, or to the first section's page.
 func (s *site) index(w http.ResponseWriter, r *http.Request) {
-	// HOLE(2): redirect to a link portal's URL
+	if s.link != "" {
+		http.Redirect(w, r, s.link, http.StatusFound)
+		return
+	}
 	if len(s.sections) == 0 {
 		http.NotFound(w, r)
 		return

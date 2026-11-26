@@ -70,7 +70,6 @@ portals:
 }
 
 func TestLinkPortalChecks(t *testing.T) {
-	t.Skip("HOLE(2): check a link portal's url, and refuse its sections, a url without the type, and another type")
 	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "pets.yaml"}}
 	for name, tc := range map[string]struct {
 		p    portal.Portal
@@ -103,7 +102,6 @@ func TestLinkPortalChecks(t *testing.T) {
 }
 
 func TestLinkPortalsAreListed(t *testing.T) {
-	t.Skip("HOLE(2): link a link portal's URL from the home page and the portal menu")
 	cfg := linked()
 	cfg.BasePath = "/docs"
 	h, err := portal.New(cfg)
@@ -122,7 +120,6 @@ func TestLinkPortalsAreListed(t *testing.T) {
 }
 
 func TestLinkPortalsKeepTheirPlaceInACollection(t *testing.T) {
-	t.Skip("HOLE(2): list a link portal in its collections, in the order of the portals")
 	quiet(t)
 	cfg := linked()
 	cfg.Collections = []portal.Collection{{Name: "Operations", MatchLabels: []string{"ops"}}, {Name: "APIs", MatchLabels: []string{"apis"}}}
@@ -137,7 +134,6 @@ func TestLinkPortalsKeepTheirPlaceInACollection(t *testing.T) {
 }
 
 func TestALinkPortalHasNoPages(t *testing.T) {
-	t.Skip("HOLE(2): answer a link portal's slug as a slug of no portal")
 	h, err := portal.New(linked())
 	if err != nil {
 		t.Fatal(err)
@@ -160,7 +156,6 @@ func (a *askedAbout) Portal(p portal.Portal) bool {
 func (a *askedAbout) Section(portal.Portal, portal.Section) bool { return true }
 
 func TestLinkPortalsFollowAccess(t *testing.T) {
-	t.Skip("HOLE(2): ask the access hook about a link portal, which is visible without a section")
 	cfg := linked()
 	access := &askedAbout{}
 	cfg.Access = func(*http.Request) (portal.Access, error) { return access, nil }
@@ -178,7 +173,6 @@ func TestLinkPortalsFollowAccess(t *testing.T) {
 }
 
 func TestOneListedLinkPortalOpensAtHome(t *testing.T) {
-	t.Skip("HOLE(2): open the only listed portal at its link")
 	cfg := linked()
 	cfg.Portals = cfg.Portals[1:2]
 	h, err := portal.New(cfg)

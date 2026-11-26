@@ -6,3 +6,6 @@
 - 2026-11-26. The smoke test asserts the portals with sections alone: the skeleton cannot list a link portal before `visibleTo` is filled.
 - 2026-11-26. Skeleton complete, uncommitted, waiting for the plan's approval.
 - 2026-11-26. Plan approved with its assumptions. Score card cached.
+- 2026-11-26. Stage 2 started from the commit of the skeleton.
+- 2026-11-26. Holes filled: `2 portal.linkPortal`, `2 portal.openPortals`, `2 portal.site.url`, `2 portal.site.index`, `2 portal.site.visibleTo`, `2 portal.view.portalFor`; six tests unskipped, unchanged. README section added. Checked in the browser: a link portal under its collection, and 404 at its slug.
+- 2026-11-26. Stage 2 complete: `make build lint test test-e2e` green, 6 census lines (3 holes, 3 skipped tests), score unchanged. Open until stage 3: `NewLibraries` still returns a library for a link portal, so docportal with a chat model builds an agent for it, whose chat page answers 404. Waiting for approval.
