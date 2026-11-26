@@ -510,7 +510,8 @@ func addAccount(pcfg portal.Config, issuer string) portal.Config {
 // snapshots. It returns the chat for the next snapshot: the one it built or
 // was given, and on a failure the one it was given, so that a snapshot that
 // fails never costs the chat its conversations. A snapshot with link portals
-// alone gets no chat page and keeps the chat it was given.
+// alone gets no chat page, and the chat it was given keeps its conversations
+// and loses its agents.
 func addChat(pcfg portal.Config, modelID string, c *chat.Chat, issuer string) (portal.Config, *chat.Chat, error) {
 	if modelID == "" {
 		return pcfg, nil, nil
@@ -519,8 +520,12 @@ func addChat(pcfg portal.Config, modelID string, c *chat.Chat, issuer string) (p
 	if err != nil {
 		return portal.Config{}, c, err
 	}
-	// Link portals alone publish nothing to ask about.
+	// Link portals alone publish nothing to ask about, so a chat kept from
+	// an earlier snapshot answers no question until a later one.
 	if len(libs) == 0 {
+		if c != nil {
+			c.Clear()
+		}
 		return pcfg, c, nil
 	}
 	if c == nil {

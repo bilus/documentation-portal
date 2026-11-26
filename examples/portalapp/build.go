@@ -71,8 +71,12 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Link portals alone publish nothing to ask about.
+	// Link portals alone publish nothing to ask about, so the chat of an
+	// earlier snapshot answers no question until a later one.
 	if len(libs) == 0 {
+		if b.chat != nil {
+			b.chat.Clear()
+		}
 		return portal.New(cfg)
 	}
 	if b.chat == nil {

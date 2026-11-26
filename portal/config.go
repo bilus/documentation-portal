@@ -171,7 +171,7 @@ func openPortals(cfg Config) ([]*site, error) {
 		case p.Type != "":
 			return nil, fmt.Errorf("portal %q: the type %q is not %q", p.Name, p.Type, LinkPortal)
 		case p.URL != "":
-			return nil, fmt.Errorf("portal %q: url %q needs the type %q", p.Name, p.URL, LinkPortal)
+			return nil, fmt.Errorf("portal %q: url %q needs the type %q", p.Name, shownURL(p.URL), LinkPortal)
 		}
 		sections, err := openSections(cfg.Root, p.Sections)
 		if err != nil {
@@ -265,7 +265,7 @@ func openSection(root fs.FS, s Section) (*section, error) {
 	case s.Type == LinkSection:
 		return linkSection(sec)
 	case s.URL != "":
-		return nil, fmt.Errorf("url %q needs the type %q", s.URL, LinkSection)
+		return nil, fmt.Errorf("url %q needs the type %q", shownURL(s.URL), LinkSection)
 	case sec.Input == "":
 		return nil, fmt.Errorf("input %q names no path inside the documentation root", s.Input)
 	case s.Toc != "" && (sec.Toc == "" || sec.Toc == "." || !fs.ValidPath(sec.Toc)):
@@ -317,7 +317,13 @@ func linkSection(sec *section) (*section, error) {
 func linkURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("url %q: %w", raw, err)
+		// The parser's error quotes the whole URL, so only its cause is kept,
+		// and not even that beside a user part.
+		var parse *url.Error
+		if strings.Contains(raw, "@") || !errors.As(err, &parse) {
+			return "", fmt.Errorf("url %q does not parse", shownURL(raw))
+		}
+		return "", fmt.Errorf("url %q: %w", raw, parse.Err)
 	}
 	if u.User != nil {
 		// The error leaves the user part out, which may hold a password.
@@ -326,12 +332,28 @@ func linkURL(raw string) (string, error) {
 	}
 	// String would write a path of two slashes back as a host.
 	p := u.EscapedPath()
-	rooted := u.Scheme == "" && u.Host == "" && u.User == nil && strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//")
+	rooted := u.Scheme == "" && u.Host == "" && strings.HasPrefix(p, "/") && !strings.HasPrefix(p, "//")
 	web := (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 	if !rooted && !web {
-		return "", fmt.Errorf("url %q is neither a path that starts with one / nor an http or https URL with a host", raw)
+		return "", fmt.Errorf("url %q is neither a path that starts with one / nor an http or https URL with a host", shownURL(raw))
 	}
 	return u.String(), nil
+}
+
+// shownURL returns raw, a URL of the configuration, for an error message:
+// as it is without an @, which every user part needs, else without its user
+// part, and not at all when it does not parse, so that no message holds a
+// password.
+func shownURL(raw string) string {
+	if !strings.Contains(raw, "@") {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "(not shown)"
+	}
+	u.User = nil
+	return u.String()
 }
 
 // cleanPath returns p without a leading ./ and a trailing /, so that ./docs/

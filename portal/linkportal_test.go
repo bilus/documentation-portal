@@ -213,6 +213,31 @@ func TestLinkURLsHoldNoCredentials(t *testing.T) {
 	}
 }
 
+func TestNoErrorHoldsALinkURLsPassword(t *testing.T) {
+	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "pets.yaml"}}
+	for name, p := range map[string]portal.Portal{
+		"a url with no type":         {Name: "Status", URL: "https://ops:hunter2@status.example.com/", Sections: api},
+		"a url that does not parse":  {Name: "Status", Type: portal.LinkPortal, URL: "https://ops:hunter2@status.example.com/%zz"},
+		"a bad port":                 {Name: "Status", Type: portal.LinkPortal, URL: "https://ops:hunter2@status.example.com:x/"},
+		"another scheme":             {Name: "Status", Type: portal.LinkPortal, URL: "ftp://ops:hunter2@status.example.com/"},
+		"a section's url, no type":   {Name: "Status", Sections: []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "pets.yaml", URL: "https://ops:hunter2@status.example.com/"}}},
+		"a section's unparsable url": {Name: "Status", Sections: []portal.Section{{Title: "Reports", Type: portal.LinkSection, URL: "https://ops:hunter2@status.example.com/%zz"}}},
+	} {
+		cfg := linked()
+		cfg.Portals = []portal.Portal{cfg.Portals[0], p}
+		_, err := portal.New(cfg)
+		if err == nil || strings.Contains(err.Error(), "hunter2") || strings.Contains(err.Error(), "ops") || !strings.Contains(err.Error(), "Status") {
+			t.Errorf("%s: err = %v, want an error that names the portal and holds no user part", name, err)
+		}
+	}
+	// Without a user part, the error still shows the URL and the parser's cause.
+	cfg := linked()
+	cfg.Portals[1].URL = "/a%zz"
+	if _, err := portal.New(cfg); err == nil || !strings.Contains(err.Error(), `url "/a%zz"`) || !strings.Contains(err.Error(), "invalid URL escape") {
+		t.Errorf("a url that does not parse, without a user part: err = %v", err)
+	}
+}
+
 func TestTheLinkTypeIsExact(t *testing.T) {
 	cfg := linked()
 	cfg.Portals[1].Type = "Link"

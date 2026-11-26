@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/bilus/documentation-portal/chat"
 	"github.com/bilus/documentation-portal/portal"
 )
 
@@ -900,6 +902,21 @@ func TestAddChatSkipsLinkPortalsAlone(t *testing.T) {
 	got, c, err := addChat(pcfg, "claude-opus-5-5", nil, "")
 	if err != nil || c != nil || got.Chat != nil {
 		t.Fatalf("link portals alone with a chat model: chat %v, routes %v, err = %v", c, got.Chat, err)
+	}
+	// A chat kept from a snapshot with documentation loses its agents.
+	docs, err := portal.ReadConfig(os.DirFS("../../testdata"), "environment.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, kept, err := addChat(docs, "claude-opus-5-5", nil, "")
+	if err != nil || kept == nil {
+		t.Fatalf("a snapshot with documentation: chat %v, err = %v", kept, err)
+	}
+	if _, again, err := addChat(pcfg, "claude-opus-5-5", kept, ""); err != nil || again != kept {
+		t.Fatalf("a later snapshot of link portals alone: chat %v, err = %v, want the same chat", again, err)
+	}
+	if _, err := kept.Ask(t.Context(), "petstore", portal.Everything, chat.AskerOf("", "client"), "conv", "How?"); !errors.Is(err, chat.ErrNoPortal) {
+		t.Errorf("a question about the removed documentation: err = %v, want ErrNoPortal", err)
 	}
 	if _, err := portal.New(got); err != nil {
 		t.Errorf("the portal handler: %v", err)

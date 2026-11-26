@@ -230,6 +230,16 @@ func (c *Chat) Reload(libs []*portal.Library) error {
 	return nil
 }
 
+// Clear removes the chat's agents, for a snapshot of the documentation that
+// publishes nothing, such as link portals alone, so that every question
+// gets ErrNoPortal until the next Reload. It keeps the sessions, the
+// conversations and the question counts.
+func (c *Chat) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.agents = nil
+}
+
 // agentFor returns the agent of the portal whose slug is slug, or false.
 func (c *Chat) agentFor(slug string) (*portalAgent, bool) {
 	for _, a := range c.currentAgents() {
