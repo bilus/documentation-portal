@@ -631,3 +631,67 @@ func TestChatPageMenuListsCollections(t *testing.T) {
 		}
 	}
 }
+
+// without allows every portal but the one it names, and every section.
+type without string
+
+func (w without) Portal(p portal.Portal) bool                { return p.Name != string(w) }
+func (w without) Section(portal.Portal, portal.Section) bool { return true }
+
+// collected returns the portal handler with a chat over portals, each with
+// the spec section API, and collections, for readers with access.
+func collected(t *testing.T, access portal.Access, collections []portal.Collection, portals ...portal.Portal) http.Handler {
+	t.Helper()
+	for i := range portals {
+		portals[i].Sections = []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
+	}
+	cfg := portal.Config{
+		Root:        fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")}},
+		Portals:     portals,
+		Collections: collections,
+		Access:      func(*http.Request) (portal.Access, error) { return access, nil },
+	}
+	libs, err := portal.NewLibraries(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := New(Config{Model: fakemodel.New("opus", nil), Libraries: libs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Chat = c.Routes()
+	prev := log.Writer()
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+func TestChatPageMenuCountsTheListedPortals(t *testing.T) {
+	auto := []portal.Collection{{Name: "AutoStage API", MatchLabels: []string{"autostage"}}}
+	h := collected(t, portal.Everything, auto, portal.Portal{Name: "Staging", Labels: []string{"autostage"}}, portal.Portal{Name: "Lab"})
+	for _, path := range []string{"/portals/staging/chat", "/portals/lab/chat"} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if page := rec.Body.String(); rec.Code != http.StatusOK || strings.Contains(page, `<details class="portal-menu">`) {
+			t.Errorf("%s: %d, with a menu of one listed portal: %q", path, rec.Code, page)
+		}
+	}
+}
+
+func TestChatPageMenuFollowsAccess(t *testing.T) {
+	collections := []portal.Collection{{Name: "AutoStage API", MatchLabels: []string{"autostage"}}, {Name: "Ingest APIs", MatchLabels: []string{"live-ingest"}}}
+	h := collected(t, without("Ingest"), collections,
+		portal.Portal{Name: "Staging", Labels: []string{"autostage"}},
+		portal.Portal{Name: "Production", Labels: []string{"autostage"}},
+		portal.Portal{Name: "Ingest", Labels: []string{"live-ingest"}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/staging/chat", nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, `>AutoStage API</span>`) || !strings.Contains(page, `>Production</a>`) || strings.Contains(page, "Ingest") {
+		t.Errorf("the chat menu without Ingest: %d %q", rec.Code, page)
+	}
+}

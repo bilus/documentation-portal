@@ -94,4 +94,10 @@ Each stage ends with `devbox run make build lint test test-e2e`, the hole census
 
 ### Stage 6: the defect review's findings
 
-Added after the defect review of AGENTS.md, if a finding needs a change.
+- Goal: the checks refuse a null and a blank match label and a blank name, a library's collection names cannot be changed through its getters, the chat menu's keys are unique, and the tests catch the eight wrong implementations of the review.
+- Requirement: 1, 3, 8, 9, 10, 11, 12.
+- Dependencies: stage 5.
+- Holes: none; each change is inside one function's body.
+- Changes: `ReadConfig` refuses a null entry of `matchLabels`; `matchCollections` refuses a name and a match label that are blank after trimming; `Library.Collections` and `Library.CollectionNames` return copies; `page.templ` keys the menu's entries by index.
+- Acceptance: `TestLabelsWithoutCollectionsListEveryPortal`, and new tests that fail on each of the eight wrong implementations: two collections of one name apart, an empty match label first, the chat menu with a portal of no collection and one listed portal, the chat menu under an access that hides a collection's portals, one listed portal after an unlisted one, `.Nav.Collections` with one listed portal, and custom templates that read `.Portals` and `.Nav.Menu` with collections. Also the portal menu under an access hook.
+- Size: 30 lines of code, 120 of tests.

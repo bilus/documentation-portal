@@ -331,3 +331,135 @@ func TestLibraryCollections(t *testing.T) {
 		t.Errorf("without collections: %v", err)
 	}
 }
+
+func TestLabelsWithoutCollectionsListEveryPortal(t *testing.T) {
+	logged := quiet(t)
+	cfg := stages()
+	cfg.Collections = nil
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := get(h, "/").Body.String()
+	if !inOrder(home, "<ul>", link("staging", "Staging"), link("production", "Production"), link("ingest", "Ingest"), link("lab", "Lab"), "</ul>") || strings.Contains(home, "<h2>") {
+		t.Errorf("/: %q", home)
+	}
+	page := get(h, "/portals/lab/specs/api").Body.String()
+	nav := page[max(strings.Index(page, "<nav"), 0):max(strings.Index(page, "</nav>"), 0)]
+	if !inOrder(nav, `<div class="portal-menu-list">`+link("staging", "Staging")+link("production", "Production")+link("ingest", "Ingest")+link("lab", "Lab")+`</div>`) || strings.Contains(page, "portal-menu-collection") {
+		t.Errorf("the navigation bar: %q", nav)
+	}
+	for l, want := range map[string]int{link("staging", "Staging"): 1, link("ingest", "Ingest"): 1} {
+		if n := strings.Count(home, l); n != want {
+			t.Errorf("%d of %s on the home page, want %d", n, l, want)
+		}
+	}
+	if logged.Len() != 0 {
+		t.Errorf("logged %q, want nothing", logged.String())
+	}
+}
+
+func TestCollectionChecksAnywhereInTheList(t *testing.T) {
+	quiet(t)
+	auto := []string{"autostage"}
+	for name, tc := range map[string]struct {
+		collections []portal.Collection
+		want        string
+	}{
+		"one name twice, apart":      {[]portal.Collection{{Name: "A", MatchLabels: auto}, {Name: "B", MatchLabels: auto}, {Name: "A", MatchLabels: auto}}, `two collections have the name "A"`},
+		"an empty label first":       {[]portal.Collection{{Name: "Blank", MatchLabels: []string{"", "autostage"}}}, `collection "Blank" has an empty match label`},
+		"a blank label":              {[]portal.Collection{{Name: "Blank", MatchLabels: []string{"autostage", " \t"}}}, `collection "Blank" has an empty match label`},
+		"a blank name":               {[]portal.Collection{{Name: "A", MatchLabels: auto}, {Name: " ", MatchLabels: auto}}, "collection 2 has no name"},
+		"a blank name before others": {[]portal.Collection{{Name: "\t", MatchLabels: auto}, {Name: "A", MatchLabels: auto}}, "collection 1 has no name"},
+	} {
+		cfg := stages()
+		cfg.Collections = tc.collections
+		if _, err := portal.New(cfg); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %s", name, err, tc.want)
+		}
+	}
+}
+
+func TestReadConfigRefusesANullMatchLabel(t *testing.T) {
+	for _, data := range []string{
+		"collections:\n  - name: N\n    matchLabels: [a, ~]\n",
+		"collections:\n  - name: N\n    matchLabels:\n      - a\n      -\n",
+	} {
+		cfg, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(data)}}, "environment.yaml")
+		if err == nil || !strings.Contains(err.Error(), `collection "N": match label 2 is empty`) {
+			t.Errorf("%q: %+v, err = %v, want the second match label refused", data, cfg.Collections, err)
+		}
+	}
+}
+
+func TestALibrarysCollectionsAreCopies(t *testing.T) {
+	libs, err := portal.NewLibraries(stages())
+	if err != nil {
+		t.Fatal(err)
+	}
+	libs[0].CollectionNames()[0] = "Changed"
+	libs[0].Collections()[0] = "Changed"
+	for _, l := range libs {
+		if slices.Contains(l.CollectionNames(), "Changed") || slices.Contains(l.Collections(), "Changed") {
+			t.Errorf("%s: a caller's write shows: %v %v", l.Name(), l.CollectionNames(), l.Collections())
+		}
+	}
+}
+
+func TestOneListedPortalAfterAnUnlistedOne(t *testing.T) {
+	quiet(t)
+	cfg := stages()
+	cfg.Portals = []portal.Portal{cfg.Portals[3], cfg.Portals[1]} // Lab, then Production
+	cfg.Collections = cfg.Collections[:1]
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/portals/production/specs/api" {
+		t.Errorf("/: %d to %q, want the listed portal", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestThePortalMenuFollowsAccess(t *testing.T) {
+	quiet(t)
+	cfg := stages()
+	cfg.Access = func(*http.Request) (portal.Access, error) { return named{"Staging", "Production", "Lab"}, nil }
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := get(h, "/portals/production/specs/api").Body.String()
+	nav := page[max(strings.Index(page, "<nav"), 0):max(strings.Index(page, "</nav>"), 0)]
+	if !inOrder(nav, `<span class="portal-menu-collection">AutoStage API</span>`, link("staging", "Staging"), link("production", "Production"), `<span class="portal-menu-collection">Prerelease</span>`) || strings.Contains(nav, "Ingest") {
+		t.Errorf("the menu without Ingest: %q", nav)
+	}
+}
+
+// flatTemplates are custom templates that read the lists of the listed
+// portals and the collections' names, each in its own brackets.
+var flatTemplates = fstest.MapFS{
+	"home.html": {Data: []byte(`home:{{range .Portals}}({{.Label}}){{end}}`)},
+	"nav.html":  {Data: []byte(`{{define "nav"}}nav:{{range .Nav.Menu}}({{.Label}}){{end}}{{range .Nav.Collections}}[{{.Name}}]{{end}}{{end}}`)},
+}
+
+func TestCustomTemplatesGetTheListedPortalsOnce(t *testing.T) {
+	quiet(t)
+	h, err := portal.New(stages(), portal.WithCustomTemplates(flatTemplates))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if home := get(h, "/").Body.String(); !strings.Contains(home, "home:(Staging)(Production)(Ingest)") || strings.Contains(home, "(Lab)") {
+		t.Errorf(".Portals with collections: %q", home)
+	}
+	if page := get(h, "/portals/lab/specs/api").Body.String(); !strings.Contains(page, "nav:(Staging)(Production)(Ingest)[AutoStage API][Ingest APIs][Prerelease]") {
+		t.Errorf(".Nav.Menu and .Nav.Collections with collections: %q", page)
+	}
+	cfg := stages()
+	cfg.Portals = []portal.Portal{cfg.Portals[1], cfg.Portals[3]} // Production and Lab
+	if h, err = portal.New(cfg, portal.WithCustomTemplates(flatTemplates)); err != nil {
+		t.Fatal(err)
+	}
+	if page := get(h, "/portals/lab/specs/api").Body.String(); !strings.Contains(page, "nav:") || strings.Contains(page, "nav:(") || strings.Contains(page, "nav:[") {
+		t.Errorf("the bar with one listed portal holds a menu: %q", page)
+	}
+}

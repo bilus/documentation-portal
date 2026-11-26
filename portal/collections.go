@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 )
 
 // portalCollection is a collection as the home page and the portal menu list
@@ -31,7 +32,7 @@ func collectPortals(collections []Collection, sites []*site) error {
 // labels its portal's labels all hold, and every site the name of every
 // collection. It returns a problem for each portal of no collection and each
 // collection of no portal, and refuses a collection without a name, without
-// match labels, with an empty match label, or with the name of another
+// match labels, with a match label that is empty or blank, or with the name of another
 // collection. Without collections it changes nothing.
 func matchCollections(collections []Collection, sites []*site) (problems []string, err error) {
 	if len(collections) == 0 {
@@ -40,13 +41,13 @@ func matchCollections(collections []Collection, sites []*site) (problems []strin
 	names := make([]string, 0, len(collections))
 	for i, g := range collections {
 		switch {
-		case g.Name == "":
+		case strings.TrimSpace(g.Name) == "":
 			return nil, fmt.Errorf("collection %d has no name", i+1)
 		case slices.Contains(names, g.Name):
 			return nil, fmt.Errorf("two collections have the name %q", g.Name)
 		case len(g.MatchLabels) == 0:
 			return nil, fmt.Errorf("collection %q has no match labels", g.Name)
-		case slices.Contains(g.MatchLabels, ""):
+		case slices.ContainsFunc(g.MatchLabels, func(l string) bool { return strings.TrimSpace(l) == "" }):
 			return nil, fmt.Errorf("collection %q has an empty match label", g.Name)
 		}
 		names = append(names, g.Name)

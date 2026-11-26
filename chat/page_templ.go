@@ -124,9 +124,9 @@ func chatPage(lv live.Ctx, p *page) templ.Component {
 			}
 			if len(p.Collections) > 0 {
 				/* dead render only */ _keys52_10 := live.NewKeys()
-				for _, c := range p.Collections {
+				for i, c := range p.Collections {
 					/* dead render only */ _keys54_11 := live.NewKeys()
-					_key52_10 := "collection/" + c.Name
+					_key52_10 := "collection-" + strconv.Itoa(i)
 					/* dead render only */ if err := _keys52_10.Add(_key52_10); err != nil {
 						return err
 					}
@@ -137,7 +137,7 @@ func chatPage(lv live.Ctx, p *page) templ.Component {
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(c.Name)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `chat/page.templ`, Line: 54, Col: 83}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `chat/page.templ`, Line: 54, Col: 92}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -147,8 +147,8 @@ func chatPage(lv live.Ctx, p *page) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					for _, l := range c.Links {
-						_key54_11 := c.Name + "/" + l.URL
+					for j, l := range c.Links {
+						_key54_11 := "link-" + strconv.Itoa(i) + "-" + strconv.Itoa(j)
 						/* dead render only */ if err := _keys54_11.Add(_key54_11); err != nil {
 							return err
 						}
@@ -159,7 +159,7 @@ func chatPage(lv live.Ctx, p *page) templ.Component {
 						var templ_7745c5c3_Var8 templ.SafeURL
 						templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL(l.URL))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `chat/page.templ`, Line: 56, Col: 67}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `chat/page.templ`, Line: 56, Col: 96}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 						if templ_7745c5c3_Err != nil {
@@ -172,7 +172,7 @@ func chatPage(lv live.Ctx, p *page) templ.Component {
 						var templ_7745c5c3_Var9 string
 						templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(l.Label)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `chat/page.templ`, Line: 56, Col: 79}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `chat/page.templ`, Line: 56, Col: 108}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 						if templ_7745c5c3_Err != nil {
