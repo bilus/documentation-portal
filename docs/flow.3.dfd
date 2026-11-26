@@ -1,5 +1,5 @@
-# Process 3, the body of portal.New: boxes 3.1 to 3.3 in the order it calls
-# them, and box 3.4, the portal handler's answer to each request that box 9
+# Process 3, the body of portal.New: boxes 3.1, 3.5, 3.2 and 3.3 in the order
+# it calls them, and box 3.4, the portal handler's answer to each request that box 9
 # sends it. New does not call box 3.4: a handler's answer is drawn in the
 # diagram of the function that builds the handler, after the entity that
 # calls it, as box 9.4 is in flow.9.dfd. The router travels to box 9 as the
@@ -15,6 +15,12 @@
     > content directory path
     < content directory handle
     <Documentation root>
+> groups, sites
+[3.5. Put each portal into the groups whose match labels it holds
+ so that the home page and the portal menu list the portals by group, and the log names each portal of no group and each group of no portal
+ (portal.groupPortals)]
+    > group problem
+    <Log>
 >
 [3.2. Load the Elements assets
  or refuse to start without them
@@ -31,6 +37,8 @@
 
 # type: portal configuration = portal.Config
 # type: sites = []*portal.site
+# type: groups = []portal.Group
+# type: group problem = string
 # type: content directory handle = io/fs.FS
 # type: Elements assets = io/fs.FS
 # type: portal handler = net/http.Handler

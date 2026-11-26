@@ -41,14 +41,22 @@ const (
 type Portal struct {
 	Name     string    `yaml:"name"`
 	Sections []Section `yaml:"sections"`
-	Labels   []string  `yaml:"labels"` // for the access hook's rules; the portal reads none
+	Labels   []string  `yaml:"labels"` // for the access hook's rules and the groups' match labels
 }
 
-// ReadConfig reads the portals from the configuration file at name, a path
-// inside root, into the portal configuration of root. It refuses no root, a
-// file that is missing, that is not YAML or that holds more than one YAML
-// document, a key it does not know, and an empty entry in a list of portals
-// or of sections. An empty file gives no portals. New checks the portals.
+// Group is a named set of portals, listed under its name on the home page
+// and in the portal menu: the portals whose labels hold every match label.
+type Group struct {
+	Name        string   `yaml:"name"`
+	MatchLabels []string `yaml:"matchLabels"`
+}
+
+// ReadConfig reads the portals and the groups from the configuration file at
+// name, a path inside root, into the portal configuration of root. It refuses
+// no root, a file that is missing, that is not YAML or that holds more than
+// one YAML document, a key it does not know, and an empty entry in a list of
+// portals, of sections or of groups. An empty file gives no portals. New
+// checks the portals and the groups.
 func ReadConfig(root fs.FS, name string) (Config, error) {
 	if root == nil {
 		return Config{}, errors.New("no documentation root")
@@ -66,6 +74,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			Sections []*Section `yaml:"sections"`
 			Labels   []string   `yaml:"labels"`
 		} `yaml:"portals"`
+		Groups []*Group `yaml:"groups"`
 	}
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, fmt.Errorf("configuration file %s: %w", name, err)
@@ -90,6 +99,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 		}
 		portals = append(portals, Portal{Name: p.Name, Sections: sections, Labels: p.Labels})
 	}
+	// HOLE(2): copy the groups into the portal configuration, and refuse an empty entry
 	return Config{Root: root, Portals: portals}, nil
 }
 

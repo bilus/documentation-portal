@@ -25,6 +25,9 @@ func NewLibraries(cfg Config) ([]*Library, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := matchGroups(cfg.Groups, sites); err != nil {
+		return nil, err
+	}
 	libs := make([]*Library, 0, len(sites))
 	for _, s := range sites {
 		libs = append(libs, &Library{s: s})
@@ -57,6 +60,20 @@ func (l *Library) URL() string { return l.s.url() }
 
 // ChatURL returns the URL of the chat page of the library's portal.
 func (l *Library) ChatURL() string { return l.s.chatURL() }
+
+// Groups returns the names of the groups of the library's portal, in the
+// groups' order: none for a portal of no group, and none without groups.
+func (l *Library) Groups() []string {
+	// HOLE(4): the names of the portal's groups
+	return nil
+}
+
+// GroupNames returns the name of every group of the portal configuration,
+// in order, or none without groups.
+func (l *Library) GroupNames() []string {
+	// HOLE(4): the name of every group
+	return nil
+}
 
 // SectionLink links a section's page from the navigation bar.
 type SectionLink struct {
