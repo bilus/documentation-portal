@@ -15,11 +15,11 @@
     > content directory path
     < content directory handle
     <Documentation root>
-> groups, sites
-[3.5. Put each portal into the groups whose match labels it holds
- so that the home page and the portal menu list the portals by group, and the log names each portal of no group and each group of no portal
- (portal.groupPortals)]
-    > group problem
+> collections, sites
+[3.5. Put each portal into the collections whose match labels it holds
+ so that the home page and the portal menu list the portals by collection, and the log names each portal of no collection and each collection of no portal
+ (portal.collectPortals)]
+    > collection problem
     <Log>
 >
 [3.2. Load the Elements assets
@@ -37,8 +37,8 @@
 
 # type: portal configuration = portal.Config
 # type: sites = []*portal.site
-# type: groups = []portal.Group
-# type: group problem = string
+# type: collections = []portal.Collection
+# type: collection problem = string
 # type: content directory handle = io/fs.FS
 # type: Elements assets = io/fs.FS
 # type: portal handler = net/http.Handler

@@ -25,7 +25,7 @@ func NewLibraries(cfg Config) ([]*Library, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := matchGroups(cfg.Groups, sites); err != nil {
+	if _, err := matchCollections(cfg.Collections, sites); err != nil {
 		return nil, err
 	}
 	libs := make([]*Library, 0, len(sites))
@@ -61,17 +61,17 @@ func (l *Library) URL() string { return l.s.url() }
 // ChatURL returns the URL of the chat page of the library's portal.
 func (l *Library) ChatURL() string { return l.s.chatURL() }
 
-// Groups returns the names of the groups of the library's portal, in the
-// groups' order: none for a portal of no group, and none without groups.
-func (l *Library) Groups() []string {
-	// HOLE(4): the names of the portal's groups
+// Collections returns the names of the collections of the library's portal, in the
+// collections' order: none for a portal of no collection, and none without collections.
+func (l *Library) Collections() []string {
+	// HOLE(5): the names of the portal's collections
 	return nil
 }
 
-// GroupNames returns the name of every group of the portal configuration,
-// in order, or none without groups.
-func (l *Library) GroupNames() []string {
-	// HOLE(4): the name of every group
+// CollectionNames returns the name of every collection of the portal configuration,
+// in order, or none without collections.
+func (l *Library) CollectionNames() []string {
+	// HOLE(5): the name of every collection
 	return nil
 }
 

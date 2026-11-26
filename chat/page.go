@@ -138,7 +138,7 @@ func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 		nav = append(nav, navLink{Label: s.Title, URL: s.URL})
 	}
 	nav = append(nav, navLink{Label: "Chat", URL: a.lib.ChatURL(), Current: true})
-	// HOLE(4): with groups, list the menu's portals under their groups, and leave out a portal of no group
+	// HOLE(5): with collections, list the menu's portals under their collections, and leave out a portal of no collection
 	var menu []navLink
 	for _, other := range c.currentAgents() {
 		if visible, ok := other.lib.For(access); ok {
