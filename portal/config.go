@@ -9,11 +9,13 @@ import (
 	"maps"
 	"math"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"unicode"
+	"unsafe"
 
 	"gopkg.in/yaml.v3"
 )
@@ -55,7 +57,7 @@ type Portal struct {
 
 // Clone returns a copy of the portal that shares nothing with it: its own
 // labels, its own sections with their labels, and its own extension fields,
-// at every depth. The portal handler keeps a clone of each portal of its
+// at every depth and whatever the types of their values. The portal handler keeps a clone of each portal of its
 // configuration, and gives each caller, such as the access hook, a clone of
 // its own, so that no caller's write reaches another.
 func (p Portal) Clone() Portal {
@@ -79,28 +81,93 @@ func (s Section) Clone() Section {
 	return s
 }
 
-// cloneValue returns a copy of v, a value of an extension field, with every
-// map and list in it copied.
+// cloneValue returns a copy of v, a value of an extension field, that shares
+// no map, list, array or pointer with it, whatever their types: those that
+// YAML gives, such as map[string]any, and those set in code, such as
+// []string or a pointer to a struct. A channel and a function, which have no
+// copy, stay shared.
 func cloneValue(v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		m := make(map[string]any, len(v))
-		for k, e := range v {
-			m[k] = cloneValue(e)
+	if v == nil {
+		return nil
+	}
+	return deepCopy(reflect.ValueOf(v), map[visit]reflect.Value{}).Interface()
+}
+
+// visit names a map, a list or a pointer that deepCopy has copied, so that a
+// value that holds itself is copied once.
+type visit struct {
+	typ reflect.Type
+	ptr unsafe.Pointer
+	len int
+}
+
+// deepCopy returns a copy of v that shares no map, list, array or pointer
+// with it, and with seen keeps each one's copy for its other holders.
+func deepCopy(v reflect.Value, seen map[visit]reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Map:
+		if v.IsNil() {
+			return v
 		}
-		return m
-	case map[any]any:
-		m := make(map[any]any, len(v))
-		for k, e := range v {
-			m[k] = cloneValue(e)
+		key := visit{v.Type(), v.UnsafePointer(), 0}
+		if c, ok := seen[key]; ok {
+			return c
 		}
-		return m
-	case []any:
-		l := make([]any, len(v))
-		for i, e := range v {
-			l[i] = cloneValue(e)
+		c := reflect.MakeMapWithSize(v.Type(), v.Len())
+		seen[key] = c
+		for iter := v.MapRange(); iter.Next(); {
+			c.SetMapIndex(deepCopy(iter.Key(), seen), deepCopy(iter.Value(), seen))
 		}
-		return l
+		return c
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
+		}
+		key := visit{v.Type(), v.UnsafePointer(), v.Len()}
+		if c, ok := seen[key]; ok {
+			return c
+		}
+		c := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		seen[key] = c
+		for i := range v.Len() {
+			c.Index(i).Set(deepCopy(v.Index(i), seen))
+		}
+		return c
+	case reflect.Array:
+		c := reflect.New(v.Type()).Elem()
+		for i := range v.Len() {
+			c.Index(i).Set(deepCopy(v.Index(i), seen))
+		}
+		return c
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		key := visit{v.Type(), v.UnsafePointer(), 0}
+		if c, ok := seen[key]; ok {
+			return c
+		}
+		c := reflect.New(v.Type().Elem())
+		seen[key] = c
+		c.Elem().Set(deepCopy(v.Elem(), seen))
+		return c
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		c := reflect.New(v.Type()).Elem()
+		c.Set(deepCopy(v.Elem(), seen))
+		return c
+	case reflect.Struct:
+		// A field that is not exported, as in time.Time, keeps its value.
+		c := reflect.New(v.Type()).Elem()
+		c.Set(v)
+		for i := range v.NumField() {
+			if c.Field(i).CanSet() {
+				c.Field(i).Set(deepCopy(v.Field(i), seen))
+			}
+		}
+		return c
 	}
 	return v
 }

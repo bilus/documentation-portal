@@ -109,15 +109,14 @@ func (s *site) visibleTo(access Access) (*site, bool) {
 	if access == nil {
 		return nil, false
 	}
-	// The hook gets a copy of the portal, so that its writes reach no other
-	// request.
-	p := s.config.Clone()
-	if !access.Portal(p) {
+	// Each call of the hook gets copies of its own, so that a write reaches
+	// no other request and no later call of this one.
+	if !access.Portal(s.config.Clone()) {
 		return nil, false
 	}
 	var sections []*section
 	for _, sec := range s.sections {
-		if access.Section(p, sec.config.Clone()) {
+		if access.Section(s.config.Clone(), sec.config.Clone()) {
 			sections = append(sections, sec)
 		}
 	}

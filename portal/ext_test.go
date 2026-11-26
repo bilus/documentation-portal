@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/bilus/documentation-portal/portal"
 )
@@ -207,6 +208,7 @@ func TestClone(t *testing.T) {
 type scribbler struct {
 	portals  []portal.Portal
 	sections []portal.Section
+	owners   []portal.Portal // the portal of each section call
 }
 
 func (w *scribbler) Portal(p portal.Portal) bool {
@@ -220,7 +222,10 @@ func (w *scribbler) Portal(p portal.Portal) bool {
 
 func (w *scribbler) Section(p portal.Portal, s portal.Section) bool {
 	w.sections = append(w.sections, s.Clone())
+	w.owners = append(w.owners, p.Clone())
 	s.Labels[0] = "scribbled"
+	p.Ext["x-host"] = "scribbled by a section call"
+	p.Labels[0] = "scribbled by a section call"
 	return true
 }
 
@@ -248,6 +253,9 @@ func TestAHooksWritesReachNoOtherCall(t *testing.T) {
 		t.Fatalf("the hook was asked about %d portals and %d sections, want 3 of each", len(hook.portals), len(hook.sections))
 	}
 	for i := range 3 {
+		if !reflect.DeepEqual(hook.owners[i], want.Portals[0]) {
+			t.Errorf("request %d: the section call got the portal %+v, which the portal call wrote to", i+1, hook.owners[i])
+		}
 		if !reflect.DeepEqual(hook.portals[i], want.Portals[0]) || !reflect.DeepEqual(hook.sections[i], want.Portals[0].Sections[0]) {
 			t.Errorf("request %d: the hook got %+v and %+v, want the portal as configured", i+1, hook.portals[i], hook.sections[i])
 		}
@@ -328,5 +336,95 @@ func TestGetExtFailsCleanly(t *testing.T) {
 		if ext, err := p.GetExt[portalExt](); err == nil || !strings.Contains(err.Error(), "Foo") || !reflect.DeepEqual(ext, portalExt{}) {
 			t.Errorf("%s: %+v, %v, want the zero value and an error naming the portal", name, ext, err)
 		}
+	}
+}
+
+// twoSections allows everything, and writes to the portal of each section
+// call after recording it.
+type twoSections struct{ owners []portal.Portal }
+
+func (w *twoSections) Portal(portal.Portal) bool { return true }
+func (w *twoSections) Section(p portal.Portal, s portal.Section) bool {
+	w.owners = append(w.owners, p.Clone())
+	p.Labels[0] = "scribbled"
+	return true
+}
+
+func TestEachSectionCallGetsItsOwnPortal(t *testing.T) {
+	cfg := linked()
+	cfg.Portals = cfg.Portals[:1]
+	cfg.Portals[0].Sections = append(cfg.Portals[0].Sections, portal.Section{Title: "Other", Type: portal.SpecSection, Input: "pets.yaml"})
+	hook := &twoSections{}
+	cfg.Access = func(*http.Request) (portal.Access, error) { return hook, nil }
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	get(h, "/portals/pets/specs/api")
+	if len(hook.owners) != 2 || hook.owners[1].Labels[0] != "apis" {
+		t.Errorf("the second section call got the portal %+v, which the first wrote to", hook.owners)
+	}
+}
+
+func TestCloneCopiesValuesSetInCode(t *testing.T) {
+	type owner struct {
+		Team  string
+		Tags  []string
+		Since time.Time
+	}
+	since := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
+	self := map[string]any{"name": "loop"}
+	self["self"] = self
+	p := portal.Portal{Name: "Pets", Ext: map[string]any{
+		"x-list":    []string{"a", "b"},
+		"x-map":     map[string]string{"k": "v"},
+		"x-nested":  map[string][]int{"n": {1, 2}},
+		"x-pointer": &owner{Team: "platform", Tags: []string{"gold"}, Since: since},
+		"x-struct":  owner{Team: "data", Tags: []string{"silver"}},
+		"x-array":   [1][]string{{"in an array"}},
+		"x-self":    self,
+		"x-nil":     nil,
+	}}
+	c := p.Clone()
+	if !reflect.DeepEqual(c.Ext["x-list"], p.Ext["x-list"]) || !reflect.DeepEqual(c.Ext["x-pointer"], p.Ext["x-pointer"]) || !reflect.DeepEqual(c.Ext["x-struct"], p.Ext["x-struct"]) || !reflect.DeepEqual(c.Ext["x-nested"], p.Ext["x-nested"]) {
+		t.Fatalf("the clone %+v differs from %+v", c.Ext, p.Ext)
+	}
+	c.Ext["x-list"].([]string)[0] = "changed"
+	c.Ext["x-map"].(map[string]string)["k"] = "changed"
+	c.Ext["x-nested"].(map[string][]int)["n"][0] = 99
+	c.Ext["x-pointer"].(*owner).Team = "changed"
+	c.Ext["x-pointer"].(*owner).Tags[0] = "changed"
+	c.Ext["x-struct"].(owner).Tags[0] = "changed"
+	arr := c.Ext["x-array"].([1][]string)
+	arr[0][0] = "changed"
+	c.Ext["x-self"].(map[string]any)["name"] = "changed"
+	if got := p.Ext["x-list"].([]string)[0]; got != "a" {
+		t.Errorf("a []string is shared: %q", got)
+	}
+	if got := p.Ext["x-map"].(map[string]string)["k"]; got != "v" {
+		t.Errorf("a map[string]string is shared: %q", got)
+	}
+	if got := p.Ext["x-nested"].(map[string][]int)["n"][0]; got != 1 {
+		t.Errorf("a list inside a typed map is shared: %d", got)
+	}
+	if o := p.Ext["x-pointer"].(*owner); o.Team != "platform" || o.Tags[0] != "gold" || !o.Since.Equal(since) {
+		t.Errorf("a pointer's struct is shared: %+v", o)
+	}
+	if got := p.Ext["x-struct"].(owner).Tags[0]; got != "silver" {
+		t.Errorf("a struct's list is shared: %q", got)
+	}
+	if got := p.Ext["x-array"].([1][]string)[0][0]; got != "in an array" {
+		t.Errorf("a list inside an array is shared: %q", got)
+	}
+	if self["name"] != "loop" {
+		t.Errorf("a map that holds itself is shared: %v", self["name"])
+	}
+	// The copy of a map that holds itself holds itself, not the original.
+	loop := c.Ext["x-self"].(map[string]any)
+	if inner, ok := loop["self"].(map[string]any); !ok || inner["name"] != "changed" {
+		t.Errorf("the clone of a map that holds itself does not hold itself: %v", loop["self"])
+	}
+	if v, ok := c.Ext["x-nil"]; !ok || v != nil {
+		t.Errorf("a nil value: %v, %v", v, ok)
 	}
 }
