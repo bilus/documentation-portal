@@ -407,3 +407,11 @@ func TestAReconfiguredPortalStartsTheConversationOver(t *testing.T) {
 		}
 	}
 }
+
+func TestAPortalsExtensionFieldsChangeItsDigest(t *testing.T) {
+	p := portal.Portal{Name: "Pets", Ext: map[string]any{"x-host": "a"}}
+	q := portal.Portal{Name: "Pets", Ext: map[string]any{"x-host": "b"}}
+	if digest(p) == digest(q) || digest(p) == digest(portal.Portal{Name: "Pets"}) {
+		t.Error("two portals that differ in an extension field alone share a digest")
+	}
+}
