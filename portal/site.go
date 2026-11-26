@@ -22,7 +22,9 @@ type site struct {
 	name      string // the portal's name
 	slug      string // the portal's slug
 	sections  []*section
-	portals   []*site // the site of every portal, for the portal menu
+	portals   []*site  // the site of every portal, for the portal menu
+	groups    []string // the names of the portal's groups, in the groups' order
+	grouped   []string // the name of every group, in order, or none without groups
 	hideTryIt bool
 	chat      bool      // whether a route of the chat serves the portal's chat page
 	base      string    // the base path of every URL of the site's pages, or ""
@@ -71,17 +73,15 @@ func (s *site) chatURL() string {
 }
 
 // menu returns the links of the portal menu: the first section of every
-// portal under its name, in the order of the portal configuration, or none
-// with one portal.
-func (s *site) menu() []navLink {
-	if len(s.portals) < 2 {
-		return nil
+// listed portal under its name, in the order of the portal configuration,
+// and with groups the same links under each group's name, or none with fewer
+// than two listed portals.
+func (s *site) menu() ([]navLink, []portalGroup) {
+	listed, groups := listPortals(s.portals)
+	if len(listed) < 2 {
+		return nil, nil
 	}
-	links := make([]navLink, 0, len(s.portals))
-	for _, p := range s.portals {
-		links = append(links, navLink{Label: p.name, URL: p.url()})
-	}
-	return links
+	return linksTo(listed), groups
 }
 
 // specFor returns the spec section whose slug is slug, or false.
@@ -186,7 +186,8 @@ type page struct {
 	Sidebar   []sidebarGroup // document pages and lists only
 	Contents  []sidebarGroup // document list only: the toc file's groups, or none
 	Docs      []docLink      // document list only, without Contents: every markdown file
-	Portals   []navLink      // home page only
+	Portals   []navLink      // home page only: the listed portals
+	Groups    []portalGroup  // home page only: the listed portals by group, or none without groups
 	Body      template.HTML  // document page only
 	CodeCSS   template.CSS   // document page only: the stylesheet of highlighted code, or empty
 	Banner    *banner        // above the navigation bar, or nil
@@ -204,6 +205,7 @@ type navBar struct {
 	Links   []navLink
 	Portal  string        // the name of the page's portal, the label of the menu
 	Menu    []navLink     // the portal menu's links, or none
+	Groups  []portalGroup // the portal menu's links by group, or none without groups
 	Account []AccountLink // the reader's account links, at the bar's right end, or none
 }
 
@@ -224,7 +226,8 @@ func (s *site) nav() navBar {
 	if s.chat {
 		links = append(links, navLink{Label: "Chat", URL: s.chatURL()})
 	}
-	return navBar{Links: links, Portal: s.name, Menu: s.menu()}
+	menu, groups := s.menu()
+	return navBar{Links: links, Portal: s.name, Menu: menu, Groups: groups}
 }
 
 //go:embed templates/*.html
