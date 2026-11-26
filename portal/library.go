@@ -28,6 +28,7 @@ func NewLibraries(cfg Config) ([]*Library, error) {
 	if _, err := matchCollections(cfg.Collections, sites); err != nil {
 		return nil, err
 	}
+	// HOLE(3): leave out the link portals, which publish nothing
 	libs := make([]*Library, 0, len(sites))
 	for _, s := range sites {
 		libs = append(libs, &Library{s: s})
@@ -71,6 +72,28 @@ func (l *Library) Collections() []string {
 // in order, or none without collections.
 func (l *Library) CollectionNames() []string {
 	return slices.Clone(l.s.collectionNames)
+}
+
+// PortalLink links a portal from the portal menu.
+type PortalLink struct {
+	Name string
+	URL  string
+}
+
+// MenuCollection is a collection of the portal menu: its name over the
+// links of its listed portals.
+type MenuCollection struct {
+	Name    string
+	Portals []PortalLink
+}
+
+// Menu returns the portal menu for a reader with access, as the pages of
+// the library's portal show it: the listed portals, link portals included,
+// each once, and with collections the same links under each collection's
+// name. It returns none with fewer than two listed portals.
+func (l *Library) Menu(access Access) ([]PortalLink, []MenuCollection) {
+	// HOLE(3): the menu of the reader's site
+	return nil, nil
 }
 
 // SectionLink links a section's page from the navigation bar.

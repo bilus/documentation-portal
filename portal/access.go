@@ -75,6 +75,7 @@ func viewOf(r *http.Request) *view {
 // portalFor returns the site of the portal whose slug is slug, among the
 // reader's sites, or false.
 func (v *view) portalFor(slug string) (*site, bool) {
+	// HOLE(2): a link portal has no pages, so its slug names no portal
 	for _, s := range v.sites {
 		if s.slug == slug {
 			return s, true
@@ -106,6 +107,7 @@ func (s *site) visibleTo(access Access) (*site, bool) {
 	if access == nil || !access.Portal(s.config) {
 		return nil, false
 	}
+	// HOLE(2): a link portal is visible without a section
 	var sections []*section
 	for _, sec := range s.sections {
 		if access.Section(s.config, sec.config) {

@@ -37,12 +37,22 @@ const (
 )
 
 // Portal is a named set of sections, whose pages have URLs of their own under
-// /portals/{slug}/, where the slug comes from the name.
+// /portals/{slug}/, where the slug comes from the name, or with the type
+// LinkPortal a link to a page outside the portal handler, shown under its
+// name on the home page and in the portal menu.
 type Portal struct {
-	Name     string    `yaml:"name"`
-	Sections []Section `yaml:"sections"`
-	Labels   []string  `yaml:"labels"` // for the access hook's rules and the collections' match labels
+	Name     string     `yaml:"name"`
+	Type     PortalType `yaml:"type"` // empty for a portal with sections, or LinkPortal
+	URL      string     `yaml:"url"`  // a link portal's URL: a path from the server's root, or an http or https URL
+	Sections []Section  `yaml:"sections"`
+	Labels   []string   `yaml:"labels"` // for the access hook's rules and the collections' match labels
 }
+
+// PortalType says whether a portal holds sections or links a page.
+type PortalType string
+
+// LinkPortal is the type of a link portal, which has a URL and no sections.
+const LinkPortal PortalType = "link"
 
 // Collection is a named set of portals, listed under its name on the home page
 // and in the portal menu: the portals whose labels hold every match label.
@@ -71,6 +81,8 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 	var file struct {
 		Portals []*struct {
 			Name     string     `yaml:"name"`
+			Type     PortalType `yaml:"type"`
+			URL      string     `yaml:"url"`
 			Sections []*Section `yaml:"sections"`
 			Labels   []string   `yaml:"labels"`
 		} `yaml:"portals"`
@@ -101,7 +113,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			}
 			sections = append(sections, *sec)
 		}
-		portals = append(portals, Portal{Name: p.Name, Sections: sections, Labels: p.Labels})
+		portals = append(portals, Portal{Name: p.Name, Type: p.Type, URL: p.URL, Sections: sections, Labels: p.Labels})
 	}
 	var collections []Collection
 	for i, g := range file.Collections {
@@ -146,6 +158,15 @@ func openPortals(cfg Config) ([]*site, error) {
 			return nil, fmt.Errorf("portals %q and %q share the slug %q", other, p.Name, slug)
 		}
 		names[slug] = p.Name
+		if p.Type == LinkPortal {
+			s, err := linkPortal(cfg, p)
+			if err != nil {
+				return nil, fmt.Errorf("portal %q: %w", p.Name, err)
+			}
+			sites = append(sites, s)
+			continue
+		}
+		// HOLE(2): refuse a type other than LinkPortal, and a url on a portal with sections
 		sections, err := openSections(cfg.Root, p.Sections)
 		if err != nil {
 			return nil, fmt.Errorf("portal %q: %w", p.Name, err)
@@ -156,6 +177,14 @@ func openPortals(cfg Config) ([]*site, error) {
 		s.portals = sites
 	}
 	return sites, nil
+}
+
+// linkPortal returns the site of p, a link portal of cfg with a name and a
+// slug, with the URL that the home page and the portal menu link, or refuses
+// sections and a URL that linkURL refuses.
+func linkPortal(cfg Config, p Portal) (*site, error) {
+	// HOLE(2): check the url with linkURL, keep it as the site's link, and refuse sections
+	return newSite(cfg, p, nil), nil
 }
 
 // section is a section of the portal configuration after openSections has
