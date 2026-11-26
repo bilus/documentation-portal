@@ -13,7 +13,7 @@ Branch: `bilus/development`, from `be2f627`, the tip of the collections change. 
 5. The portal handler serves no page for a link portal: `/portals/{slug}` and every path under it answer as for a slug of no portal, and so does a chat route there.
 6. The access hook gets a link portal as the portal configuration gives it, with its type, URL and labels. A link portal is visible when the hook allows it; it needs no visible section.
 7. A link portal follows the rules of every portal for its name and its slug: a name, a slug that is not empty, and a slug that no other portal shares.
-8. A link portal counts as a listed portal: with one listed portal that is a link portal, `/` redirects to its URL, and two listed portals give a menu.
+8. A link portal counts as a listed portal: with one listed portal that is a link portal, `/` shows the home page with its link, and two listed portals give a menu. Changed in stage 4 from a redirect to its URL, which could lead back to `/`.
 9. `NewLibraries` returns no library for a link portal, so the chat has no agent and no page for it. `Library.Menu(access)` returns the portal menu as the pages of the library's portal show it, link portals and collections included, each link marked as a link portal's or not. The chat page's menu is that menu limited to the chat's portals and the link portals, kept in the page's session from the page's GET.
 10. Without a link portal, every page is as it is today. The existing tests guard this.
 11. The README, the vocabulary and the doc comments of `portal.Portal` describe link portals.
@@ -79,4 +79,11 @@ Each stage ends with `devbox run make build lint test test-e2e`, the hole census
 
 ### Stage 4: the defect review's findings
 
-Added after the defect review of AGENTS.md, if a finding needs a change.
+- Goal: docportal starts with a chat model and link portals alone; a single listed link portal shows the home page; a link URL holds no user name or password, for link sections too; the tests catch the review's wrong implementations.
+- Requirement: 2, 4, 8, 9.
+- Dependencies: stage 3.
+- Holes: none; each change is inside one function's body.
+- Changes: `main.addChat` adds no chat without a library; `router.home` redirects only to a portal with sections, and `site.index` no longer redirects to a link; `linkURL` refuses a user part and leaves it out of its error.
+- Compatibility: a v0.6.0 configuration with a user name or a password in a link section's URL no longer starts.
+- Acceptance: `TestOneListedLinkPortalShowsTheHomePage`, which replaces `TestOneListedLinkPortalOpensAtHome`, `TestLinkURLsHoldNoCredentials`, `TestAddChatSkipsLinkPortalsAlone`, `TestALinkPortalsURLIsWrittenAsChecked`, `TestTheLinkTypeIsExact`, `TestALinkPortalOfNoCollectionIsWarnedAbout`, `TestReadConfigKeepsALinkPortalsSections`, `TestChatPageMenuDropsACollectionWithoutTheChatsPortals`.
+- Size: 25 lines of code, 130 of tests.

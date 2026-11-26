@@ -147,12 +147,8 @@ func (s *site) docsFor(slug string) (*section, bool) {
 	return nil, false
 }
 
-// index redirects to a link portal's URL, or to the first section's page.
+// index redirects to the first section's page. A link portal has none.
 func (s *site) index(w http.ResponseWriter, r *http.Request) {
-	if s.link != "" {
-		http.Redirect(w, r, s.link, http.StatusFound)
-		return
-	}
 	if len(s.sections) == 0 {
 		http.NotFound(w, r)
 		return

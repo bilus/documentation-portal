@@ -894,3 +894,14 @@ func TestBuildersRenderWithTheCustomTemplatesAndAssets(t *testing.T) {
 		}
 	}
 }
+
+func TestAddChatSkipsLinkPortalsAlone(t *testing.T) {
+	pcfg := portal.Config{Root: fstest.MapFS{}, Portals: []portal.Portal{{Name: "Status", Type: portal.LinkPortal, URL: "https://status.example.com/"}}}
+	got, c, err := addChat(pcfg, "claude-opus-5-5", nil, "")
+	if err != nil || c != nil || got.Chat != nil {
+		t.Fatalf("link portals alone with a chat model: chat %v, routes %v, err = %v", c, got.Chat, err)
+	}
+	if _, err := portal.New(got); err != nil {
+		t.Errorf("the portal handler: %v", err)
+	}
+}

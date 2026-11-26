@@ -213,7 +213,7 @@ collection that its labels match, in that same order. The access hook hides
 it like any portal, by its labels or its name; hiding the link does not close
 the page behind it. It has no pages: `/portals/{portal}/` with its slug
 answers 404, and it has no chat page. When a link portal is the only listed
-portal, `/` redirects to its URL.
+portal, `/` shows the home page with its link, and does not redirect.
 
 ## Link sections
 
@@ -233,7 +233,7 @@ portal, or another site.
         url: https://status.example.com/
 
 The `url` is a path that starts with one `/`, or an http or https URL with a
-host; a link section has no `input` and no `toc`, and no other section has a
+host and without a user name or a password; a link section has no `input` and no `toc`, and no other section has a
 `url`. The portal does not start with any other URL, such as `support`,
 `//example.com/support` or a `javascript:` URL. The link is the URL as
 written, without the base path, so a program that serves the portal under

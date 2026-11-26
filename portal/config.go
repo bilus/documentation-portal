@@ -313,11 +313,16 @@ func linkSection(sec *section) (*section, error) {
 
 // linkURL returns raw, a link section's URL, as net/url writes it back, or
 // refuses a URL that is neither a path starting with one slash nor an http
-// or https URL with a host.
+// or https URL with a host, and one with a user name or a password.
 func linkURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("url %q: %w", raw, err)
+	}
+	if u.User != nil {
+		// The error leaves the user part out, which may hold a password.
+		u.User = nil
+		return "", fmt.Errorf("url %q holds a user name or a password", u.String())
 	}
 	// String would write a path of two slashes back as a host.
 	p := u.EscapedPath()

@@ -718,3 +718,36 @@ func TestChatPageMenuListsLinkPortals(t *testing.T) {
 		t.Errorf("a link portal's chat page: %d, want 404", rec.Code)
 	}
 }
+
+func TestChatPageMenuDropsACollectionWithoutTheChatsPortals(t *testing.T) {
+	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
+	cfg := portal.Config{
+		Root: fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")}},
+		Portals: []portal.Portal{
+			{Name: "Pets", Labels: []string{"apis"}, Sections: api},
+			{Name: "Store", Labels: []string{"shops"}, Sections: api},
+			{Name: "Status", Type: portal.LinkPortal, URL: "https://status.example.com/", Labels: []string{"apis"}},
+		},
+		Collections: []portal.Collection{{Name: "APIs", MatchLabels: []string{"apis"}}, {Name: "Shops", MatchLabels: []string{"shops"}}},
+	}
+	libs, err := portal.NewLibraries(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A chat over Pets alone, in a portal handler that serves Store too.
+	c, err := New(Config{Model: fakemodel.New("opus", nil), Libraries: libs[:1]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Chat = c.Routes()
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/pets/chat", nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, `>APIs</span>`) || !strings.Contains(page, `>Status</a>`) || strings.Contains(page, "Shops") || strings.Contains(page, `>Store</a>`) {
+		t.Errorf("the chat menu of a chat over Pets alone: %d %q", rec.Code, page)
+	}
+}
