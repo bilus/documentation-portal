@@ -17,3 +17,6 @@
 - 2026-11-26. Stage 4 started from `894f2a1`: a refactoring, with the tests changed in names and strings alone.
 - 2026-11-26. Stage 4 complete: `make build lint test` green, 5 census lines, score unchanged. The user asked to continue with stage 5 without a halt here.
 - 2026-11-26. Stage 5 started from the commit of stage 4.
+- 2026-11-26. Holes filled: `5 portal.Library.Collections`, `5 portal.Library.CollectionNames`, `5 chat.Chat.mount`, with the helper `menuOf` and the type `menuCollection` in package chat; `page.templ` changed and its files regenerated. Tests unskipped: `TestLibraryCollections`, `TestChatPageMenuListsCollections`.
+- 2026-11-26. Test change, for sign-off: `TestChatPageMenuListsCollections` expected the menu as one string; templ writes a space after each collection label, so the test now checks the pieces in order.
+- 2026-11-26. Stage 5 complete: `make build lint test test-e2e` green, census 0, score unchanged. Waiting for approval; the defect review follows.

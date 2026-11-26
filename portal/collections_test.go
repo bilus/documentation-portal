@@ -309,7 +309,6 @@ func TestACustomHomePageListsTheCollections(t *testing.T) {
 }
 
 func TestLibraryCollections(t *testing.T) {
-	t.Skip("HOLE(5): give each library the collections of its portal")
 	libs, err := portal.NewLibraries(stages())
 	if err != nil {
 		t.Fatal(err)
