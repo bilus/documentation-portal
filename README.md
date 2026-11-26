@@ -643,8 +643,9 @@ method, `Collection(c)`, of `portal.CollectionAccess`:
     	return err == nil && slices.Contains(ext.Roles, a.role)
     }
 
-The portal handler asks it about each collection once for each request,
-with a copy and its extension fields. A hidden collection is absent from the
+The portal handler asks it about each collection each time it lists the
+portals for the reader, with a copy and its extension fields: once for a
+request with a visible portal, and once more for a chat page's menu. A hidden collection is absent from the
 home page, the portal menu and the chat's menu, so the templates receive
 only the collections shown to the reader. Hiding a collection closes no
 page: a portal of no shown collection is not listed, and keeps its pages for

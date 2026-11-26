@@ -26,8 +26,10 @@ type Access interface {
 // CollectionAccess is an access that also decides which collections its
 // reader sees on the home page and in the portal menu. The portal handler
 // asks it about each collection of the portal configuration, extension
-// fields included, once for each request and each time with a copy that the
-// access may keep or change. An access that is no CollectionAccess shows
+// fields included, each time it lists the portals for the reader, and each
+// time with a copy that the access may keep or change: once for a request
+// with a visible portal, not at all for one without, and once more when
+// Library.Menu builds a menu, as for a chat page. An access that is no CollectionAccess shows
 // every collection. A hidden collection lists none of its portals; a portal
 // of no shown collection is not listed, and keeps its pages when Access
 // allows it.

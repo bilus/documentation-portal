@@ -15,7 +15,7 @@ Branch: `bilus/development`, from `bb158a7`, the tip of the extension fields cha
             Collection(c Collection) bool
         }
 
-   The portal handler asks it about each collection of the portal configuration, extension fields included, once for each request, each time with a clone of its own. An access without the method shows every collection, as today.
+   The portal handler asks it about each collection of the portal configuration, extension fields included, each time it lists the portals for the reader, and each time with a clone of its own: once for a request with a visible portal, not at all for one without, and once more when `Library.Menu` builds a chat page's menu (changed in stage 4 from "once for each request"). An access without the method shows every collection, as today.
 4. A hidden collection is absent from the home page, from the portal menu and from `Library.Menu`, and so from the chat's menu. The code that builds the reader's view filters the collections; the home template and the nav template stay as they are and receive only shown collections.
 5. A portal is listed for a reader when `Access` allows it and it is in at least one collection shown to the reader. `Access.Portal` and `Access.Section` alone decide whether a portal's pages are served: a hidden portal appears in no list and its pages answer 404; a portal whose every collection is hidden is not listed and keeps its pages, as a portal of no collection does today.
 6. With collections of which none is shown, no portal is listed, and the home page says that no portal is open. With one listed portal that is no link portal, `/` redirects to it, as today.
@@ -80,4 +80,12 @@ Each stage ends with `devbox run make build lint test test-e2e`, the hole census
 - Acceptance: `TestRolesOpenCollectionsAndPortals`, `TestAHiddenCollectionLeavesItsPortalsPages`, `TestEachCollectionCallGetsItsOwnCollection`, `TestLibraryMenuHidesACollection`, and a new test of the chat's menu (Q5).
 - Size: 60 lines of code, 40 of tests, 40 of README.
 
-The defect review follows stage 3, and a stage 4 takes its findings if any need changes.
+### Stage 4: the defect review's findings
+
+- Goal: the tests catch the three wrong implementations that passed (M3, M6, M7) and cover requirement 1's refusals of a repeated key and of `.inf`; requirement 3 and the doc comments say when the collection access is asked; `Library.Collections` and `CollectionNames` say that they ignore it.
+- Requirement: 1, 3, 7.
+- Dependencies: stage 3.
+- Holes: none; no code changes outside comments.
+- Acceptance: `TestOneReadersCollectionsLeaveTheNextReadersAsTheyWere`, and the extended `TestEachCollectionCallGetsItsOwnCollection` and `TestReadConfigRefusesOtherKeysOfACollection`; each of M3, M6 and M7 fails a test.
+- Not changed: the chat page's second question to the collection access (finding 1), which matches the access's two answers about portals there; `portal.New` accepting in code what `ReadConfig` refuses (finding 7), as for portals.
+- Size: 30 lines of tests, 10 of comments and docs.

@@ -213,6 +213,7 @@ func TestEachCollectionCallGetsItsOwnCollection(t *testing.T) {
 	}
 	// A later write to the configuration reaches no request.
 	cfg.Collections[0].Ext["x-roles"] = []any{"changed after New"}
+	cfg.Collections[0].MatchLabels[0] = "changed after New"
 	for request := 1; request <= 2; request++ {
 		hook.asked = nil
 		home := get(h, "/").Body.String()
@@ -268,14 +269,44 @@ func TestReadConfigRefusesOtherKeysOfACollection(t *testing.T) {
 		"x_roles: [a]":   "x_roles",
 		"x-: [a]":        "x-",
 		"x-rate: .nan":   "x-rate",
+		"x-rate: .inf":   "x-rate",
 		"x-map: {1: a}":  "x-map",
 		"labels: [a, b]": "labels",
 	} {
 		file := "collections:\n  - name: A\n    matchLabels: [a]\n    " + key + "\n"
 		_, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(file)}}, "environment.yaml")
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("%q: err = %v, want one naming %s", key, err, want)
+		if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), `collection "A"`) {
+			t.Errorf("%q: err = %v, want one naming the collection and %s", key, err, want)
 		}
+	}
+	// YAML itself refuses a repeated key, before the collection has a name.
+	repeated := "collections:\n  - name: A\n    matchLabels: [a]\n    x-roles: [a]\n    x-roles: [b]\n"
+	if _, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(repeated)}}, "environment.yaml"); err == nil || !strings.Contains(err.Error(), "x-roles") {
+		t.Errorf("a repeated key: err = %v, want one naming x-roles", err)
+	}
+}
+
+func TestOneReadersCollectionsLeaveTheNextReadersAsTheyWere(t *testing.T) {
+	quiet(t)
+	cfg := stages()
+	access := shown{"Prerelease"}
+	cfg.Access = func(*http.Request) (portal.Access, error) { return access, nil }
+	h, err := portal.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Staging is in AutoStage API and Prerelease; this reader sees it under Prerelease alone.
+	if rec := get(h, "/"); rec.Code != http.StatusFound || rec.Header().Get("Location") != "/portals/staging/specs/api" {
+		t.Errorf("/ with Prerelease alone: %d to %q", rec.Code, rec.Header().Get("Location"))
+	}
+	access = shown{"AutoStage API", "Ingest APIs", "Prerelease"}
+	home := get(h, "/").Body.String()
+	if !inOrder(home,
+		"<h2>AutoStage API</h2>", link("staging", "Staging"), link("production", "Production"), link("ingest", "Ingest"),
+		"<h2>Ingest APIs</h2>", link("ingest", "Ingest"),
+		"<h2>Prerelease</h2>", link("staging", "Staging"),
+	) || strings.Count(home, link("staging", "Staging")) != 2 {
+		t.Errorf("/ for the next reader, who sees every collection: %q", home)
 	}
 }
 
