@@ -64,15 +64,13 @@ func (l *Library) ChatURL() string { return l.s.chatURL() }
 // Collections returns the names of the collections of the library's portal, in the
 // collections' order: none for a portal of no collection, and none without collections.
 func (l *Library) Collections() []string {
-	// HOLE(5): the names of the portal's collections
-	return nil
+	return l.s.collections
 }
 
 // CollectionNames returns the name of every collection of the portal configuration,
 // in order, or none without collections.
 func (l *Library) CollectionNames() []string {
-	// HOLE(5): the name of every collection
-	return nil
+	return l.s.collectionNames
 }
 
 // SectionLink links a section's page from the navigation bar.

@@ -585,7 +585,6 @@ func TestChatReloadRefusesWhatNewRefuses(t *testing.T) {
 }
 
 func TestChatPageMenuListsCollections(t *testing.T) {
-	t.Skip("HOLE(5): list the chat page's portal menu by collection")
 	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
 	cfg := portal.Config{
 		Root: fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")}},
@@ -616,8 +615,18 @@ func TestChatPageMenuListsCollections(t *testing.T) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		page := rec.Body.String()
-		want := `<span class="portal-menu-collection">AutoStage API</span><a href="/portals/staging/specs/api">Staging</a><a href="/portals/ingest/specs/api">Ingest</a><span class="portal-menu-collection">Ingest APIs</span><a href="/portals/ingest/specs/api">Ingest</a>`
-		if rec.Code != http.StatusOK || !strings.Contains(page, want) || strings.Contains(page, `>Lab</a>`) {
+		rest, ordered := page, true
+		for _, want := range []string{
+			`<span class="portal-menu-collection">AutoStage API</span>`, `<a href="/portals/staging/specs/api">Staging</a><a href="/portals/ingest/specs/api">Ingest</a>`,
+			`<span class="portal-menu-collection">Ingest APIs</span>`, `<a href="/portals/ingest/specs/api">Ingest</a></div>`,
+		} {
+			i := strings.Index(rest, want)
+			if ordered = i >= 0; !ordered {
+				break
+			}
+			rest = rest[i+len(want):]
+		}
+		if rec.Code != http.StatusOK || !ordered || strings.Contains(page, `>Lab</a>`) {
 			t.Errorf("%s: %d %q", path, rec.Code, page)
 		}
 	}

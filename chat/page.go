@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -81,19 +82,58 @@ func chatComponent(lv live.Ctx, p *page) live.Component {
 
 // page is the state of one chat tab: one conversation.
 type page struct {
-	chat     *Chat
-	portal   string        // the slug of the page's portal
-	access   portal.Access // the page access, from the page's session
-	asker    Asker         // whose question limit counts the page's questions
-	conv     string
-	next     int // the ID of the next message
-	Heading  string
-	Nav      []navLink
-	Portal   string               // the name of the page's portal, the label of the menu
-	Menu     []navLink            // the portal menu's links, or none
-	Account  []portal.AccountLink // the account links of the page's GET, at the bar's right end
-	Messages []message
-	Form     questionForm
+	chat        *Chat
+	portal      string        // the slug of the page's portal
+	access      portal.Access // the page access, from the page's session
+	asker       Asker         // whose question limit counts the page's questions
+	conv        string
+	next        int // the ID of the next message
+	Heading     string
+	Nav         []navLink
+	Portal      string               // the name of the page's portal, the label of the menu
+	Menu        []navLink            // the portal menu's links, or none
+	Collections []menuCollection     // the portal menu's links by collection, or none without collections
+	Account     []portal.AccountLink // the account links of the page's GET, at the bar's right end
+	Messages    []message
+	Form        questionForm
+}
+
+// menuCollection is a collection in the portal menu: its name over the
+// links of its listed portals.
+type menuCollection struct {
+	Name  string
+	Links []navLink
+}
+
+// menuOf returns the links of the portal menu for visible, the libraries of
+// the portals visible to a reader, and names, the name of every collection:
+// every portal without collections, and with collections each portal of a
+// collection, once, and the same links under each collection that holds
+// one. It returns none with fewer than two listed portals.
+func menuOf(visible []*portal.Library, names []string) ([]navLink, []menuCollection) {
+	link := func(lib *portal.Library) navLink { return navLink{Label: lib.Name(), URL: lib.URL()} }
+	var menu []navLink
+	for _, lib := range visible {
+		if names == nil || len(lib.Collections()) > 0 {
+			menu = append(menu, link(lib))
+		}
+	}
+	if len(menu) < 2 {
+		return nil, nil
+	}
+	var collections []menuCollection
+	for _, name := range names {
+		var links []navLink
+		for _, lib := range visible {
+			if slices.Contains(lib.Collections(), name) {
+				links = append(links, link(lib))
+			}
+		}
+		if len(links) > 0 {
+			collections = append(collections, menuCollection{Name: name, Links: links})
+		}
+	}
+	return menu, collections
 }
 
 type navLink struct {
@@ -138,17 +178,14 @@ func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 		nav = append(nav, navLink{Label: s.Title, URL: s.URL})
 	}
 	nav = append(nav, navLink{Label: "Chat", URL: a.lib.ChatURL(), Current: true})
-	// HOLE(5): with collections, list the menu's portals under their collections, and leave out a portal of no collection
-	var menu []navLink
+	var visible []*portal.Library
 	for _, other := range c.currentAgents() {
-		if visible, ok := other.lib.For(access); ok {
-			menu = append(menu, navLink{Label: visible.Name(), URL: visible.URL()})
+		if lib, ok := other.lib.For(access); ok {
+			visible = append(visible, lib)
 		}
 	}
-	if len(menu) < 2 {
-		menu = nil
-	}
-	return &page{chat: c, portal: a.lib.Slug(), access: access, asker: AskerOf(readerIDIn(lv.Session("readerID")), lv.Session("client")), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu, Account: readAccountLinks(lv.Session("account"))}, nil
+	menu, collections := menuOf(visible, a.lib.CollectionNames())
+	return &page{chat: c, portal: a.lib.Slug(), access: access, asker: AskerOf(readerIDIn(lv.Session("readerID")), lv.Session("client")), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu, Collections: collections, Account: readAccountLinks(lv.Session("account"))}, nil
 }
 
 // FormID changes with every message, so the page renders a new, empty form.
