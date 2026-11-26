@@ -584,8 +584,8 @@ func TestChatReloadRefusesWhatNewRefuses(t *testing.T) {
 	}
 }
 
-func TestChatPageMenuListsGroups(t *testing.T) {
-	t.Skip("HOLE(4): list the chat page's portal menu by group")
+func TestChatPageMenuListsCollections(t *testing.T) {
+	t.Skip("HOLE(5): list the chat page's portal menu by collection")
 	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "api.yaml"}}
 	cfg := portal.Config{
 		Root: fstest.MapFS{"api.yaml": {Data: []byte("openapi: 3.0.3\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets:\n    get:\n      operationId: listPets\n")}},
@@ -594,7 +594,7 @@ func TestChatPageMenuListsGroups(t *testing.T) {
 			{Name: "Ingest", Labels: []string{"live-ingest", "autostage"}, Sections: api},
 			{Name: "Lab", Sections: api},
 		},
-		Groups: []portal.Group{{Name: "AutoStage API", MatchLabels: []string{"autostage"}}, {Name: "Ingest APIs", MatchLabels: []string{"live-ingest"}}},
+		Collections: []portal.Collection{{Name: "AutoStage API", MatchLabels: []string{"autostage"}}, {Name: "Ingest APIs", MatchLabels: []string{"live-ingest"}}},
 	}
 	libs, err := portal.NewLibraries(cfg)
 	if err != nil {
@@ -616,7 +616,7 @@ func TestChatPageMenuListsGroups(t *testing.T) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		page := rec.Body.String()
-		want := `<span class="portal-menu-group">AutoStage API</span><a href="/portals/staging/specs/api">Staging</a><a href="/portals/ingest/specs/api">Ingest</a><span class="portal-menu-group">Ingest APIs</span><a href="/portals/ingest/specs/api">Ingest</a>`
+		want := `<span class="portal-menu-collection">AutoStage API</span><a href="/portals/staging/specs/api">Staging</a><a href="/portals/ingest/specs/api">Ingest</a><span class="portal-menu-collection">Ingest APIs</span><a href="/portals/ingest/specs/api">Ingest</a>`
 		if rec.Code != http.StatusOK || !strings.Contains(page, want) || strings.Contains(page, `>Lab</a>`) {
 			t.Errorf("%s: %d %q", path, rec.Code, page)
 		}

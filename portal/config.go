@@ -41,22 +41,22 @@ const (
 type Portal struct {
 	Name     string    `yaml:"name"`
 	Sections []Section `yaml:"sections"`
-	Labels   []string  `yaml:"labels"` // for the access hook's rules and the groups' match labels
+	Labels   []string  `yaml:"labels"` // for the access hook's rules and the collections' match labels
 }
 
-// Group is a named set of portals, listed under its name on the home page
+// Collection is a named set of portals, listed under its name on the home page
 // and in the portal menu: the portals whose labels hold every match label.
-type Group struct {
+type Collection struct {
 	Name        string   `yaml:"name"`
 	MatchLabels []string `yaml:"matchLabels"`
 }
 
-// ReadConfig reads the portals and the groups from the configuration file at
+// ReadConfig reads the portals and the collections from the configuration file at
 // name, a path inside root, into the portal configuration of root. It refuses
 // no root, a file that is missing, that is not YAML or that holds more than
 // one YAML document, a key it does not know, and an empty entry in a list of
-// portals, of sections or of groups. An empty file gives no portals. New
-// checks the portals and the groups.
+// portals, of sections or of collections. An empty file gives no portals. New
+// checks the portals and the collections.
 func ReadConfig(root fs.FS, name string) (Config, error) {
 	if root == nil {
 		return Config{}, errors.New("no documentation root")
@@ -74,7 +74,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			Sections []*Section `yaml:"sections"`
 			Labels   []string   `yaml:"labels"`
 		} `yaml:"portals"`
-		Groups []*Group `yaml:"groups"`
+		Collections []*Collection `yaml:"collections"`
 	}
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, fmt.Errorf("configuration file %s: %w", name, err)
@@ -99,14 +99,14 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 		}
 		portals = append(portals, Portal{Name: p.Name, Sections: sections, Labels: p.Labels})
 	}
-	var groups []Group
-	for i, g := range file.Groups {
+	var collections []Collection
+	for i, g := range file.Collections {
 		if g == nil {
-			return Config{}, fmt.Errorf("configuration file %s: group %d is empty", name, i+1)
+			return Config{}, fmt.Errorf("configuration file %s: collection %d is empty", name, i+1)
 		}
-		groups = append(groups, *g)
+		collections = append(collections, *g)
 	}
-	return Config{Root: root, Portals: portals, Groups: groups}, nil
+	return Config{Root: root, Portals: portals, Collections: collections}, nil
 }
 
 // openPortals checks the portals of cfg and their sections and opens the

@@ -16,9 +16,9 @@ import (
 // stages returns a portal configuration with the portals Staging, labelled
 // prerelease and autostage, Production, labelled autostage, Ingest, labelled
 // live-ingest and autostage, and Lab, without labels, each with the spec
-// section API, and the groups AutoStage API, of autostage, Ingest APIs, of
+// section API, and the collections AutoStage API, of autostage, Ingest APIs, of
 // live-ingest, and Prerelease, of autostage and prerelease. Ingest is in two
-// groups, Staging in two, and Lab in none.
+// collections, Staging in two, and Lab in none.
 func stages() portal.Config {
 	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "pets.yaml"}}
 	return portal.Config{
@@ -29,7 +29,7 @@ func stages() portal.Config {
 			{Name: "Ingest", Labels: []string{"live-ingest", "autostage"}, Sections: api},
 			{Name: "Lab", Sections: api},
 		},
-		Groups: []portal.Group{
+		Collections: []portal.Collection{
 			{Name: "AutoStage API", MatchLabels: []string{"autostage"}},
 			{Name: "Ingest APIs", MatchLabels: []string{"live-ingest"}},
 			{Name: "Prerelease", MatchLabels: []string{"autostage", "prerelease"}},
@@ -71,7 +71,7 @@ func quiet(t *testing.T) *bytes.Buffer {
 	return &logged
 }
 
-func TestNewWithGroups(t *testing.T) {
+func TestNewWithCollections(t *testing.T) {
 	quiet(t)
 	h, err := portal.New(stages())
 	if err != nil {
@@ -86,14 +86,14 @@ func TestNewWithGroups(t *testing.T) {
 	}
 }
 
-func TestReadConfigReadsGroups(t *testing.T) {
+func TestReadConfigReadsCollections(t *testing.T) {
 	const file = `
 portals:
   - name: Staging
     labels: [prerelease, autostage]
     sections:
       - {title: API, type: spec, input: api.yaml}
-groups:
+collections:
   - name: AutoStage API
     matchLabels: [autostage]
   - name: Ingest
@@ -103,40 +103,40 @@ groups:
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []portal.Group{{Name: "AutoStage API", MatchLabels: []string{"autostage"}}, {Name: "Ingest", MatchLabels: []string{"live-ingest", "beta"}}}
-	if !reflect.DeepEqual(cfg.Groups, want) {
-		t.Errorf("the groups: %+v, want %+v", cfg.Groups, want)
+	want := []portal.Collection{{Name: "AutoStage API", MatchLabels: []string{"autostage"}}, {Name: "Ingest", MatchLabels: []string{"live-ingest", "beta"}}}
+	if !reflect.DeepEqual(cfg.Collections, want) {
+		t.Errorf("the collections: %+v, want %+v", cfg.Collections, want)
 	}
 	for data, want := range map[string]string{
-		"groups:\n  - name: A\n    matchLabels: [a]\n  -\n": "group 2 is empty",
-		"groups:\n  - name: A\n    matchLabels: a\n":        "cannot unmarshal",
-		"groups:\n  - name: A\n    labels: [a]\n":           "labels",
-		"groups:\n  - name: A\n    matchLabels: [{a: b}]\n": "cannot unmarshal",
-		"groups: {name: A}\n":                               "cannot unmarshal",
+		"collections:\n  - name: A\n    matchLabels: [a]\n  -\n": "collection 2 is empty",
+		"collections:\n  - name: A\n    matchLabels: a\n":        "cannot unmarshal",
+		"collections:\n  - name: A\n    labels: [a]\n":           "labels",
+		"collections:\n  - name: A\n    matchLabels: [{a: b}]\n": "cannot unmarshal",
+		"collections: {name: A}\n":                               "cannot unmarshal",
 	} {
 		_, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(data)}}, "environment.yaml")
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: err = %v, want one naming %s", data, err, want)
 		}
 	}
-	if cfg, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte("portals: []\n")}}, "environment.yaml"); err != nil || cfg.Groups != nil {
-		t.Errorf("a file without groups: %+v, %v", cfg.Groups, err)
+	if cfg, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte("portals: []\n")}}, "environment.yaml"); err != nil || cfg.Collections != nil {
+		t.Errorf("a file without collections: %+v, %v", cfg.Collections, err)
 	}
 }
 
-func TestGroupChecks(t *testing.T) {
+func TestCollectionChecks(t *testing.T) {
 	quiet(t)
 	for name, tc := range map[string]struct {
-		groups []portal.Group
-		want   string
+		collections []portal.Collection
+		want        string
 	}{
-		"no name":         {[]portal.Group{{Name: "A", MatchLabels: []string{"autostage"}}, {MatchLabels: []string{"autostage"}}}, "group 2 has no name"},
-		"no match labels": {[]portal.Group{{Name: "Everything"}}, `group "Everything" has no match labels`},
-		"an empty label":  {[]portal.Group{{Name: "Blank", MatchLabels: []string{"autostage", ""}}}, `group "Blank" has an empty match label`},
-		"one name twice":  {[]portal.Group{{Name: "A", MatchLabels: []string{"autostage"}}, {Name: "A", MatchLabels: []string{"live-ingest"}}}, `two groups have the name "A"`},
+		"no name":         {[]portal.Collection{{Name: "A", MatchLabels: []string{"autostage"}}, {MatchLabels: []string{"autostage"}}}, "collection 2 has no name"},
+		"no match labels": {[]portal.Collection{{Name: "Everything"}}, `collection "Everything" has no match labels`},
+		"an empty label":  {[]portal.Collection{{Name: "Blank", MatchLabels: []string{"autostage", ""}}}, `collection "Blank" has an empty match label`},
+		"one name twice":  {[]portal.Collection{{Name: "A", MatchLabels: []string{"autostage"}}, {Name: "A", MatchLabels: []string{"live-ingest"}}}, `two collections have the name "A"`},
 	} {
 		cfg := stages()
-		cfg.Groups = tc.groups
+		cfg.Collections = tc.collections
 		if _, err := portal.New(cfg); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: New: err = %v, want %s", name, err, tc.want)
 		}
@@ -149,7 +149,7 @@ func TestGroupChecks(t *testing.T) {
 func TestAPortalNeedsEveryMatchLabel(t *testing.T) {
 	quiet(t)
 	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "pets.yaml"}}
-	cfg := portal.Config{Root: fstest.MapFS{"pets.yaml": {Data: []byte(pets)}}, Groups: []portal.Group{{Name: "AB", MatchLabels: []string{"a", "b"}}}}
+	cfg := portal.Config{Root: fstest.MapFS{"pets.yaml": {Data: []byte(pets)}}, Collections: []portal.Collection{{Name: "AB", MatchLabels: []string{"a", "b"}}}}
 	for _, labels := range [][]string{{"a", "b"}, {"b", "a", "c"}, {"a"}, {"b"}, {"x"}, nil} {
 		cfg.Portals = append(cfg.Portals, portal.Portal{Name: "P" + strings.Join(labels, ""), Labels: labels, Sections: api})
 	}
@@ -162,21 +162,21 @@ func TestAPortalNeedsEveryMatchLabel(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, in := range []bool{true, true, false, false, false, false} {
-		warned := strings.Contains(logged.String(), `portal "`+libs[i].Name()+`" is in no group`)
+		warned := strings.Contains(logged.String(), `portal "`+libs[i].Name()+`" is in no collection`)
 		if warned == in {
-			t.Errorf("%s: in the group: %v, want %v", libs[i].Name(), !warned, in)
+			t.Errorf("%s: in the collection: %v, want %v", libs[i].Name(), !warned, in)
 		}
 	}
 }
 
-func TestGroupWarnings(t *testing.T) {
+func TestCollectionWarnings(t *testing.T) {
 	logged := quiet(t)
 	cfg := stages()
-	cfg.Groups = append(cfg.Groups, portal.Group{Name: "Partners", MatchLabels: []string{"partner"}})
+	cfg.Collections = append(cfg.Collections, portal.Collection{Name: "Partners", MatchLabels: []string{"partner"}})
 	if _, err := portal.New(cfg); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`portal "Lab" is in no group and is not listed`, `group "Partners" matches no portal`} {
+	for _, want := range []string{`portal "Lab" is in no collection and is not listed`, `collection "Partners" matches no portal`} {
 		if n := strings.Count(logged.String(), want); n != 1 {
 			t.Errorf("%d lines with %q, want 1:\n%s", n, want, logged.String())
 		}
@@ -188,13 +188,13 @@ func TestGroupWarnings(t *testing.T) {
 	if _, err := portal.NewLibraries(cfg); err != nil || logged.Len() != 0 {
 		t.Errorf("NewLibraries: %v, logged %q, want nothing", err, logged.String())
 	}
-	cfg.Groups = nil
+	cfg.Collections = nil
 	if _, err := portal.New(cfg); err != nil || logged.Len() != 0 {
-		t.Errorf("without groups: %v, logged %q, want nothing", err, logged.String())
+		t.Errorf("without collections: %v, logged %q, want nothing", err, logged.String())
 	}
 }
 
-func TestHomePageListsGroups(t *testing.T) {
+func TestHomePageListsCollections(t *testing.T) {
 	quiet(t)
 	h, err := portal.New(stages())
 	if err != nil {
@@ -216,7 +216,7 @@ func TestHomePageListsGroups(t *testing.T) {
 	}
 }
 
-func TestPortalMenuListsGroups(t *testing.T) {
+func TestPortalMenuListsCollections(t *testing.T) {
 	quiet(t)
 	h, err := portal.New(stages())
 	if err != nil {
@@ -227,9 +227,9 @@ func TestPortalMenuListsGroups(t *testing.T) {
 		page := rec.Body.String()
 		nav := page[max(strings.Index(page, "<nav"), 0):max(strings.Index(page, "</nav>"), 0)]
 		if rec.Code != http.StatusOK || !inOrder(nav, "<summary>"+name+"</summary>",
-			`<span class="portal-menu-group">AutoStage API</span>`, link("staging", "Staging"), link("production", "Production"), link("ingest", "Ingest"),
-			`<span class="portal-menu-group">Ingest APIs</span>`, link("ingest", "Ingest"),
-			`<span class="portal-menu-group">Prerelease</span>`, link("staging", "Staging"),
+			`<span class="portal-menu-collection">AutoStage API</span>`, link("staging", "Staging"), link("production", "Production"), link("ingest", "Ingest"),
+			`<span class="portal-menu-collection">Ingest APIs</span>`, link("ingest", "Ingest"),
+			`<span class="portal-menu-collection">Prerelease</span>`, link("staging", "Staging"),
 		) || strings.Contains(nav, link("lab", "Lab")) {
 			t.Errorf("%s: %d, the navigation bar: %q", path, rec.Code, nav)
 		}
@@ -240,7 +240,7 @@ func TestOneListedPortalOpensAtHome(t *testing.T) {
 	quiet(t)
 	cfg := stages()
 	cfg.Portals = []portal.Portal{cfg.Portals[1], cfg.Portals[3]} // Production and Lab
-	cfg.Groups = cfg.Groups[:1]
+	cfg.Collections = cfg.Collections[:1]
 	h, err := portal.New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -253,7 +253,7 @@ func TestOneListedPortalOpensAtHome(t *testing.T) {
 			t.Errorf("%s: %d, with a menu of one listed portal", path, rec.Code)
 		}
 	}
-	cfg.Groups = []portal.Group{{Name: "Partners", MatchLabels: []string{"partner"}}}
+	cfg.Collections = []portal.Collection{{Name: "Partners", MatchLabels: []string{"partner"}}}
 	if h, err = portal.New(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestOneListedPortalOpensAtHome(t *testing.T) {
 	}
 }
 
-func TestGroupsFollowAccess(t *testing.T) {
+func TestCollectionsFollowAccess(t *testing.T) {
 	quiet(t)
 	cfg := stages()
 	access := named{"Staging", "Production", "Lab"}
@@ -286,9 +286,9 @@ func TestGroupsFollowAccess(t *testing.T) {
 	}
 }
 
-func TestACustomHomePageListsTheGroups(t *testing.T) {
+func TestACustomHomePageListsTheCollections(t *testing.T) {
 	quiet(t)
-	templates := fstest.MapFS{"home.html": {Data: []byte(`{{range .Groups}}<h3>{{.Name}}</h3>{{range .Links}}<a class="card" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}`)}}
+	templates := fstest.MapFS{"home.html": {Data: []byte(`{{range .Collections}}<h3>{{.Name}}</h3>{{range .Links}}<a class="card" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}`)}}
 	h, err := portal.New(stages(), portal.WithCustomTemplates(templates))
 	if err != nil {
 		t.Fatal(err)
@@ -297,38 +297,38 @@ func TestACustomHomePageListsTheGroups(t *testing.T) {
 		t.Errorf("the custom home page: %q", home)
 	}
 	cfg := stages()
-	cfg.Groups = nil
+	cfg.Collections = nil
 	for name, file := range map[string]string{
-		"home.html": `{{range .Groups}}{{.Nme}}{{end}}`,
-		"nav.html":  `{{define "nav"}}{{range .Nav.Groups}}{{range .Links}}{{.Lable}}{{end}}{{end}}{{end}}`,
+		"home.html": `{{range .Collections}}{{.Nme}}{{end}}`,
+		"nav.html":  `{{define "nav"}}{{range .Nav.Collections}}{{range .Links}}{{.Lable}}{{end}}{{end}}{{end}}`,
 	} {
 		if _, err := portal.New(cfg, portal.WithCustomTemplates(fstest.MapFS{name: {Data: []byte(file)}})); err == nil {
-			t.Errorf("%s with a field the groups lack, and no error", name)
+			t.Errorf("%s with a field the collections lack, and no error", name)
 		}
 	}
 }
 
-func TestLibraryGroups(t *testing.T) {
-	t.Skip("HOLE(4): give each library the groups of its portal")
+func TestLibraryCollections(t *testing.T) {
+	t.Skip("HOLE(5): give each library the collections of its portal")
 	libs, err := portal.NewLibraries(stages())
 	if err != nil {
 		t.Fatal(err)
 	}
 	every := []string{"AutoStage API", "Ingest APIs", "Prerelease"}
 	for i, want := range [][]string{{"AutoStage API", "Prerelease"}, {"AutoStage API"}, {"AutoStage API", "Ingest APIs"}, nil} {
-		if got := libs[i].Groups(); !slices.Equal(got, want) {
-			t.Errorf("%s: the groups %v, want %v", libs[i].Name(), got, want)
+		if got := libs[i].Collections(); !slices.Equal(got, want) {
+			t.Errorf("%s: the collections %v, want %v", libs[i].Name(), got, want)
 		}
-		if got := libs[i].GroupNames(); !slices.Equal(got, every) {
-			t.Errorf("%s: every group %v, want %v", libs[i].Name(), got, every)
+		if got := libs[i].CollectionNames(); !slices.Equal(got, every) {
+			t.Errorf("%s: every collection %v, want %v", libs[i].Name(), got, every)
 		}
-		if visible, ok := libs[i].For(portal.Everything); !ok || !slices.Equal(visible.Groups(), want) {
-			t.Errorf("%s: a reader's library lost the groups", libs[i].Name())
+		if visible, ok := libs[i].For(portal.Everything); !ok || !slices.Equal(visible.Collections(), want) {
+			t.Errorf("%s: a reader's library lost the collections", libs[i].Name())
 		}
 	}
 	cfg := stages()
-	cfg.Groups = nil
-	if libs, err = portal.NewLibraries(cfg); err != nil || libs[0].Groups() != nil || libs[0].GroupNames() != nil {
-		t.Errorf("without groups: %v", err)
+	cfg.Collections = nil
+	if libs, err = portal.NewLibraries(cfg); err != nil || libs[0].Collections() != nil || libs[0].CollectionNames() != nil {
+		t.Errorf("without collections: %v", err)
 	}
 }

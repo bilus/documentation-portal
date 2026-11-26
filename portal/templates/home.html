@@ -10,7 +10,7 @@
 {{template "banner" .}}{{if .Nav.Account}}{{template "nav" .}}
 {{end}}<main>
 <h1>{{.Title}}</h1>
-{{if .Groups}}{{range .Groups}}<h2>{{.Name}}</h2>
+{{if .Collections}}{{range .Collections}}<h2>{{.Name}}</h2>
 <ul>
 {{range .Links}}<li><a href="{{.URL}}">{{.Label}}</a></li>
 {{end}}</ul>

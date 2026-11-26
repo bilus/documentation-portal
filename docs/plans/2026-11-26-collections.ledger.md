@@ -1,4 +1,4 @@
-# Ledger, plan: docs/plans/2026-11-26-groups.md
+# Ledger, plan: docs/plans/2026-11-26-collections.md
 
 - 2026-11-26. Stage 1 started from `c4753c5`. Plan written with ten questions; the match rule (Q1) is an assumption against the literal wording of the request.
 - 2026-11-26. Design change proposed: box 7 of `flow.dfd` reads the groups too; new box 3.5 `portal.groupPortals` in `flow.3.dfd`, between 3.1 and 3.2, with the group problems sent to the log. Vocabulary: group, match labels, listed portal, group problem added; configuration file, portal menu, home page and portal configuration changed.
@@ -13,3 +13,7 @@
 - 2026-11-26. Stage 2 approved, with the test change. Stage 3 started from `9fdf640`.
 - 2026-11-26. Hole filled: `3 portal.listPortals`; `home.html`, `nav.html` and `samplesOf` changed inline; five tests unskipped. Checked in the browser with the request's example plus a portal of no group.
 - 2026-11-26. Stage 3 complete: `make build lint test test-e2e` green, 5 census lines (3 holes, 2 skipped tests), score unchanged. Waiting for approval.
+- 2026-11-26. Stage 3 approved. Decision, at the user's word: the term is collection, not group, which the toc file and the claims already use; `sets` was discarded because a portal is "a named set of sections". Plan diff: stage 4 is the rename, the library and chat stage becomes stage 5 with its holes retagged `HOLE(5)`, the defect review's findings stage 6. Earlier lines of this ledger keep the old names.
+- 2026-11-26. Stage 4 started from `894f2a1`: a refactoring, with the tests changed in names and strings alone.
+- 2026-11-26. Stage 4 complete: `make build lint test` green, 5 census lines, score unchanged. The user asked to continue with stage 5 without a halt here.
+- 2026-11-26. Stage 5 started from the commit of stage 4.
