@@ -6,7 +6,7 @@ Branch: `bilus/development`, from `6b5f3b2`, the tip of the link portals change.
 
 ## Requirements
 
-1. A portal of the configuration file may hold fields whose keys start with `x-`. `portal.ReadConfig` keeps them in `Portal.Ext`, a `map[string]any`, by their keys, with their values as YAML gives them: a string, a number, a boolean, a list or a map with string keys. A portal without such fields has a nil `Ext`.
+1. A portal of the configuration file may hold fields whose keys start with `x-`. `portal.ReadConfig` keeps them in `Portal.Ext`, a `map[string]any`, by their keys, with their values as YAML gives them: a string, a finite number, a boolean, a list, a map with string keys, a null or a timestamp. A portal without such fields has a nil `Ext`.
 2. `ReadConfig` still refuses every other unknown key of a portal, an `x-` key anywhere else in the file (the top level, a section, a collection), the key `x-` alone, a key repeated in one portal, and a value with a map key that is not a string.
 3. `Portal.GetExt[T]()` returns the extension fields as a `T`, a type of the program whose fields name their keys in yaml tags:
 
@@ -75,7 +75,7 @@ Each stage ends with `devbox run make build lint test test-e2e`, the hole census
 - Requirement: 1, 2, 3, 5.
 - Dependencies: stage 2.
 - Holes: none; each change is inside one function's body.
-- Changes: `ReadConfig` refuses `.nan` and `.inf` in an extension field; chat's `digest` no longer drops a marshal error; `openPortals` gives each site a deep copy of its portal's `Ext`; `GetExt` turns a panic of the YAML encoder into an error; `extensionFields` reports every refused key, sorted.
+- Changes: `ReadConfig` refuses `.nan` and `.inf` in an extension field; chat's `digest` no longer drops a marshal error; `Portal.Clone` copies a whole portal, and `openPortals`, the access hook's calls and `Library.Portal` each use a clone (changed at the user's word from a copy of `Ext` alone, documented as read-only); `GetExt` turns a panic of the YAML encoder into an error; `extensionFields` reports every refused key, sorted.
 - Documented, not changed: a scalar converts to a string field, a null leaves the field at its zero value, an unquoted date is a timestamp; a hook must not write to a portal's `Ext`, `Labels` or `Sections`.
 - Acceptance: new tests that fail on the five wrong implementations that pass today (partial-on-error, no-list-recursion, no-map-recursion, ext-on-link-portals-only, first-key-alone-checked), and tests of each change above.
 - Size: 50 lines of code, 110 of tests.

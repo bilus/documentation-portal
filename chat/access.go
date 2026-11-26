@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"slices"
 
@@ -49,8 +50,13 @@ func (a pageAccess) Section(p portal.Portal, s portal.Section) bool {
 // digest returns a digest of p as the portal configuration gives it, with
 // its labels and its sections, which changes with any change of them.
 func digest(p portal.Portal) string {
-	// A Portal holds strings and lists alone, which always marshal.
-	data, _ := json.Marshal(p)
+	data, err := json.Marshal(p)
+	if err != nil {
+		// JSON refuses some extension values set in code, such as a number
+		// that is not finite. Go's own form of the portal still tells two
+		// portals apart, which an empty digest input would not.
+		data = fmt.Appendf(nil, "%#v", p)
+	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:16])
 }

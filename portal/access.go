@@ -10,7 +10,8 @@ import (
 // Access is the access of one reader: whether the reader may see each portal
 // and section of the portal configuration. The access hook returns one for
 // each request, and the portal handler asks it about each portal and section
-// as the portal configuration gives them, labels included. A section is
+// as the portal configuration gives them, labels and extension fields
+// included, each time with a copy that the access may keep or change. A section is
 // visible when Access allows it and its portal, and a portal when Access
 // allows it and at least one of its sections.
 type Access interface {
@@ -105,12 +106,18 @@ func visibleSites(sites []*site, access Access) []*site {
 // nil, hides the portal or hides every section of it. A link portal has no
 // sections, and is visible when access allows the portal.
 func (s *site) visibleTo(access Access) (*site, bool) {
-	if access == nil || !access.Portal(s.config) {
+	if access == nil {
+		return nil, false
+	}
+	// The hook gets a copy of the portal, so that its writes reach no other
+	// request.
+	p := s.config.Clone()
+	if !access.Portal(p) {
 		return nil, false
 	}
 	var sections []*section
 	for _, sec := range s.sections {
-		if access.Section(s.config, sec.config) {
+		if access.Section(p, sec.config.Clone()) {
 			sections = append(sections, sec)
 		}
 	}
