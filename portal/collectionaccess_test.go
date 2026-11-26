@@ -251,7 +251,6 @@ func TestLibraryMenuHidesACollection(t *testing.T) {
 }
 
 func TestReadConfigReadsACollectionsExtensionFields(t *testing.T) {
-	t.Skip("HOLE(2): ReadConfig keeps a collection's extension fields")
 	cfg := readExt(t, rolesFile)
 	want := []portal.Collection{
 		{Name: "Public", MatchLabels: []string{"public"}, Ext: map[string]any{"x-roles": []any{"customer", "staff"}}},
@@ -285,7 +284,6 @@ func TestReadConfigRefusesOtherKeysOfACollection(t *testing.T) {
 }
 
 func TestCollectionGetExt(t *testing.T) {
-	t.Skip("HOLE(2): Collection.GetExt decodes the extension fields")
 	c := portal.Collection{Name: "Public", MatchLabels: []string{"public"}, Ext: map[string]any{"x-roles": []any{"customer", "staff"}}}
 	ext, err := c.GetExt[allowedRoles]()
 	if err != nil || !reflect.DeepEqual(ext.Roles, []string{"customer", "staff"}) {
@@ -318,7 +316,6 @@ func TestCollectionGetExt(t *testing.T) {
 }
 
 func TestACollectionsCloneSharesNothing(t *testing.T) {
-	t.Skip("HOLE(2): Collection.Clone copies the match labels and the extension fields")
 	c := portal.Collection{Name: "Public", MatchLabels: []string{"public", "apis"}, Ext: map[string]any{
 		"x-roles": []any{"customer"},
 		"x-owner": map[string]any{"team": "platform"},

@@ -8,3 +8,7 @@
 - 2026-11-26. The skill's folder `~/.claude/skills/hole-driven-delivery` is gone from this machine, so its `design.md` and `review-page.md` were not read again; the installed dfd, dfdmetrics and dfdreview ran as before. Reviews follow AGENTS.md.
 - 2026-11-26. Skeleton complete, uncommitted: `GOFLAGS=-count=1 devbox run make build lint test test-e2e` passes; the census holds 4 holes and 7 skipped tests; the score card is unchanged (live_range 9, read_distance 3, top_shared 0, shared 3, pressure 1, package_spread 0, findings 0). The review page compares with `bb158a7`. Waiting for the plan's approval.
 - 2026-11-26. Plan approved, with `CollectionAccess` as an optional interface (Q1), a hidden collection closing the list only (Q2), and the removal of one case of `TestReadConfigStillRefusesOtherKeys` (Q4). Score card cached.
+- 2026-11-26. Stage 2 started from `624be75`.
+- 2026-11-26. Holes filled: `2 portal.ReadConfig`, `2 portal.Collection.Clone`, `2 portal.Collection.GetExt`, with the unexported decoder `decodeExt` that `Portal.GetExt` now shares; three tests unskipped, unchanged; the collection case removed from `TestReadConfigStillRefusesOtherKeys` (Q4).
+- 2026-11-26. Stage 2 complete, uncommitted at the user's word: `GOFLAGS=-count=1 devbox run make build lint test test-e2e` passes; the census holds 1 hole, `3 portal.showCollections`, and 4 skipped tests; score unchanged. The review page compares with `624be75`. Waiting for review.
+- 2026-11-26. Stage 2 approved. Score card cached.
