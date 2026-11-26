@@ -87,7 +87,6 @@ func TestNewWithGroups(t *testing.T) {
 }
 
 func TestReadConfigReadsGroups(t *testing.T) {
-	t.Skip("HOLE(2): read the groups of the configuration file")
 	const file = `
 portals:
   - name: Staging
@@ -110,10 +109,10 @@ groups:
 	}
 	for data, want := range map[string]string{
 		"groups:\n  - name: A\n    matchLabels: [a]\n  -\n": "group 2 is empty",
-		"groups:\n  - name: A\n    matchLabels: a\n":        "matchLabels",
+		"groups:\n  - name: A\n    matchLabels: a\n":        "cannot unmarshal",
 		"groups:\n  - name: A\n    labels: [a]\n":           "labels",
-		"groups:\n  - name: A\n    matchLabels: [{a: b}]\n": "matchLabels",
-		"groups: {name: A}\n":                               "groups",
+		"groups:\n  - name: A\n    matchLabels: [{a: b}]\n": "cannot unmarshal",
+		"groups: {name: A}\n":                               "cannot unmarshal",
 	} {
 		_, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(data)}}, "environment.yaml")
 		if err == nil || !strings.Contains(err.Error(), want) {
@@ -126,7 +125,6 @@ groups:
 }
 
 func TestGroupChecks(t *testing.T) {
-	t.Skip("HOLE(2): refuse a group without a name, without match labels or with another group's name")
 	quiet(t)
 	for name, tc := range map[string]struct {
 		groups []portal.Group
@@ -148,8 +146,30 @@ func TestGroupChecks(t *testing.T) {
 	}
 }
 
+func TestAPortalNeedsEveryMatchLabel(t *testing.T) {
+	quiet(t)
+	api := []portal.Section{{Title: "API", Type: portal.SpecSection, Input: "pets.yaml"}}
+	cfg := portal.Config{Root: fstest.MapFS{"pets.yaml": {Data: []byte(pets)}}, Groups: []portal.Group{{Name: "AB", MatchLabels: []string{"a", "b"}}}}
+	for _, labels := range [][]string{{"a", "b"}, {"b", "a", "c"}, {"a"}, {"b"}, {"x"}, nil} {
+		cfg.Portals = append(cfg.Portals, portal.Portal{Name: "P" + strings.Join(labels, ""), Labels: labels, Sections: api})
+	}
+	libs, err := portal.NewLibraries(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logged := quiet(t)
+	if _, err := portal.New(cfg); err != nil {
+		t.Fatal(err)
+	}
+	for i, in := range []bool{true, true, false, false, false, false} {
+		warned := strings.Contains(logged.String(), `portal "`+libs[i].Name()+`" is in no group`)
+		if warned == in {
+			t.Errorf("%s: in the group: %v, want %v", libs[i].Name(), !warned, in)
+		}
+	}
+}
+
 func TestGroupWarnings(t *testing.T) {
-	t.Skip("HOLE(2): warn about a portal of no group and a group of no portal")
 	logged := quiet(t)
 	cfg := stages()
 	cfg.Groups = append(cfg.Groups, portal.Group{Name: "Partners", MatchLabels: []string{"partner"}})

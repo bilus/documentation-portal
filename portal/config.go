@@ -99,8 +99,14 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 		}
 		portals = append(portals, Portal{Name: p.Name, Sections: sections, Labels: p.Labels})
 	}
-	// HOLE(2): copy the groups into the portal configuration, and refuse an empty entry
-	return Config{Root: root, Portals: portals}, nil
+	var groups []Group
+	for i, g := range file.Groups {
+		if g == nil {
+			return Config{}, fmt.Errorf("configuration file %s: group %d is empty", name, i+1)
+		}
+		groups = append(groups, *g)
+	}
+	return Config{Root: root, Portals: portals, Groups: groups}, nil
 }
 
 // openPortals checks the portals of cfg and their sections and opens the

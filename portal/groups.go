@@ -1,5 +1,11 @@
 package portal
 
+import (
+	"fmt"
+	"log"
+	"slices"
+)
+
 // portalGroup is a group as the home page and the portal menu list it: its
 // name over the links of its listed portals.
 type portalGroup struct {
@@ -11,7 +17,13 @@ type portalGroup struct {
 // as matchGroups does, and writes each problem that matchGroups returns to
 // the log.
 func groupPortals(groups []Group, sites []*site) error {
-	// HOLE(2): match the groups, and log each problem
+	problems, err := matchGroups(groups, sites)
+	if err != nil {
+		return err
+	}
+	for _, problem := range problems {
+		log.Print(problem)
+	}
 	return nil
 }
 
@@ -22,8 +34,52 @@ func groupPortals(groups []Group, sites []*site) error {
 // labels, or with the name of another group. Without groups it changes
 // nothing.
 func matchGroups(groups []Group, sites []*site) (problems []string, err error) {
-	// HOLE(2): check the groups and match each portal's labels
-	return nil, nil
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	names := make([]string, 0, len(groups))
+	for i, g := range groups {
+		switch {
+		case g.Name == "":
+			return nil, fmt.Errorf("group %d has no name", i+1)
+		case slices.Contains(names, g.Name):
+			return nil, fmt.Errorf("two groups have the name %q", g.Name)
+		case len(g.MatchLabels) == 0:
+			return nil, fmt.Errorf("group %q has no match labels", g.Name)
+		case slices.Contains(g.MatchLabels, ""):
+			return nil, fmt.Errorf("group %q has an empty match label", g.Name)
+		}
+		names = append(names, g.Name)
+	}
+	matched := map[string]bool{}
+	for _, s := range sites {
+		s.grouped, s.groups = names, nil
+		for _, g := range groups {
+			if holdsAll(s.config.Labels, g.MatchLabels) {
+				s.groups = append(s.groups, g.Name)
+				matched[g.Name] = true
+			}
+		}
+		if len(s.groups) == 0 {
+			problems = append(problems, fmt.Sprintf("portal %q is in no group and is not listed", s.name))
+		}
+	}
+	for _, name := range names {
+		if !matched[name] {
+			problems = append(problems, fmt.Sprintf("group %q matches no portal", name))
+		}
+	}
+	return problems, nil
+}
+
+// holdsAll reports whether labels holds every label of match.
+func holdsAll(labels, match []string) bool {
+	for _, m := range match {
+		if !slices.Contains(labels, m) {
+			return false
+		}
+	}
+	return true
 }
 
 // listPortals returns the listed portals among sites, the sites of the
