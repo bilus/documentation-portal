@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -751,5 +752,27 @@ func TestChatPageMenuDropsACollectionWithoutTheChatsPortals(t *testing.T) {
 	page := rec.Body.String()
 	if rec.Code != http.StatusOK || !strings.Contains(page, `>APIs</span>`) || !strings.Contains(page, `>Status</a>`) || strings.Contains(page, "Shops") || strings.Contains(page, `>Store</a>`) {
 		t.Errorf("the chat menu of a chat over Pets alone: %d %q", rec.Code, page)
+	}
+}
+
+// showing allows every portal and section, and the collections with the
+// listed names.
+type showing []string
+
+func (showing) Portal(portal.Portal) bool                  { return true }
+func (showing) Section(portal.Portal, portal.Section) bool { return true }
+func (s showing) Collection(c portal.Collection) bool      { return slices.Contains(s, c.Name) }
+
+func TestChatPageMenuFollowsTheCollectionAccess(t *testing.T) {
+	collections := []portal.Collection{{Name: "AutoStage API", MatchLabels: []string{"autostage"}}, {Name: "Ingest APIs", MatchLabels: []string{"live-ingest"}}}
+	h := collected(t, showing{"AutoStage API"}, collections,
+		portal.Portal{Name: "Staging", Labels: []string{"autostage"}},
+		portal.Portal{Name: "Production", Labels: []string{"autostage"}},
+		portal.Portal{Name: "Ingest", Labels: []string{"live-ingest"}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portals/staging/chat", nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(page, `>AutoStage API</span>`) || !strings.Contains(page, `>Production</a>`) || strings.Contains(page, "Ingest") {
+		t.Errorf("the chat menu without the collection Ingest APIs: %d %q", rec.Code, page)
 	}
 }

@@ -92,7 +92,6 @@ func TestReadConfigStillRefusesOtherKeys(t *testing.T) {
 	for _, file := range []string{
 		"x-host: foobar\nportals: []\n",
 		"portals:\n  - name: Pets\n    sections:\n      - {title: API, type: spec, input: pets.yaml, x-host: foobar}\n",
-		"collections:\n  - {name: A, matchLabels: [a], x-host: foobar}\n",
 	} {
 		if _, err := portal.ReadConfig(fstest.MapFS{"environment.yaml": {Data: []byte(file)}}, "environment.yaml"); err == nil || !strings.Contains(err.Error(), "x-host") {
 			t.Errorf("%q: err = %v, want the key refused", file, err)

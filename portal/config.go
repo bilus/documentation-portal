@@ -178,8 +178,16 @@ func deepCopy(v reflect.Value, seen map[visit]reflect.Value) reflect.Value {
 // value that does not fit T's field. As in YAML, a number or a boolean fits a
 // string field, and a null leaves its field at the zero value. The result
 // shares nothing with the portal.
-func (p Portal) GetExt[T any]() (ext T, err error) {
-	if len(p.Ext) == 0 {
+func (p Portal) GetExt[T any]() (T, error) {
+	return decodeExt[T](p.Ext, fmt.Sprintf("portal %q", p.Name))
+}
+
+// decodeExt returns fields, the extension fields of owner, a portal or a
+// collection, as a T: T's zero value without fields, or an error that names
+// owner for a field that T lacks, for a value that does not fit T's field
+// and for a value that YAML cannot write.
+func decodeExt[T any](fields map[string]any, owner string) (ext T, err error) {
+	if len(fields) == 0 {
 		return ext, nil
 	}
 	// The YAML encoder panics on a value it cannot write, such as a channel
@@ -187,24 +195,24 @@ func (p Portal) GetExt[T any]() (ext T, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			var none T
-			ext, err = none, fmt.Errorf("portal %q: extension fields: %v", p.Name, r)
+			ext, err = none, fmt.Errorf("%s: extension fields: %v", owner, r)
 		}
 	}()
-	data, err := yaml.Marshal(p.Ext)
+	data, err := yaml.Marshal(fields)
 	if err != nil {
-		return ext, fmt.Errorf("portal %q: extension fields: %w", p.Name, err)
+		return ext, fmt.Errorf("%s: extension fields: %w", owner, err)
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(&ext); err != nil {
 		var none T
-		return none, fmt.Errorf("portal %q: extension fields: %w", p.Name, err)
+		return none, fmt.Errorf("%s: extension fields: %w", owner, err)
 	}
 	return ext, nil
 }
 
-// extensionFields returns unknown, the keys of a portal that its fields do
-// not name, as its extension fields, or nil without any. It refuses, naming
+// extensionFields returns unknown, the keys of a portal or of a collection
+// that its fields do not name, as its extension fields, or nil without any. It refuses, naming
 // every one in order, the keys that do not start with x- and the key x-
 // alone, and then the first field in order whose value extensionValue
 // refuses.
@@ -270,13 +278,37 @@ const LinkPortal PortalType = "link"
 // Collection is a named set of portals, listed under its name on the home page
 // and in the portal menu: the portals whose labels hold every match label.
 type Collection struct {
-	Name        string   `yaml:"name"`
-	MatchLabels []string `yaml:"matchLabels"`
+	Name        string         `yaml:"name"`
+	MatchLabels []string       `yaml:"matchLabels"`
+	Ext         map[string]any `yaml:",inline"` // the extension fields: those whose keys start with x-, by key, or nil
+}
+
+// Clone returns a copy of the collection that shares nothing with it: its own
+// match labels and its own extension fields, at every depth and whatever the
+// types of their values. The portal handler keeps a clone of each collection
+// of its configuration, and gives each call of a collection access a clone of
+// its own.
+func (c Collection) Clone() Collection {
+	c.MatchLabels = slices.Clone(c.MatchLabels)
+	if c.Ext != nil {
+		c.Ext = cloneValue(c.Ext).(map[string]any)
+	}
+	return c
+}
+
+// GetExt returns the collection's extension fields as a T, whose fields name
+// their keys in yaml tags, such as `yaml:"x-roles"`, as Portal.GetExt does
+// for a portal: T's zero value without extension fields, or an error that
+// names the collection for an extension field that T lacks and for a value
+// that does not fit T's field. The result shares nothing with the collection.
+func (c Collection) GetExt[T any]() (T, error) {
+	return decodeExt[T](c.Ext, fmt.Sprintf("collection %q", c.Name))
 }
 
 // ReadConfig reads the portals and the collections from the configuration
 // file at name, a path inside root, into the portal configuration of root. It
-// keeps a portal's fields whose keys start with x- as its extension fields.
+// keeps the fields of a portal and of a collection whose keys start with x-
+// as its extension fields.
 // It refuses no root, a file that is missing, that is not YAML or that holds
 // more than one YAML document, any other key it does not know, and an empty
 // entry in a list of portals, of sections, of collections or of match
@@ -307,6 +339,8 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 		Collections []*struct {
 			Name        string    `yaml:"name"`
 			MatchLabels []*string `yaml:"matchLabels"`
+			// Every key that the fields above do not name, of which only x- keys pass.
+			Ext map[string]any `yaml:",inline"`
 		} `yaml:"collections"`
 	}
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
@@ -348,7 +382,11 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			}
 			labels = append(labels, *label)
 		}
-		collections = append(collections, Collection{Name: g.Name, MatchLabels: labels})
+		ext, err := extensionFields(g.Ext)
+		if err != nil {
+			return Config{}, fmt.Errorf("configuration file %s: collection %q: %w", name, g.Name, err)
+		}
+		collections = append(collections, Collection{Name: g.Name, MatchLabels: labels, Ext: ext})
 	}
 	return Config{Root: root, Portals: portals, Collections: collections}, nil
 }

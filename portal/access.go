@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net"
 	"net/http"
+	"slices"
 )
 
 // Access is the access of one reader: whether the reader may see each portal
@@ -20,6 +21,22 @@ type Access interface {
 	// Section reports whether the reader may see the section s of the
 	// portal p.
 	Section(p Portal, s Section) bool
+}
+
+// CollectionAccess is an access that also decides which collections its
+// reader sees on the home page and in the portal menu. The portal handler
+// asks it about each collection of the portal configuration, extension
+// fields included, each time it lists the portals for the reader, and each
+// time with a copy that the access may keep or change: once for a request
+// with a visible portal, not at all for one without, and once more when
+// Library.Menu builds a menu, as for a chat page. An access that is no CollectionAccess shows
+// every collection. A hidden collection lists none of its portals; a portal
+// of no shown collection is not listed, and keeps its pages when Access
+// allows it.
+type CollectionAccess interface {
+	Access
+	// Collection reports whether the reader may see the collection c.
+	Collection(c Collection) bool
 }
 
 // Everything is the access of a reader who may see every portal and
@@ -87,7 +104,8 @@ func (v *view) portalFor(slug string) (*site, bool) {
 
 // visibleSites returns the reader's sites for access: of sites, a copy of the
 // site of each portal visible to the reader, in order, with only its visible
-// sections, and with the others for its portal menu.
+// sections, with the others for its portal menu, and with only the
+// collections that showCollections leaves.
 func visibleSites(sites []*site, access Access) []*site {
 	var visible []*site
 	for _, s := range sites {
@@ -98,7 +116,37 @@ func visibleSites(sites []*site, access Access) []*site {
 	for _, v := range visible {
 		v.portals = visible
 	}
+	showCollections(visible, access)
 	return visible
+}
+
+// showCollections leaves on each of visible, a reader's sites, only the
+// collections that access shows to the reader: every collection for an
+// access that is no CollectionAccess, and else those that it allows, asked
+// once for each collection, with a clone of its own.
+func showCollections(visible []*site, access Access) {
+	ca, ok := access.(CollectionAccess)
+	if !ok || len(visible) == 0 || visible[0].collectionNames == nil {
+		return
+	}
+	// Not nil even when empty: listPortals reads nil as a configuration
+	// without collections, which lists every portal.
+	shown := []string{}
+	for _, c := range visible[0].configured {
+		if ca.Collection(c.Clone()) {
+			shown = append(shown, c.Name)
+		}
+	}
+	for _, v := range visible {
+		// A slice of its own: v shares collections with the site it copies.
+		var own []string
+		for _, name := range v.collections {
+			if slices.Contains(shown, name) {
+				own = append(own, name)
+			}
+		}
+		v.collectionNames, v.collections = shown, own
+	}
 }
 
 // visibleTo returns a copy of the site with only the sections visible to the
