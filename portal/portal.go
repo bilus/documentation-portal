@@ -271,7 +271,8 @@ func (rt *router) accountLinks(r *http.Request) []AccountLink {
 
 // viewFor builds the reader's view for access and links: the access, the
 // account links and the reader's sites, a copy of the site of each portal
-// visible to the reader, with only its visible sections, so that every page
+// visible to the reader, with only its visible sections and the collections
+// shown to the reader, so that every page
 // of the request reads only what is visible to the reader and ends every
 // navigation bar with the reader's account links.
 func (rt *router) viewFor(access Access, links []AccountLink) *view {

@@ -270,8 +270,30 @@ const LinkPortal PortalType = "link"
 // Collection is a named set of portals, listed under its name on the home page
 // and in the portal menu: the portals whose labels hold every match label.
 type Collection struct {
-	Name        string   `yaml:"name"`
-	MatchLabels []string `yaml:"matchLabels"`
+	Name        string         `yaml:"name"`
+	MatchLabels []string       `yaml:"matchLabels"`
+	Ext         map[string]any `yaml:",inline"` // the extension fields: those whose keys start with x-, by key, or nil
+}
+
+// Clone returns a copy of the collection that shares nothing with it: its own
+// match labels and its own extension fields, at every depth and whatever the
+// types of their values. The portal handler keeps a clone of each collection
+// of its configuration, and gives each call of a collection access a clone of
+// its own.
+func (c Collection) Clone() Collection {
+	// HOLE(2): copy the match labels and the extension fields at every depth, as Portal.Clone does
+	return c
+}
+
+// GetExt returns the collection's extension fields as a T, whose fields name
+// their keys in yaml tags, such as `yaml:"x-roles"`, as Portal.GetExt does
+// for a portal: T's zero value without extension fields, or an error that
+// names the collection for an extension field that T lacks and for a value
+// that does not fit T's field. The result shares nothing with the collection.
+func (c Collection) GetExt[T any]() (T, error) {
+	// HOLE(2): decode the extension fields into a T, with the checks of Portal.GetExt
+	var ext T
+	return ext, nil
 }
 
 // ReadConfig reads the portals and the collections from the configuration
@@ -348,6 +370,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			}
 			labels = append(labels, *label)
 		}
+		// HOLE(2): keep the collection's keys that start with x- as its extension fields, with the checks of a portal's
 		collections = append(collections, Collection{Name: g.Name, MatchLabels: labels})
 	}
 	return Config{Root: root, Portals: portals, Collections: collections}, nil
