@@ -445,6 +445,14 @@ for each request with a folder to switch to or a preview to serve.
 
 ## Chat
 
+The chat is left out of a plain build. Its package needs the private module
+`github.com/bilus/live-templ`, so `go build ./cmd/docportal` builds a
+docportal without it, which refuses `-chat-model`, and `go build -tags chat
+./cmd/docportal` builds one with it. The Makefile's targets build with the
+tag; `make build lint test TAGS=` leaves the chat out, as CI does. A program
+that embeds the portal gets the chat by importing package `chat` and
+building with `-tags chat`.
+
 With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
 `claude-opus-5-5`, every portal has a chat page at `/portals/{portal}/chat`,
 where readers ask questions about its APIs. The model answers from the

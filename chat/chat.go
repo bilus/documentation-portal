@@ -1,3 +1,5 @@
+//go:build chat
+
 // Package chat answers customers' questions about an API from its published
 // documentation, with a model, read-only tools and a live page.
 //

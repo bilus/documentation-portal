@@ -5,7 +5,7 @@ own. It serves the documentation of a bucket folder, refreshed after each
 change of the folder, with previews of pull requests; it signs readers in through Auth0
 or GitHub; and it opens portals, sections and previews to each reader by an
 access file, which maps the reader's claims to the labels of the
-configuration file. With an Anthropic API key, it runs the chat, with one
+configuration file. Built with `-tags chat` and given an Anthropic API key, it runs the chat, with one
 question limit for each reader. It uses the library's documented API
 alone: the packages `portal`, `source`, `signin`, `chat` and
 `anthropicmodel` (see Embedding the portal in the repository's README).

@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/bilus/documentation-portal/anthropicmodel"
-	"github.com/bilus/documentation-portal/chat"
 	"github.com/bilus/documentation-portal/portal"
 	"github.com/bilus/documentation-portal/signin"
 	"github.com/bilus/documentation-portal/source"
@@ -48,7 +46,7 @@ type builder struct {
 	configPath string       // the configuration file's path inside each snapshot
 	rules      accessRules  // whose access method is the access hook
 	model      chatSettings // with no chat without an API key
-	chat       *chat.Chat   // nil until the first build with an API key
+	chat       chatHandle   // the chat, once a build with an API key made one
 }
 
 // build builds the portal handler of a snapshot at root: it reads the
@@ -64,36 +62,9 @@ func (b *builder) build(root fs.FS) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	if b.model.apiKey == "" {
-		return portal.New(cfg)
-	}
-	libs, err := portal.NewLibraries(cfg)
-	if err != nil {
+	if cfg, err = b.addChat(cfg); err != nil {
 		return nil, err
 	}
-	// Link portals alone publish nothing to ask about, so the chat of an
-	// earlier snapshot answers no question until a later one.
-	if len(libs) == 0 {
-		if b.chat != nil {
-			b.chat.Clear()
-		}
-		return portal.New(cfg)
-	}
-	if b.chat == nil {
-		m, err := anthropicmodel.New(b.model.model, anthropicmodel.Config{APIKey: b.model.apiKey, BaseURL: b.model.baseURL})
-		if err != nil {
-			return nil, err
-		}
-		c, err := chat.New(chat.Config{Model: m, Libraries: libs, Reader: signin.ReaderID})
-		if err != nil {
-			return nil, err
-		}
-		b.chat = c
-	} else if err := b.chat.Reload(libs); err != nil {
-		return nil, err
-	}
-	// Routes binds each chat page to the libraries of this snapshot.
-	cfg.Chat = b.chat.Routes()
 	return portal.New(cfg)
 }
 

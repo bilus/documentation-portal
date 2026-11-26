@@ -22,12 +22,18 @@ LAYERS    = $(wildcard docs/diagrams/layers.toml)
 
 .PHONY: setup generate build lint test test-e2e run diagram
 
+# TAGS are the build tags of every target. The tag chat adds package chat,
+# and with it the chat page of docportal and of the example; its module
+# github.com/bilus/live-templ is private. `make build lint test TAGS=` leaves
+# the chat out and needs no access to that module, as CI runs it.
+TAGS ?= chat
+
 # The core packages leave sign-in to the program that embeds them: none may
 # import the sign-in package, an OAuth or OpenID Connect library or an
 # identity provider's package. docportal is such a program, so the check
 # leaves it out: its GCS and S3 drivers need OAuth for the bucket's
 # credentials, and its sign-in needs the sign-in package.
-CORE_PACKAGES := ./portal ./source ./chat ./anthropicmodel
+CORE_PACKAGES  = ./portal ./source ./anthropicmodel $(if $(filter chat,$(TAGS)),./chat)
 SIGN_IN       := ^(github\.com/bilus/documentation-portal/signin|golang\.org/x/oauth2|github\.com/coreos/go-oidc|github\.com/zitadel/oidc|github\.com/markbates/goth|github\.com/auth0|github\.com/okta)(/|$$)
 
 # The example application, a module of its own, which builds against the
@@ -49,31 +55,33 @@ $(ELEMENTS_FILES) &: Makefile
 	rm $(ELEMENTS_TGZ)
 
 # livegen compiles chat/page.templ into page_templ.go and page_live.go, which
-# are committed; run it after changing the template.
+# are committed; run it after changing the template. Every file of package
+# chat carries the build tag chat, so tagchat puts it back on these two.
 generate:
 	go tool livegen chat
 	gofmt -w chat/page_templ.go chat/page_live.go
+	go run ./internal/tagchat chat/page_templ.go chat/page_live.go
 
 build: setup
-	go build -o bin/docportal ./cmd/docportal
-	cd $(EXAMPLE) && go build -o ../../bin/portalapp .
+	go build -tags "$(TAGS)" -o bin/docportal ./cmd/docportal
+	cd $(EXAMPLE) && go build -tags "$(TAGS)" -o ../../bin/portalapp .
 
 lint:
-	go vet ./...
-	go vet -tags e2e ./e2e/...
-	cd $(EXAMPLE) && go vet ./... && go vet -tags e2e ./...
+	go vet -tags "$(TAGS)" ./...
+	go vet -tags "e2e $(TAGS)" ./e2e/...
+	cd $(EXAMPLE) && go vet -tags "$(TAGS)" ./... && go vet -tags "e2e $(TAGS)" ./...
 	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
-	@deps=$$(go list -deps $(CORE_PACKAGES)) || exit 1; \
+	@deps=$$(go list -tags "$(TAGS)" -deps $(CORE_PACKAGES)) || exit 1; \
 	found=$$(echo "$$deps" | grep -E '$(SIGN_IN)'); \
 	test -z "$$found" || { echo "sign-in packages in the core packages:"; echo "$$found"; exit 1; }
 
 test: setup
-	go test ./...
-	cd $(EXAMPLE) && go test ./...
+	go test -tags "$(TAGS)" ./...
+	cd $(EXAMPLE) && go test -tags "$(TAGS)" ./...
 
 test-e2e: setup
-	go test -tags e2e ./e2e/...
-	cd $(EXAMPLE) && go test -tags e2e -run InTheBrowser ./...
+	go test -tags "e2e $(TAGS)" ./e2e/...
+	cd $(EXAMPLE) && go test -tags "e2e $(TAGS)" -run InTheBrowser ./...
 
 run: build
 	./bin/docportal $(ARGS)
