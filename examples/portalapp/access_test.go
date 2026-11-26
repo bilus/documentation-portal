@@ -41,7 +41,8 @@ func TestReadAccessFile(t *testing.T) {
 				{Provider: "github", Claim: "team_ids", Values: []string{"2002"}},
 			},
 		},
-		Previews: []rule{{Provider: "github", Claim: "org_ids", Values: []string{"1001"}}},
+		Previews:     []rule{{Provider: "github", Claim: "org_ids", Values: []string{"1001"}}},
+		Unrestricted: []string{"api", "ops"},
 	}
 	if !reflect.DeepEqual(rules, want) {
 		t.Errorf("the demo's access rules:\n got %+v\nwant %+v", rules, want)
@@ -251,6 +252,49 @@ func TestPreviewsOpenToTheReadersOfThePreviewRules(t *testing.T) {
 	} {
 		if a.Preview("pr-1") {
 			t.Errorf("%s may open the preview pr-1", name)
+		}
+	}
+}
+
+func TestUnrestrictedLabelsCloseNothing(t *testing.T) {
+	rules := accessRules{
+		Labels:       map[string][]rule{"partner": {{Provider: "github", Claim: "team_ids", Values: []string{"2002"}}}},
+		Unrestricted: []string{"api", "ops"},
+	}
+	grace := rules.accessOf("github", signin.Claims{"team_ids": []any{"2002"}})
+	other := rules.accessOf("github", signin.Claims{})
+	for name, tc := range map[string]struct {
+		labels       []string
+		grace, other bool
+	}{
+		"no labels":                      {nil, true, true},
+		"unrestricted labels alone":      {[]string{"api", "ops"}, true, true},
+		"an unrestricted and a rule":     {[]string{"api", "partner"}, true, false},
+		"a label the file does not name": {[]string{"api", "typo"}, false, false},
+	} {
+		p := portal.Portal{Name: "P", Labels: tc.labels}
+		if grace.Portal(p) != tc.grace || other.Portal(p) != tc.other {
+			t.Errorf("%s: open to Grace %v and to another reader %v, want %v and %v", name, grace.Portal(p), other.Portal(p), tc.grace, tc.other)
+		}
+		if s := (portal.Section{Title: "S", Labels: tc.labels}); grace.Section(p, s) != tc.grace {
+			t.Errorf("%s: the section opens to Grace %v, want %v", name, grace.Section(p, s), tc.grace)
+		}
+	}
+	if (readerAccess{unrestricted: []string{"api"}}).Portal(portal.Portal{Name: "P", Labels: []string{"api"}}) {
+		t.Error("a reader who is not signed in sees a portal with an unrestricted label")
+	}
+	dir := t.TempDir()
+	for name, file := range map[string]string{
+		"an empty label":      "unrestricted: [api, \"\"]\n",
+		"a label with rules":  "unrestricted: [staff]\nlabels:\n  staff:\n    - {provider: auth0, claim: roles, values: [staff]}\n",
+		"a label, not a list": "unrestricted: api\n",
+	} {
+		path := filepath.Join(dir, "access.yaml")
+		if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readAccessFile(path); err == nil {
+			t.Errorf("%s: no error", name)
 		}
 	}
 }

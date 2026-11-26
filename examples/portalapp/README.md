@@ -36,9 +36,11 @@ Elements assets, and then:
     go run .
 
 Then open http://localhost:8080. The sign-in page offers Auth0 and GitHub.
-Through Auth0, Ada reads the portal Pets with its staff notes; through
-GitHub, Grace reads Pets without the staff notes, and the portal Partners,
-and may open the preview at http://localhost:8080/previews/pr-1. The
+The home page lists the portals under two collections, APIs and Operations,
+the second with the link portal Status. Through Auth0, Ada reads the portal
+Pets with its staff notes; through GitHub, Grace reads Pets without the
+staff notes, and the portal Partners, and may open the preview at
+http://localhost:8080/previews/pr-1. The
 navigation bar ends with the reader's name and a Sign out link, which ends
 the session; the signed-out page links back to the sign-in page. The test
 `TestTheExampleRunsAgainstTheMocks` runs these same steps.
@@ -83,7 +85,11 @@ that whoever uploads documentation cannot grant themselves access. Under
 `labels`, each label of the configuration file has a list of rules; under
 `previews`, a list of previews rules opens every preview to each matching
 reader. A rule matches a reader who signed in through its provider and
-whose claim holds one of its values:
+whose claim holds one of its values. Under `unrestricted`, a list names the
+labels that only sort portals into the collections of the configuration
+file, such as `unrestricted: [api, ops]`: they close nothing. Any other
+label without rules closes its portal or section to every reader, so a
+misspelt label never opens one:
 
     labels:
       staff:

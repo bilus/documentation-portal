@@ -267,8 +267,14 @@ func TestStartupServesEachReaderTheirOwnSections(t *testing.T) {
 	p.start(t)
 
 	ada := signInAs(t, p.srv.URL, "auth0")
-	if page := get(t, ada, p.srv.URL+"/"); !strings.HasSuffix(page.url, "/portals/pets/specs/api") {
-		t.Errorf("/ opened %s for Ada, whose only portal is Pets", page.url)
+	adaHome := get(t, ada, p.srv.URL+"/")
+	for _, want := range []string{"<h2>APIs</h2>", ">Pets</a>", "<h2>Operations</h2>", `<a href="https://status.example.com/">Status</a>`} {
+		if !strings.Contains(adaHome.body, want) {
+			t.Errorf("Ada's home page lacks %q: %q", want, adaHome.body)
+		}
+	}
+	if strings.Contains(adaHome.body, "Partners") {
+		t.Errorf("Ada's home page names the portal of the partners: %q", adaHome.body)
 	}
 	staff := get(t, ada, p.srv.URL+"/portals/pets/docs/staff-notes/")
 	if staff.status != http.StatusOK || !strings.Contains(staff.body, "on-call.md") {
@@ -291,7 +297,7 @@ func TestStartupServesEachReaderTheirOwnSections(t *testing.T) {
 
 	grace := signInAs(t, p.srv.URL, "github")
 	home := get(t, grace, p.srv.URL+"/")
-	for _, want := range []string{">Pets</a>", ">Partners</a>", "Grace Hopper"} {
+	for _, want := range []string{"<h2>APIs</h2>", ">Pets</a>", ">Partners</a>", "<h2>Operations</h2>", ">Status</a>", "Grace Hopper"} {
 		if !strings.Contains(home.body, want) {
 			t.Errorf("Grace's home page lacks %q: %q", want, home.body)
 		}
