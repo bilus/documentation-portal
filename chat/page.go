@@ -1,3 +1,5 @@
+//go:build chat
+
 package chat
 
 import (
@@ -5,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -81,19 +84,57 @@ func chatComponent(lv live.Ctx, p *page) live.Component {
 
 // page is the state of one chat tab: one conversation.
 type page struct {
-	chat     *Chat
-	portal   string        // the slug of the page's portal
-	access   portal.Access // the page access, from the page's session
-	asker    Asker         // whose question limit counts the page's questions
-	conv     string
-	next     int // the ID of the next message
-	Heading  string
-	Nav      []navLink
-	Portal   string               // the name of the page's portal, the label of the menu
-	Menu     []navLink            // the portal menu's links, or none
-	Account  []portal.AccountLink // the account links of the page's GET, at the bar's right end
-	Messages []message
-	Form     questionForm
+	chat        *Chat
+	portal      string        // the slug of the page's portal
+	access      portal.Access // the page access, from the page's session
+	asker       Asker         // whose question limit counts the page's questions
+	conv        string
+	next        int // the ID of the next message
+	Heading     string
+	Nav         []navLink
+	Portal      string               // the name of the page's portal, the label of the menu
+	Menu        []navLink            // the portal menu's links, or none
+	Collections []menuCollection     // the portal menu's links by collection, or none without collections
+	Account     []portal.AccountLink // the account links of the page's GET, at the bar's right end
+	Messages    []message
+	Form        questionForm
+}
+
+// menuCollection is a collection in the portal menu: its name over the
+// links of its listed portals.
+type menuCollection struct {
+	Name  string
+	Links []navLink
+}
+
+// pageMenu is the portal menu of a chat page, as the page's session holds
+// it.
+type pageMenu struct {
+	Portals     []portal.PortalLink     `json:"portals,omitempty"`
+	Collections []portal.MenuCollection `json:"collections,omitempty"`
+}
+
+// readMenu returns the portal menu in value, a page's session value, as the
+// page shows it, or none for a value that does not hold one.
+func readMenu(value string) ([]navLink, []menuCollection) {
+	var m pageMenu
+	if err := json.Unmarshal([]byte(value), &m); err != nil {
+		return nil, nil
+	}
+	link := func(p portal.PortalLink) navLink { return navLink{Label: p.Name, URL: p.URL} }
+	var menu []navLink
+	for _, p := range m.Portals {
+		menu = append(menu, link(p))
+	}
+	var collections []menuCollection
+	for _, c := range m.Collections {
+		mc := menuCollection{Name: c.Name}
+		for _, p := range c.Portals {
+			mc.Links = append(mc.Links, link(p))
+		}
+		collections = append(collections, mc)
+	}
+	return menu, collections
 }
 
 type navLink struct {
@@ -115,8 +156,9 @@ type questionForm struct {
 
 // mount starts a conversation in a new tab of the chat page of a's portal,
 // for the reader whose page access, reader ID and client the page's session
-// holds: the page's heading, navigation bar and portal menu show only the
-// APIs, sections and portals visible to the reader, and the page's questions
+// holds: the page's heading and navigation bar show only the APIs and
+// sections visible to the reader, the portal menu is the one of the page's
+// GET, link portals and collections included, and the page's questions
 // count against the asker of the reader ID and the client. The navigation
 // bar ends with the account links of the page's GET. It refuses a portal
 // hidden from the reader.
@@ -138,16 +180,8 @@ func (c *Chat) mount(lv live.Ctx, a *portalAgent) (*page, error) {
 		nav = append(nav, navLink{Label: s.Title, URL: s.URL})
 	}
 	nav = append(nav, navLink{Label: "Chat", URL: a.lib.ChatURL(), Current: true})
-	var menu []navLink
-	for _, other := range c.currentAgents() {
-		if visible, ok := other.lib.For(access); ok {
-			menu = append(menu, navLink{Label: visible.Name(), URL: visible.URL()})
-		}
-	}
-	if len(menu) < 2 {
-		menu = nil
-	}
-	return &page{chat: c, portal: a.lib.Slug(), access: access, asker: AskerOf(readerIDIn(lv.Session("readerID")), lv.Session("client")), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu, Account: readAccountLinks(lv.Session("account"))}, nil
+	menu, collections := readMenu(lv.Session("menu"))
+	return &page{chat: c, portal: a.lib.Slug(), access: access, asker: AskerOf(readerIDIn(lv.Session("readerID")), lv.Session("client")), conv: hex.EncodeToString(id), Heading: heading, Nav: nav, Portal: a.lib.Name(), Menu: menu, Collections: collections, Account: readAccountLinks(lv.Session("account"))}, nil
 }
 
 // FormID changes with every message, so the page renders a new, empty form.

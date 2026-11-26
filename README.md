@@ -145,6 +145,76 @@ without a language included. `portal.New` takes both as options:
 
     portal.New(cfg, portal.WithEmbeddedVideo(), portal.WithCodeHighlighting(""))
 
+## Collections
+
+`collections:` in the configuration file, beside `portals:`, lists the portals
+under named collections on the home page and in the portal menu. It is optional.
+
+    portals:
+      - name: Staging
+        labels: [prerelease, autostage]
+        sections: [...]
+      - name: Production
+        labels: [autostage]
+        sections: [...]
+      - name: Live Ingest API
+        labels: [live-ingest]
+        sections: [...]
+    collections:
+      - name: AutoStage API
+        matchLabels: [autostage]
+      - name: Ingest
+        matchLabels: [live-ingest]
+
+A portal belongs to a collection when its labels hold every one of the collection's
+`matchLabels`: `matchLabels: [a, b]` matches a portal labelled `a, b` or
+`a, b, c`, and not one labelled `a`, `b` or `x`. The home page shows each
+collection's name as a heading over its portals, and the portal menu as a label
+over their links, in the order of `collections:`, with the portals of a collection in
+the order of `portals:`. A portal of two collections shows under both.
+
+A portal of no collection is not listed, and docportal says so in its log each
+time it builds the portal, as it does for a collection that matches no portal:
+
+    portal "Lab" is in no collection and is not listed
+    collection "Partners" matches no portal
+
+Such a portal keeps its pages under `/portals/{portal}/`, for a reader with
+the URL. Collections do not restrict anything: the access hook decides who may
+read a portal, and a collection lists only the portals visible to the reader, or
+is left out when it has none. `/` redirects when one portal is listed.
+docportal does not start with a collection that has no name, no `matchLabels`, an
+empty match label, or the name of another collection. A program sets
+`portal.Config.Collections`, which `portal.ReadConfig` fills from the file.
+
+## Link portals
+
+A portal of type `link` puts a link of its own on the home page and into the
+portal menu, to a page that the portal does not serve: a route of the program
+that embeds the portal, or another site.
+
+    portals:
+      - name: Delivery API
+        sections: [...]
+      - name: Status
+        type: link
+        url: https://status.example.com/
+        labels: [ops]
+
+The `url` follows the rule of a link section's: a path that starts with one
+`/`, or an http or https URL with a host, written into the link without the
+base path. A link portal has no `sections`, and no other portal has a `url`
+or a `type`. docportal does not start with a link portal that breaks these
+rules. Its name follows the rules of every portal, so no other portal may
+share its slug.
+
+A link portal shows at its place in the order of `portals:`, and in each
+collection that its labels match, in that same order. The access hook hides
+it like any portal, by its labels or its name; hiding the link does not close
+the page behind it. It has no pages: `/portals/{portal}/` with its slug
+answers 404, and it has no chat page. When a link portal is the only listed
+portal, `/` shows the home page with its link, and does not redirect.
+
 ## Link sections
 
 A section of type `link` puts a link of its own into the navigation bar, to
@@ -163,7 +233,7 @@ portal, or another site.
         url: https://status.example.com/
 
 The `url` is a path that starts with one `/`, or an http or https URL with a
-host; a link section has no `input` and no `toc`, and no other section has a
+host and without a user name or a password; a link section has no `input` and no `toc`, and no other section has a
 `url`. The portal does not start with any other URL, such as `support`,
 `//example.com/support` or a `javascript:` URL. The link is the URL as
 written, without the base path, so a program that serves the portal under
@@ -254,9 +324,11 @@ them:
 | `.Base` | all | the base path, such as `/docs`, or empty |
 | `.Nav.Links` | all | the navigation bar's links, each with `.Label` and `.URL` |
 | `.Nav.Portal`, `.Nav.Menu` | portal pages | the page's portal's name, and the links of the portal menu when there are other portals |
+| `.Nav.Collections` | portal pages | with collections, the menu's links by collection, each with `.Name` and `.Links`; else empty |
 | `.Nav.Account` | all | the reader's account links; a link without `.URL` shows its `.Label` alone |
 | `.Banner` | all | the preview banner, with `.Preview` the folder of the reader's preview or `.Ended` that of an ended one, or nil |
-| `.Portals` | `home.html` | the visible portals, each with `.Label`, its name, and `.URL`; empty when none is open to the reader |
+| `.Portals` | `home.html` | the listed portals, each once, with `.Label`, its name, and `.URL`; empty when none is open to the reader |
+| `.Collections` | `home.html` | with collections, the listed portals by collection, each with `.Name` and `.Links`; else empty |
 | `.Message` | `home.html`, `error.html` | why the page has nothing to show |
 | `.Section`, `.Sidebar` | `doc.html`, `list.html` | the docs section's title, and the sidebar's groups, each with `.Title` and `.Links` of `.Title`, `.URL` and `.Current` |
 | `.Contents` | `list.html` | the toc file's groups, as `.Sidebar`, or none |
@@ -372,6 +444,14 @@ reader may open any preview. The previews handler asks the access hook once
 for each request with a folder to switch to or a preview to serve.
 
 ## Chat
+
+The chat is left out of a plain build. Its package needs the private module
+`github.com/bilus/live-templ`, so `go build ./cmd/docportal` builds a
+docportal without it, which refuses `-chat-model`, and `go build -tags chat
+./cmd/docportal` builds one with it. The Makefile's targets build with the
+tag; `make build lint test TAGS=` leaves the chat out, as CI does. A program
+that embeds the portal gets the chat by importing package `chat` and
+building with `-tags chat`.
 
 With `-chat-model` or `DOCPORTAL_CHAT_MODEL` naming an Anthropic model, such as
 `claude-opus-5-5`, every portal has a chat page at `/portals/{portal}/chat`,

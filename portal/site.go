@@ -16,17 +16,20 @@ import (
 
 // site answers the requests for the pages of one portal.
 type site struct {
-	config    Portal // the portal as the portal configuration gives it, for the access hook
-	whole     *site  // on a reader's site, the site that visibleTo copied, else nil
-	root      fs.FS
-	name      string // the portal's name
-	slug      string // the portal's slug
-	sections  []*section
-	portals   []*site // the site of every portal, for the portal menu
-	hideTryIt bool
-	chat      bool      // whether a route of the chat serves the portal's chat page
-	base      string    // the base path of every URL of the site's pages, or ""
-	render    *renderer // how document pages render markdown; nil renders plainly
+	config          Portal // the portal as the portal configuration gives it, for the access hook
+	whole           *site  // on a reader's site, the site that visibleTo copied, else nil
+	root            fs.FS
+	name            string // the portal's name
+	slug            string // the portal's slug
+	sections        []*section
+	portals         []*site  // the site of every portal, for the portal menu
+	collections     []string // the names of the portal's collections, in the collections' order
+	collectionNames []string // the name of every collection, in order, or none without collections
+	hideTryIt       bool
+	link            string    // a link portal's URL as linkURL wrote it, else empty
+	chat            bool      // whether a route of the chat serves the portal's chat page
+	base            string    // the base path of every URL of the site's pages, or ""
+	render          *renderer // how document pages render markdown; nil renders plainly
 }
 
 // renderer returns how the site renders the markdown of its document pages.
@@ -50,9 +53,12 @@ func newSite(cfg Config, p Portal, sections []*section) *site {
 	return s
 }
 
-// url returns the URL that opens the site's portal: the page of its first
-// section, or the portal's path without a section.
+// url returns the URL that opens the site's portal: a link portal's URL,
+// the page of its first section, or the portal's path without a section.
 func (s *site) url() string {
+	if s.link != "" {
+		return s.link
+	}
 	if len(s.sections) == 0 {
 		return (&url.URL{Path: s.base + "/portals/" + s.slug + "/"}).String()
 	}
@@ -71,17 +77,15 @@ func (s *site) chatURL() string {
 }
 
 // menu returns the links of the portal menu: the first section of every
-// portal under its name, in the order of the portal configuration, or none
-// with one portal.
-func (s *site) menu() []navLink {
-	if len(s.portals) < 2 {
-		return nil
+// listed portal under its name, in the order of the portal configuration,
+// and with collections the same links under each collection's name, or none with fewer
+// than two listed portals.
+func (s *site) menu() ([]navLink, []portalCollection) {
+	listed, collections := listPortals(s.portals)
+	if len(listed) < 2 {
+		return nil, nil
 	}
-	links := make([]navLink, 0, len(s.portals))
-	for _, p := range s.portals {
-		links = append(links, navLink{Label: p.name, URL: p.url()})
-	}
-	return links
+	return linksTo(listed), collections
 }
 
 // specFor returns the spec section whose slug is slug, or false.
@@ -143,7 +147,7 @@ func (s *site) docsFor(slug string) (*section, bool) {
 	return nil, false
 }
 
-// index redirects to the first section's page.
+// index redirects to the first section's page. A link portal has none.
 func (s *site) index(w http.ResponseWriter, r *http.Request) {
 	if len(s.sections) == 0 {
 		http.NotFound(w, r)
@@ -177,20 +181,21 @@ func (s *site) viewerPage(w http.ResponseWriter, r *http.Request) {
 }
 
 type page struct {
-	Title     string
-	SpecURL   string // viewer page only
-	HideTryIt bool   // viewer page only
-	Message   string // error page only
-	Nav       navBar
-	Section   string         // the docs section's title: document pages and lists only
-	Sidebar   []sidebarGroup // document pages and lists only
-	Contents  []sidebarGroup // document list only: the toc file's groups, or none
-	Docs      []docLink      // document list only, without Contents: every markdown file
-	Portals   []navLink      // home page only
-	Body      template.HTML  // document page only
-	CodeCSS   template.CSS   // document page only: the stylesheet of highlighted code, or empty
-	Banner    *banner        // above the navigation bar, or nil
-	Base      string         // the base path of the assets and the previews link, or ""
+	Title       string
+	SpecURL     string // viewer page only
+	HideTryIt   bool   // viewer page only
+	Message     string // error page only
+	Nav         navBar
+	Section     string             // the docs section's title: document pages and lists only
+	Sidebar     []sidebarGroup     // document pages and lists only
+	Contents    []sidebarGroup     // document list only: the toc file's groups, or none
+	Docs        []docLink          // document list only, without Contents: every markdown file
+	Portals     []navLink          // home page only: the listed portals
+	Collections []portalCollection // home page only: the listed portals by collection, or none without collections
+	Body        template.HTML      // document page only
+	CodeCSS     template.CSS       // document page only: the stylesheet of highlighted code, or empty
+	Banner      *banner            // above the navigation bar, or nil
+	Base        string             // the base path of the assets and the previews link, or ""
 }
 
 // docLink links a document page from the document list.
@@ -201,10 +206,11 @@ type docLink struct {
 
 // navBar is the navigation bar of a page.
 type navBar struct {
-	Links   []navLink
-	Portal  string        // the name of the page's portal, the label of the menu
-	Menu    []navLink     // the portal menu's links, or none
-	Account []AccountLink // the reader's account links, at the bar's right end, or none
+	Links       []navLink
+	Portal      string             // the name of the page's portal, the label of the menu
+	Menu        []navLink          // the portal menu's links, or none
+	Collections []portalCollection // the portal menu's links by collection, or none without collections
+	Account     []AccountLink      // the reader's account links, at the bar's right end, or none
 }
 
 // navLink is one link of the navigation bar.
@@ -224,7 +230,8 @@ func (s *site) nav() navBar {
 	if s.chat {
 		links = append(links, navLink{Label: "Chat", URL: s.chatURL()})
 	}
-	return navBar{Links: links, Portal: s.name, Menu: s.menu()}
+	menu, collections := s.menu()
+	return navBar{Links: links, Portal: s.name, Menu: menu, Collections: collections}
 }
 
 //go:embed templates/*.html

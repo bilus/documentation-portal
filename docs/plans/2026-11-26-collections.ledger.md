@@ -1,0 +1,33 @@
+# Ledger, plan: docs/plans/2026-11-26-collections.md
+
+- 2026-11-26. Stage 1 started from `c4753c5`. Plan written with ten questions; the match rule (Q1) is an assumption against the literal wording of the request.
+- 2026-11-26. Design change proposed: box 7 of `flow.dfd` reads the groups too; new box 3.5 `portal.groupPortals` in `flow.3.dfd`, between 3.1 and 3.2, with the group problems sent to the log. Vocabulary: group, match labels, listed portal, group problem added; configuration file, portal menu, home page and portal configuration changed.
+- 2026-11-26. Holes added: `2 portal.ReadConfig`, `2 portal.groupPortals`, `2 portal.matchGroups`, `3 portal.listPortals`, `4 portal.Library.Groups`, `4 portal.Library.GroupNames`, `4 chat.Chat.mount`. Inline, without a hole: `router.home` and `site.menu` call `listPortals`, whose mock returns every site.
+- 2026-11-26. Score unchanged: 9 3 0 3 1 0 0. The skill's vocabulary and design reviews did not run: AGENTS.md replaces them with one defect review before the pull request.
+- 2026-11-26. Skeleton complete, uncommitted, waiting for the plan's approval.
+- 2026-11-26. Plan approved, with Q1 decided: match labels `a, b` match `a, b` and `a, b, c`, not `a`, `b` or `x`. Score card cached.
+- 2026-11-26. Stage 2 started from `cb51706`.
+- 2026-11-26. Holes filled: `2 portal.matchGroups`, `2 portal.groupPortals`, `2 portal.ReadConfig`, with the unexported helper `holdsAll`. Tests unskipped: `TestReadConfigReadsGroups`, `TestGroupChecks`, `TestGroupWarnings`.
+- 2026-11-26. Test change, for sign-off: three cases of `TestReadConfigReadsGroups` expected the YAML error to name the key (`matchLabels`, `groups`); yaml.v3 names the line and the type instead, so they now expect `cannot unmarshal`. Added `TestAPortalNeedsEveryMatchLabel`, the rule of Q1 in the user's own cases.
+- 2026-11-26. Stage 2 complete: `make build lint test` green, 11 census lines (4 holes, 7 skipped tests), score unchanged. Browser tests not run. Waiting for approval.
+- 2026-11-26. Stage 2 approved, with the test change. Stage 3 started from `9fdf640`.
+- 2026-11-26. Hole filled: `3 portal.listPortals`; `home.html`, `nav.html` and `samplesOf` changed inline; five tests unskipped. Checked in the browser with the request's example plus a portal of no group.
+- 2026-11-26. Stage 3 complete: `make build lint test test-e2e` green, 5 census lines (3 holes, 2 skipped tests), score unchanged. Waiting for approval.
+- 2026-11-26. Stage 3 approved. Decision, at the user's word: the term is collection, not group, which the toc file and the claims already use; `sets` was discarded because a portal is "a named set of sections". Plan diff: stage 4 is the rename, the library and chat stage becomes stage 5 with its holes retagged `HOLE(5)`, the defect review's findings stage 6. Earlier lines of this ledger keep the old names.
+- 2026-11-26. Stage 4 started from `894f2a1`: a refactoring, with the tests changed in names and strings alone.
+- 2026-11-26. Stage 4 complete: `make build lint test` green, 5 census lines, score unchanged. The user asked to continue with stage 5 without a halt here.
+- 2026-11-26. Stage 5 started from the commit of stage 4.
+- 2026-11-26. Holes filled: `5 portal.Library.Collections`, `5 portal.Library.CollectionNames`, `5 chat.Chat.mount`, with the helper `menuOf` and the type `menuCollection` in package chat; `page.templ` changed and its files regenerated. Tests unskipped: `TestLibraryCollections`, `TestChatPageMenuListsCollections`.
+- 2026-11-26. Test change, for sign-off: `TestChatPageMenuListsCollections` expected the menu as one string; templ writes a space after each collection label, so the test now checks the pieces in order.
+- 2026-11-26. Stage 5 complete: `make build lint test test-e2e` green, census 0, score unchanged. Waiting for approval; the defect review follows.
+- 2026-11-26. Stage 5 approved, with the test change. Defect review of AGENTS.md started on `c4753c5..f709ace`.
+- 2026-11-26. Stage 6 started from the commit of the approval. At the user's word, added `TestLabelsWithoutCollectionsListEveryPortal`: portals with labels and no collections list as before, each once, with no heading and no log line.
+- 2026-11-26. Defect review reported: 245 s, 136,206 tokens, 8 tool calls, 6 findings, none high. All 8 wrong implementations pass every test (script: scratchpad `mutate.py`, on a copy of `c41953c`): adjacent-duplicate, last-label-empty, chat-counts-unlisted, chat-empty-collection, home-redirects-first-visible, menu-collections-with-one, home-portals-unfiltered, menu-links-unfiltered.
+- 2026-11-26. Findings 1 and 2 confirmed by experiment: `matchLabels: [a, ~]` reads as `[a]`, and a write to `libs[0].CollectionNames()` shows in `libs[1]`.
+- 2026-11-26. Decisions proposed, waiting for approval. Apply: 1 (null match label), 2 (getters return copies), 3 (blank name and blank match label), 6 (chat menu keys), and tests for the 8 wrong implementations. Discard: 4 (`- {}` passes ReadConfig), since New refuses it and a portal entry `- {}` behaves the same. Left to the user: 5 (a reader who sees only unlisted portals reads "No portals are open to you.").
+- 2026-11-26. Stage 6 plan approved. Applied: findings 1, 2, 3 and 6. Finding 5 kept as it is, at my recommendation, without an objection from the user. Tests added: `TestCollectionChecksAnywhereInTheList`, `TestReadConfigRefusesANullMatchLabel`, `TestALibrarysCollectionsAreCopies`, `TestOneListedPortalAfterAnUnlistedOne`, `TestThePortalMenuFollowsAccess`, `TestCustomTemplatesGetTheListedPortalsOnce`, `TestChatPageMenuCountsTheListedPortals`, `TestChatPageMenuFollowsAccess`.
+- 2026-11-26. The eight wrong implementations rerun on the working tree: each now fails a test.
+- 2026-11-26. Stage 6 complete: `make build lint test test-e2e` green, census 0, score unchanged. Waiting for approval. Next, at the user's word: link portals, as a feature with a plan of its own.
+- 2026-11-26. Stage 6 approved. The user confirmed that a collection lists its portals in the order of `portals:`, which `TestHomePageListsCollections` asserts. The pull request waits: the user chose to plan link portals first.
+- 2026-11-26. Review of pull request 46 (Copilot), applied: the chat page took its menu's collection names from the snapshot of its route and the portals from the current one; both now come from the current one. Test: `TestTheChatMenuFollowsAReload`.
+- 2026-11-26. Pre-squash tip: `3085689`, kept as the branch `backup/collections-links-presquash`. The branch is reshaped to one commit per stage.

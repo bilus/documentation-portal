@@ -10,9 +10,13 @@
 {{template "banner" .}}{{if .Nav.Account}}{{template "nav" .}}
 {{end}}<main>
 <h1>{{.Title}}</h1>
-{{with .Portals}}<ul>
+{{if .Collections}}{{range .Collections}}<h2>{{.Name}}</h2>
+<ul>
+{{range .Links}}<li><a href="{{.URL}}">{{.Label}}</a></li>
+{{end}}</ul>
+{{end}}{{else}}{{with .Portals}}<ul>
 {{range .}}<li><a href="{{.URL}}">{{.Label}}</a></li>
-{{end}}</ul>{{else}}<p>{{.Message}}</p>{{end}}
+{{end}}</ul>{{else}}<p>{{.Message}}</p>{{end}}{{end}}
 </main>
 </body>
 </html>

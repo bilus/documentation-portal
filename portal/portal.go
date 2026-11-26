@@ -27,14 +27,15 @@ import (
 )
 
 // Config says where the portal handler reads its content from, which
-// portals it serves, whether the viewer page hides the Try It console, which
+// portals it serves, in which collections it lists them, whether the viewer page hides the Try It console, which
 // portals and sections each reader may see, and which account links end each
 // reader's navigation bar. ReadConfig reads one from a configuration file.
 type Config struct {
-	Root      fs.FS    // the documentation root handle
-	Portals   []Portal // in the order of the home page and the portal menu
-	HideTryIt bool     // hides the Try It console of the viewer page
-	Chat      []Route  // the chat pages' routes, or none
+	Root        fs.FS        // the documentation root handle
+	Portals     []Portal     // in the order of the home page and the portal menu
+	Collections []Collection // the collections of the home page and the portal menu, in order, or none
+	HideTryIt   bool         // hides the Try It console of the viewer page
+	Chat        []Route      // the chat pages' routes, or none
 
 	// BasePath is the path the handler is served under, such as /docs, with
 	// no trailing slash, or empty for the root. The handler takes it off each
@@ -67,8 +68,8 @@ type Route struct {
 
 // New builds the portal handler, which answers each request with the pages
 // of the portals and sections visible to its reader, rendering markdown as
-// opts say, or refuses portals that openPortals refuses, an option it cannot
-// apply, or missing Elements assets.
+// opts say, or refuses portals that openPortals refuses, collections that
+// collectPortals refuses, an option it cannot apply, or missing Elements assets.
 func New(cfg Config, opts ...Option) (http.Handler, error) {
 	if err := checkBasePath(cfg.BasePath); err != nil {
 		return nil, err
@@ -87,6 +88,9 @@ func New(cfg Config, opts ...Option) (http.Handler, error) {
 	}
 	sites, err := openPortals(cfg)
 	if err != nil {
+		return nil, err
+	}
+	if err := collectPortals(cfg.Collections, sites); err != nil {
 		return nil, err
 	}
 	for _, s := range sites {
@@ -336,25 +340,22 @@ func servePortal(w http.ResponseWriter, r *http.Request, slug string, h func(*si
 	h(s, w, r)
 }
 
-// home redirects to the first visible section of the only visible portal, or
-// writes the home page, which links the first visible section of each
-// visible portal under its name, or says that no portal is open to the
-// reader.
+// home redirects to the first visible section of the only listed portal,
+// unless it is a link portal, or writes the home page, which links the first visible section of each listed
+// portal under its name, with collections under each collection's name, or says that
+// no portal is open to the reader.
 func (rt *router) home(w http.ResponseWriter, r *http.Request) {
-	sites := viewOf(r).sites
-	if len(sites) == 1 {
-		sites[0].index(w, r)
+	listed, collections := listPortals(viewOf(r).sites)
+	// A redirect to a link portal's URL could lead back here.
+	if len(listed) == 1 && listed[0].link == "" {
+		listed[0].index(w, r)
 		return
 	}
-	if len(sites) == 0 {
+	if len(listed) == 0 {
 		render(w, r, http.StatusOK, "home.html", page{Title: "Portals", Message: "No portals are open to you."})
 		return
 	}
-	links := make([]navLink, 0, len(sites))
-	for _, s := range sites {
-		links = append(links, navLink{Label: s.name, URL: s.url()})
-	}
-	render(w, r, http.StatusOK, "home.html", page{Title: "Portals", Portals: links})
+	render(w, r, http.StatusOK, "home.html", page{Title: "Portals", Portals: linksTo(listed), Collections: collections})
 }
 
 // handle adds r to mux, and returns as an error what ServeMux.Handle panics

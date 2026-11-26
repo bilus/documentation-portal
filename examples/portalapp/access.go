@@ -17,11 +17,13 @@ import (
 )
 
 // accessRules are the rules of the access file: for each label of the
-// configuration file, the rules of the readers who have the label, and the
-// previews rules, of the readers who may open previews.
+// configuration file, the rules of the readers who have the label, the
+// previews rules, of the readers who may open previews, and the unrestricted
+// labels, which sort portals into collections and close nothing.
 type accessRules struct {
-	Labels   map[string][]rule `yaml:"labels"`
-	Previews []rule            `yaml:"previews"`
+	Labels       map[string][]rule `yaml:"labels"`
+	Previews     []rule            `yaml:"previews"`
+	Unrestricted []string          `yaml:"unrestricted"`
 }
 
 // rule matches a reader who signed in through the identity provider named
@@ -37,8 +39,9 @@ type rule struct {
 // refuses an invalid file: one that is missing, that is not YAML or holds
 // more than one YAML document, with an unknown key, a rule without
 // a provider, a claim or values, an empty value, a provider other than
-// auth0 and github, or a GitHub rule on a claim other than login, id, orgs,
-// org_ids, teams and team_ids.
+// auth0 and github, a GitHub rule on a claim other than login, id, orgs,
+// org_ids, teams and team_ids, an empty unrestricted label, or an
+// unrestricted label that has rules.
 func readAccessFile(name string) (accessRules, error) {
 	data, err := os.ReadFile(name)
 	if err != nil {
@@ -58,6 +61,14 @@ func readAccessFile(name string) (accessRules, error) {
 			if err := r.check(); err != nil {
 				return accessRules{}, fmt.Errorf("access file %s: labels: %s: rule %d: %w", name, label, i+1, err)
 			}
+		}
+	}
+	for _, label := range rules.Unrestricted {
+		if label == "" {
+			return accessRules{}, fmt.Errorf("access file %s: unrestricted: an empty label", name)
+		}
+		if _, restricted := rules.Labels[label]; restricted {
+			return accessRules{}, fmt.Errorf("access file %s: the label %q is unrestricted and has rules", name, label)
 		}
 	}
 	for i, r := range rules.Previews {
@@ -131,7 +142,7 @@ func (rules accessRules) access(r *http.Request) (portal.Access, error) {
 // identity provider named provider with claims: the labels with a matching
 // rule, and whether a previews rule matches the reader.
 func (rules accessRules) accessOf(provider string, claims signin.Claims) readerAccess {
-	a := readerAccess{signedIn: true}
+	a := readerAccess{signedIn: true, unrestricted: rules.Unrestricted}
 	match := func(r rule) bool { return r.matches(provider, claims) }
 	for label, rs := range rules.Labels {
 		if slices.ContainsFunc(rs, match) {
@@ -159,12 +170,14 @@ func (r rule) holds(value string) bool {
 }
 
 // readerAccess is the access of one signed-in reader under the access
-// rules: the reader's labels, and whether the reader may open previews. Its
-// zero value is nobody's access, which allows nothing.
+// rules: the reader's labels, the unrestricted labels, and whether the
+// reader may open previews. Its zero value is nobody's access, which allows
+// nothing.
 type readerAccess struct {
-	signedIn bool
-	labels   []string
-	previews bool
+	signedIn     bool
+	labels       []string
+	unrestricted []string // the labels that close nothing
+	previews     bool
 }
 
 // Portal reports whether the reader may see the portal p: one without
@@ -186,8 +199,19 @@ func (a readerAccess) Preview(folder string) bool {
 }
 
 // open reports whether the reader may see a portal or a section with
-// labels: for a signed-in reader, one without labels, or one with a label
-// of the reader's.
+// labels: for a signed-in reader, one whose labels are all unrestricted, or
+// one with a label of the reader's. A label that the access file does not
+// name closes it to every reader.
 func (a readerAccess) open(labels []string) bool {
-	return a.signedIn && (len(labels) == 0 || slices.ContainsFunc(labels, func(l string) bool { return slices.Contains(a.labels, l) }))
+	if !a.signedIn {
+		return false
+	}
+	restricted := false
+	for _, l := range labels {
+		if slices.Contains(a.labels, l) {
+			return true
+		}
+		restricted = restricted || !slices.Contains(a.unrestricted, l)
+	}
+	return !restricted
 }

@@ -1,8 +1,11 @@
 # The demo documentation of the example application. A portal or section
 # with labels opens to the readers whom the access file gives one of them;
-# one without labels opens to every signed-in reader.
+# one without labels, or with unrestricted labels alone, opens to every
+# signed-in reader. The collections list the portals on the home page and in
+# the portal menu, by the unrestricted labels api and ops.
 portals:
   - name: Pets
+    labels: [api]
     sections:
       - title: API
         type: spec
@@ -15,8 +18,17 @@ portals:
         input: staff
         labels: [staff]
   - name: Partners
-    labels: [partner]
+    labels: [api, partner]
     sections:
       - title: Partner API
         type: spec
         input: specs/partners.yaml
+  - name: Status
+    type: link
+    url: https://status.example.com/
+    labels: [ops]
+collections:
+  - name: APIs
+    matchLabels: [api]
+  - name: Operations
+    matchLabels: [ops]

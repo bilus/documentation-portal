@@ -103,8 +103,8 @@ func checkPartial(fsys fs.FS, partial string) error {
 }
 
 // samplesOf returns the sample pages of the page template name: each page a
-// request can bring, with every banner and with and without account links,
-// so that each branch of the page's conditions that a request can take runs.
+// request can bring, with every banner, with and without account links, and
+// with and without collections, so that each branch of the page's conditions that a request can take runs.
 func samplesOf(name string) []page {
 	sidebar := []sidebarGroup{{Links: []sidebarLink{{Title: "a.md", URL: "a.md", Current: true}}}, {Title: "More", Links: []sidebarLink{{Title: "b.md", URL: "b.md"}}}}
 	nav := navBar{
@@ -141,6 +141,18 @@ func samplesOf(name string) []page {
 			{Title: "Document not found", Message: "No markdown file at a.md.", Nav: nav},
 			{Title: "Portal not found", Message: "No portal has the slug pets.", Nav: navBar{Links: []navLink{{Label: "Portals", URL: "/docs/"}}}},
 		}
+	}
+	// Each page with a menu or a list of portals, once more with collections.
+	for _, p := range pages {
+		switch {
+		case p.Portals != nil:
+			p.Collections = []portalCollection{{Name: "APIs", Links: p.Portals}}
+		case p.Nav.Menu != nil:
+			p.Nav.Collections = []portalCollection{{Name: "APIs", Links: p.Nav.Menu}}
+		default:
+			continue
+		}
+		pages = append(pages, p)
 	}
 	var samples []page
 	for _, p := range pages {
