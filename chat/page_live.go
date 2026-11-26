@@ -45,17 +45,17 @@ func chatPageTree(lv live.Ctx, p *page) (*tree.Tree, error) {
 		if /*line page.templ:52:9*/ len(p.Collections) > 0 /*line page_live.go:45:78*/ {
 			branch_qd10 := tree.New(chatPageTreeStatics[6])
 			rows_qd12 := tree.NewList(chatPageTreeStatics[7])
-			for /*line page.templ:53:11*/ _, c := range p.Collections /*line page_live.go:48:86*/ {
+			for /*line page.templ:53:11*/ i, c := range p.Collections /*line page_live.go:48:86*/ {
 				row_qd11 := rows_qd12.Row()
-				/*line page.templ:54:20*/ _key52_10 := "collection/" + c.Name /*line page_live.go:50:92*/
-				row_qd11.Set(0, tree.Text( /*line page.templ:54:78*/ c.Name /*line page_live.go:51:89*/))
+				/*line page.templ:54:20*/ _key52_10 := "collection-" + strconv.Itoa(i) /*line page_live.go:50:102*/
+				row_qd11.Set(0, tree.Text( /*line page.templ:54:87*/ c.Name /*line page_live.go:51:89*/))
 				rows_qd14 := tree.NewList(chatPageTreeStatics[8])
-				for /*line page.templ:55:12*/ _, l := range c.Links /*line page_live.go:53:81*/ {
+				for /*line page.templ:55:12*/ j, l := range c.Links /*line page_live.go:53:81*/ {
 					row_qd13 := rows_qd14.Row()
-					/*line page.templ:56:18*/ _key54_11 := c.Name + "/" + l.URL /*line page_live.go:55:91*/
+					/*line page.templ:56:18*/ _key54_11 := "link-" + strconv.Itoa(i) + "-" + strconv.Itoa(j) /*line page_live.go:55:121*/
 					root_qd15 := tree.NewRoot(chatPageTreeStatics[9])
-					root_qd15.Set(0, tree.Text(live.URL( /*line page.templ:56:48*/ templ.SafeURL(l.URL) /*line page_live.go:57:115*/)))
-					root_qd15.Set(1, tree.Text( /*line page.templ:56:73*/ l.Label /*line page_live.go:58:92*/))
+					root_qd15.Set(0, tree.Text(live.URL( /*line page.templ:56:77*/ templ.SafeURL(l.URL) /*line page_live.go:57:115*/)))
+					root_qd15.Set(1, tree.Text( /*line page.templ:56:102*/ l.Label /*line page_live.go:58:93*/))
 					row_qd13.Set(0, root_qd15)
 					if err_qd16 := row_qd13.Add(_key54_11); err_qd16 != nil {
 						return nil, err_qd16

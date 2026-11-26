@@ -51,12 +51,12 @@ type Collection struct {
 	MatchLabels []string `yaml:"matchLabels"`
 }
 
-// ReadConfig reads the portals and the collections from the configuration file at
-// name, a path inside root, into the portal configuration of root. It refuses
-// no root, a file that is missing, that is not YAML or that holds more than
-// one YAML document, a key it does not know, and an empty entry in a list of
-// portals, of sections or of collections. An empty file gives no portals. New
-// checks the portals and the collections.
+// ReadConfig reads the portals and the collections from the configuration
+// file at name, a path inside root, into the portal configuration of root. It
+// refuses no root, a file that is missing, that is not YAML or that holds
+// more than one YAML document, a key it does not know, and an empty entry in
+// a list of portals, of sections, of collections or of match labels. An
+// empty file gives no portals. New checks the portals and the collections.
 func ReadConfig(root fs.FS, name string) (Config, error) {
 	if root == nil {
 		return Config{}, errors.New("no documentation root")
@@ -74,7 +74,11 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			Sections []*Section `yaml:"sections"`
 			Labels   []string   `yaml:"labels"`
 		} `yaml:"portals"`
-		Collections []*Collection `yaml:"collections"`
+		// Pointers keep a null match label, which yaml.v3 drops from a list of strings.
+		Collections []*struct {
+			Name        string    `yaml:"name"`
+			MatchLabels []*string `yaml:"matchLabels"`
+		} `yaml:"collections"`
 	}
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, fmt.Errorf("configuration file %s: %w", name, err)
@@ -104,7 +108,14 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 		if g == nil {
 			return Config{}, fmt.Errorf("configuration file %s: collection %d is empty", name, i+1)
 		}
-		collections = append(collections, *g)
+		var labels []string
+		for j, label := range g.MatchLabels {
+			if label == nil {
+				return Config{}, fmt.Errorf("configuration file %s: collection %q: match label %d is empty", name, g.Name, j+1)
+			}
+			labels = append(labels, *label)
+		}
+		collections = append(collections, Collection{Name: g.Name, MatchLabels: labels})
 	}
 	return Config{Root: root, Portals: portals, Collections: collections}, nil
 }

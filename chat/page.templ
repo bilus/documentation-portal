@@ -50,10 +50,10 @@ templ chatPage(lv live.Ctx, p *page) {
 				<summary>{ p.Portal }</summary>
 				<div class="portal-menu-list">
 					if len(p.Collections) > 0 {
-						for _, c := range p.Collections {
-							<span key={ "collection/" + c.Name } class="portal-menu-collection">{ c.Name }</span>
-							for _, l := range c.Links {
-								<a key={ c.Name + "/" + l.URL } href={ templ.SafeURL(l.URL) }>{ l.Label }</a>
+						for i, c := range p.Collections {
+							<span key={ "collection-" + strconv.Itoa(i) } class="portal-menu-collection">{ c.Name }</span>
+							for j, l := range c.Links {
+								<a key={ "link-" + strconv.Itoa(i) + "-" + strconv.Itoa(j) } href={ templ.SafeURL(l.URL) }>{ l.Label }</a>
 							}
 						}
 					} else {
