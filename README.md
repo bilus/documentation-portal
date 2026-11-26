@@ -145,6 +145,48 @@ without a language included. `portal.New` takes both as options:
 
     portal.New(cfg, portal.WithEmbeddedVideo(), portal.WithCodeHighlighting(""))
 
+## Groups
+
+`groups:` in the configuration file, beside `portals:`, lists the portals
+under named groups on the home page and in the portal menu. It is optional.
+
+    portals:
+      - name: Staging
+        labels: [prerelease, autostage]
+        sections: [...]
+      - name: Production
+        labels: [autostage]
+        sections: [...]
+      - name: Live Ingest API
+        labels: [live-ingest]
+        sections: [...]
+    groups:
+      - name: AutoStage API
+        matchLabels: [autostage]
+      - name: Ingest
+        matchLabels: [live-ingest]
+
+A portal belongs to a group when its labels hold every one of the group's
+`matchLabels`: `matchLabels: [a, b]` matches a portal labelled `a, b` or
+`a, b, c`, and not one labelled `a`, `b` or `x`. The home page shows each
+group's name as a heading over its portals, and the portal menu as a label
+over their links, in the order of `groups:`, with the portals of a group in
+the order of `portals:`. A portal of two groups shows under both.
+
+A portal of no group is not listed, and docportal says so in its log each
+time it builds the portal, as it does for a group that matches no portal:
+
+    portal "Lab" is in no group and is not listed
+    group "Partners" matches no portal
+
+Such a portal keeps its pages under `/portals/{portal}/`, for a reader with
+the URL. Groups do not restrict anything: the access hook decides who may
+read a portal, and a group lists only the portals visible to the reader, or
+is left out when it has none. `/` redirects when one portal is listed.
+docportal does not start with a group that has no name, no `matchLabels`, an
+empty match label, or the name of another group. A program sets
+`portal.Config.Groups`, which `portal.ReadConfig` fills from the file.
+
 ## Link sections
 
 A section of type `link` puts a link of its own into the navigation bar, to
@@ -254,9 +296,11 @@ them:
 | `.Base` | all | the base path, such as `/docs`, or empty |
 | `.Nav.Links` | all | the navigation bar's links, each with `.Label` and `.URL` |
 | `.Nav.Portal`, `.Nav.Menu` | portal pages | the page's portal's name, and the links of the portal menu when there are other portals |
+| `.Nav.Groups` | portal pages | with groups, the menu's links by group, each with `.Name` and `.Links`; else empty |
 | `.Nav.Account` | all | the reader's account links; a link without `.URL` shows its `.Label` alone |
 | `.Banner` | all | the preview banner, with `.Preview` the folder of the reader's preview or `.Ended` that of an ended one, or nil |
-| `.Portals` | `home.html` | the visible portals, each with `.Label`, its name, and `.URL`; empty when none is open to the reader |
+| `.Portals` | `home.html` | the listed portals, each once, with `.Label`, its name, and `.URL`; empty when none is open to the reader |
+| `.Groups` | `home.html` | with groups, the listed portals by group, each with `.Name` and `.Links`; else empty |
 | `.Message` | `home.html`, `error.html` | why the page has nothing to show |
 | `.Section`, `.Sidebar` | `doc.html`, `list.html` | the docs section's title, and the sidebar's groups, each with `.Title` and `.Links` of `.Title`, `.URL` and `.Current` |
 | `.Contents` | `list.html` | the toc file's groups, as `.Sidebar`, or none |
