@@ -195,7 +195,6 @@ func TestGroupWarnings(t *testing.T) {
 }
 
 func TestHomePageListsGroups(t *testing.T) {
-	t.Skip("HOLE(3): list the portals of the home page by group")
 	quiet(t)
 	h, err := portal.New(stages())
 	if err != nil {
@@ -218,7 +217,6 @@ func TestHomePageListsGroups(t *testing.T) {
 }
 
 func TestPortalMenuListsGroups(t *testing.T) {
-	t.Skip("HOLE(3): list the portals of the portal menu by group")
 	quiet(t)
 	h, err := portal.New(stages())
 	if err != nil {
@@ -239,7 +237,6 @@ func TestPortalMenuListsGroups(t *testing.T) {
 }
 
 func TestOneListedPortalOpensAtHome(t *testing.T) {
-	t.Skip("HOLE(3): count the listed portals alone for the home page and the portal menu")
 	quiet(t)
 	cfg := stages()
 	cfg.Portals = []portal.Portal{cfg.Portals[1], cfg.Portals[3]} // Production and Lab
@@ -266,7 +263,6 @@ func TestOneListedPortalOpensAtHome(t *testing.T) {
 }
 
 func TestGroupsFollowAccess(t *testing.T) {
-	t.Skip("HOLE(3): list only the visible portals of each group, and no group without one")
 	quiet(t)
 	cfg := stages()
 	access := named{"Staging", "Production", "Lab"}
@@ -291,7 +287,6 @@ func TestGroupsFollowAccess(t *testing.T) {
 }
 
 func TestACustomHomePageListsTheGroups(t *testing.T) {
-	t.Skip("HOLE(3): give the custom templates the groups, and render them in the sample pages")
 	quiet(t)
 	templates := fstest.MapFS{"home.html": {Data: []byte(`{{range .Groups}}<h3>{{.Name}}</h3>{{range .Links}}<a class="card" href="{{.URL}}">{{.Label}}</a>{{end}}{{end}}`)}}
 	h, err := portal.New(stages(), portal.WithCustomTemplates(templates))

@@ -87,8 +87,28 @@ func holdsAll(labels, match []string) bool {
 // each site of a group, once, with the groups that hold a listed portal,
 // each with the links of its portals, in the groups' order.
 func listPortals(sites []*site) ([]*site, []portalGroup) {
-	// HOLE(3): with groups, keep the sites of a group and list them by group
-	return sites, nil
+	if len(sites) == 0 || sites[0].grouped == nil {
+		return sites, nil
+	}
+	var listed []*site
+	for _, s := range sites {
+		if len(s.groups) > 0 {
+			listed = append(listed, s)
+		}
+	}
+	var groups []portalGroup
+	for _, name := range sites[0].grouped {
+		var members []*site
+		for _, s := range listed {
+			if slices.Contains(s.groups, name) {
+				members = append(members, s)
+			}
+		}
+		if len(members) > 0 {
+			groups = append(groups, portalGroup{Name: name, Links: linksTo(members)})
+		}
+	}
+	return listed, groups
 }
 
 // linksTo returns a link to the first section of each site under its
