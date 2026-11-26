@@ -55,7 +55,6 @@ func TestNewWithExtensionFields(t *testing.T) {
 }
 
 func TestReadConfigReadsExtensionFields(t *testing.T) {
-	t.Skip("HOLE(2): read a portal's keys that start with x- into its extension fields")
 	cfg := readExt(t, extFile)
 	want := map[string]any{"x-host": "foobar", "x-tiers": []any{"gold", "silver"}, "x-owner": map[string]any{"team": "platform"}}
 	if !reflect.DeepEqual(cfg.Portals[0].Ext, want) {
@@ -73,7 +72,6 @@ func TestReadConfigReadsExtensionFields(t *testing.T) {
 }
 
 func TestReadConfigStillRefusesOtherKeys(t *testing.T) {
-	t.Skip("HOLE(2): refuse a portal's unknown key that does not start with x-")
 	for key, want := range map[string]string{
 		"host: foobar":             "host",
 		"X-host: foobar":           "X-host",
@@ -102,7 +100,6 @@ func TestReadConfigStillRefusesOtherKeys(t *testing.T) {
 }
 
 func TestGetExt(t *testing.T) {
-	t.Skip("HOLE(2): decode a portal's extension fields into the program's type")
 	cfg := readExt(t, extFile)
 	ext, err := cfg.Portals[0].GetExt[portalExt]()
 	if err != nil {
@@ -137,7 +134,6 @@ func TestGetExt(t *testing.T) {
 }
 
 func TestGetExtLeavesThePortalAsItWas(t *testing.T) {
-	t.Skip("HOLE(2): decode a copy of the extension fields")
 	p := portal.Portal{Name: "Foo", Ext: map[string]any{"x-tiers": []any{"gold"}}}
 	ext, err := p.GetExt[map[string]any]()
 	if err != nil {
@@ -151,7 +147,6 @@ func TestGetExtLeavesThePortalAsItWas(t *testing.T) {
 }
 
 func TestTheAccessHookGetsTheExtensionFields(t *testing.T) {
-	t.Skip("HOLE(2): pass a portal's extension fields to the access hook")
 	cfg := readExt(t, extFile)
 	access := &askedAbout{}
 	cfg.Access = func(*http.Request) (portal.Access, error) { return access, nil }

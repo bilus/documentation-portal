@@ -71,4 +71,11 @@ Each stage ends with `devbox run make build lint test test-e2e`, the hole census
 
 ### Stage 3: the defect review's findings
 
-Added after the defect review of AGENTS.md, if a finding needs a change.
+- Goal: no extension value breaks the chat's digest; the handler's portals share no `Ext` with the program's configuration; `GetExt` returns an error where it panicked; the error for unknown keys names all of them in order; the docs say how values convert; the tests catch the review's wrong implementations.
+- Requirement: 1, 2, 3, 5.
+- Dependencies: stage 2.
+- Holes: none; each change is inside one function's body.
+- Changes: `ReadConfig` refuses `.nan` and `.inf` in an extension field; chat's `digest` no longer drops a marshal error; `openPortals` gives each site a deep copy of its portal's `Ext`; `GetExt` turns a panic of the YAML encoder into an error; `extensionFields` reports every refused key, sorted.
+- Documented, not changed: a scalar converts to a string field, a null leaves the field at its zero value, an unquoted date is a timestamp; a hook must not write to a portal's `Ext`, `Labels` or `Sections`.
+- Acceptance: new tests that fail on the five wrong implementations that pass today (partial-on-error, no-list-recursion, no-map-recursion, ext-on-link-portals-only, first-key-alone-checked), and tests of each change above.
+- Size: 50 lines of code, 110 of tests.

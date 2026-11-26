@@ -54,9 +54,62 @@ type Portal struct {
 // extension fields, or an error for an extension field that T lacks and for a
 // value that does not fit T's field.
 func (p Portal) GetExt[T any]() (T, error) {
-	// HOLE(2): decode the extension fields into a T, refusing a field T lacks
 	var ext T
+	if len(p.Ext) == 0 {
+		return ext, nil
+	}
+	data, err := yaml.Marshal(p.Ext)
+	if err != nil {
+		return ext, fmt.Errorf("portal %q: extension fields: %w", p.Name, err)
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&ext); err != nil {
+		var none T
+		return none, fmt.Errorf("portal %q: extension fields: %w", p.Name, err)
+	}
 	return ext, nil
+}
+
+// extensionFields returns unknown, the keys of a portal that its fields do
+// not name, as its extension fields, or nil without any. It refuses a key
+// that does not start with x-, the key x- alone, and a value that holds a
+// map with a key that is not a string.
+func extensionFields(unknown map[string]any) (map[string]any, error) {
+	if len(unknown) == 0 {
+		return nil, nil
+	}
+	for key, value := range unknown {
+		if !strings.HasPrefix(key, "x-") || key == "x-" {
+			return nil, fmt.Errorf("unknown key %q: only the keys that start with x- and name a field are free", key)
+		}
+		if !plainValue(value) {
+			return nil, fmt.Errorf("extension field %s: a map key that is not a string", key)
+		}
+	}
+	return unknown, nil
+}
+
+// plainValue reports whether v, a YAML value, holds maps with string keys
+// alone, at any depth.
+func plainValue(v any) bool {
+	switch v := v.(type) {
+	case map[string]any:
+		for _, e := range v {
+			if !plainValue(e) {
+				return false
+			}
+		}
+	case []any:
+		for _, e := range v {
+			if !plainValue(e) {
+				return false
+			}
+		}
+	case map[any]any:
+		return false
+	}
+	return true
 }
 
 // PortalType says whether a portal holds sections or links a page.
@@ -74,10 +127,12 @@ type Collection struct {
 
 // ReadConfig reads the portals and the collections from the configuration
 // file at name, a path inside root, into the portal configuration of root. It
-// refuses no root, a file that is missing, that is not YAML or that holds
-// more than one YAML document, a key it does not know, and an empty entry in
-// a list of portals, of sections, of collections or of match labels. An
-// empty file gives no portals. New checks the portals and the collections.
+// keeps a portal's fields whose keys start with x- as its extension fields.
+// It refuses no root, a file that is missing, that is not YAML or that holds
+// more than one YAML document, any other key it does not know, and an empty
+// entry in a list of portals, of sections, of collections or of match
+// labels. An empty file gives no portals. New checks the portals and the
+// collections.
 func ReadConfig(root fs.FS, name string) (Config, error) {
 	if root == nil {
 		return Config{}, errors.New("no documentation root")
@@ -95,7 +150,9 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			Type     PortalType `yaml:"type"`
 			URL      string     `yaml:"url"`
 			Sections []*Section `yaml:"sections"`
-			Labels   []string   `yaml:"labels"`
+			// Every key that the fields above do not name, of which only x- keys pass.
+			Ext    map[string]any `yaml:",inline"`
+			Labels []string       `yaml:"labels"`
 		} `yaml:"portals"`
 		// Pointers keep a null match label, which yaml.v3 drops from a list of strings.
 		Collections []*struct {
@@ -124,8 +181,11 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			}
 			sections = append(sections, *sec)
 		}
-		// HOLE(2): keep the portal's keys that start with x- as its extension fields, and refuse any other unknown key as before
-		portals = append(portals, Portal{Name: p.Name, Type: p.Type, URL: p.URL, Sections: sections, Labels: p.Labels})
+		ext, err := extensionFields(p.Ext)
+		if err != nil {
+			return Config{}, fmt.Errorf("configuration file %s: portal %q: %w", name, p.Name, err)
+		}
+		portals = append(portals, Portal{Name: p.Name, Type: p.Type, URL: p.URL, Sections: sections, Labels: p.Labels, Ext: ext})
 	}
 	var collections []Collection
 	for i, g := range file.Collections {
