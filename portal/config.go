@@ -41,11 +41,22 @@ const (
 // LinkPortal a link to a page outside the portal handler, shown under its
 // name on the home page and in the portal menu.
 type Portal struct {
-	Name     string     `yaml:"name"`
-	Type     PortalType `yaml:"type"` // empty for a portal with sections, or LinkPortal
-	URL      string     `yaml:"url"`  // a link portal's URL: a path from the server's root, or an http or https URL
-	Sections []Section  `yaml:"sections"`
-	Labels   []string   `yaml:"labels"` // for the access hook's rules and the collections' match labels
+	Name     string         `yaml:"name"`
+	Type     PortalType     `yaml:"type"` // empty for a portal with sections, or LinkPortal
+	URL      string         `yaml:"url"`  // a link portal's URL: a path from the server's root, or an http or https URL
+	Sections []Section      `yaml:"sections"`
+	Labels   []string       `yaml:"labels"`  // for the access hook's rules and the collections' match labels
+	Ext      map[string]any `yaml:",inline"` // the extension fields: those whose keys start with x-, by key, or nil
+}
+
+// GetExt returns the portal's extension fields as a T, whose fields name
+// their keys in yaml tags, such as `yaml:"x-host"`: T's zero value without
+// extension fields, or an error for an extension field that T lacks and for a
+// value that does not fit T's field.
+func (p Portal) GetExt[T any]() (T, error) {
+	// HOLE(2): decode the extension fields into a T, refusing a field T lacks
+	var ext T
+	return ext, nil
 }
 
 // PortalType says whether a portal holds sections or links a page.
@@ -113,6 +124,7 @@ func ReadConfig(root fs.FS, name string) (Config, error) {
 			}
 			sections = append(sections, *sec)
 		}
+		// HOLE(2): keep the portal's keys that start with x- as its extension fields, and refuse any other unknown key as before
 		portals = append(portals, Portal{Name: p.Name, Type: p.Type, URL: p.URL, Sections: sections, Labels: p.Labels})
 	}
 	var collections []Collection
